@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Assessment - {{ context.project.project_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>R&D Project Assessment</h1>
+    <p>{{ context.project.project_title }}</p>
+  </div>
+</div>
+
+{% include "_project_tabs.html" %}
+
+<section class="grid two">
+  <section class="panel">
+    <h2>Assessment Facts</h2>
+    <form method="post" action="/projects/{{ context.project.id }}/assessment">
+      <div class="form-grid">
+        <div class="field">
+          <label>Accounting period</label>
+          <select name="accounting_period_id">
+            <option value="">Missing</option>
+            {% for period in periods %}
+              <option value="{{ period.id }}" {% if context.project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Outcome</label>
+          <select name="outcome">
+            {% for item in domain.PROJECT_OUTCOMES %}
+              <option {% if context.project.outcome == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date" value="{{ context.project.rd_start_date or '' }}"></div>
+        <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date" value="{{ context.project.rd_end_date or '' }}"></div>
+      </div>
+      <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology">{{ context.project.field_of_science_or_technology }}</textarea></div>
+      <div class="field"><label>Baseline level of knowledge/capability at project start</label><textarea name="baseline_knowledge">{{ context.project.baseline_knowledge }}</textarea></div>
+      <div class="field"><label>Advance sought</label><textarea name="advance_sought">{{ context.project.advance_sought }}</textarea></div>
+      <div class="field"><label>Why the advance is in the wider field</label><textarea name="wider_field_explanation">{{ context.project.wider_field_explanation }}</textarea></div>
+      <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties">{{ context.project.scientific_or_technological_uncertainties }}</textarea></div>
+      <div class="field"><label>Why competent professionals could not readily resolve it</label><textarea name="competent_professionals_could_not_resolve">{{ context.project.competent_professionals_could_not_resolve }}</textarea></div>
+      <div class="field"><label>System uncertainty explanation</label><textarea name="system_uncertainty_explanation">{{ context.project.system_uncertainty_explanation }}</textarea></div>
+      <div class="field"><label>Alternatives considered</label><textarea name="alternatives_considered">{{ context.project.alternatives_considered }}</textarea></div>
+      <div class="field"><label>Experiments, prototypes, models, simulations, tests, iterations</label><textarea name="experiments_prototypes_tests">{{ context.project.experiments_prototypes_tests }}</textarea></div>
+      <div class="field"><label>Failed attempts</label><textarea name="failed_attempts">{{ context.project.failed_attempts }}</textarea></div>
+      <div class="field"><label>Boundary explanation: when R&D started and stopped</label><textarea name="boundary_explanation">{{ context.project.boundary_explanation }}</textarea></div>
+      <div class="field"><label>Non-qualifying delivery activities to exclude</label><textarea name="non_qualifying_delivery_activities">{{ context.project.non_qualifying_delivery_activities }}</textarea></div>
+      <h3>Entitlement Facts</h3>
+      <div class="checkbox-row">
+        <label class="checkbox"><input type="checkbox" name="supplier_initiated_rd" {% if context.project.supplier_initiated_rd %}checked{% endif %}> Supplier initiated the R&D</label>
+        <label class="checkbox"><input type="checkbox" name="uncertainty_discovered_during_delivery" {% if context.project.uncertainty_discovered_during_delivery %}checked{% endif %}> Uncertainty discovered during delivery</label>
+        <label class="checkbox"><input type="checkbox" name="contract_specified_technical_uncertainty" {% if context.project.contract_specified_technical_uncertainty %}checked{% endif %}> Contract specified technical uncertainty</label>
+        <label class="checkbox"><input type="checkbox" name="another_party_could_claim" {% if context.project.another_party_could_claim %}checked{% endif %}> Another party could claim</label>
+        <label class="checkbox"><input type="checkbox" name="grant_funded_or_subsidised" {% if context.project.grant_funded_or_subsidised %}checked{% endif %}> Grant-funded or subsidised</label>
+        <label class="checkbox"><input type="checkbox" name="described_in_aif" {% if context.project.described_in_aif %}checked{% endif %}> Included in AIF project descriptions</label>
+      </div>
+      <div class="field">
+        <label>Company role</label>
+        <select name="company_role">
+          {% for item in domain.COMPANY_ROLES %}<option {% if context.project.company_role == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit">Save assessment</button>
+    </form>
+  </section>
+  <div class="stack">
+    {% include "_score_panel.html" %}
+    <section class="panel">
+      <h2>Calculated Entitlement</h2>
+      {% if context.entitlement %}
+        <p><span class="badge {{ context.entitlement.status }}">{{ context.entitlement.status }}</span></p>
+        <p>{{ context.entitlement.rationale }}</p>
+      {% endif %}
+      <p class="hint">Customer type: {{ context.customer.customer_type if context.customer else "missing" }}. Customer Corporation Tax status: {{ context.customer.corporation_tax_status if context.customer else "unknown" }}.</p>
+    </section>
+  </div>
+</section>
+{% endblock %}

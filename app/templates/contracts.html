@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Contracts - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Contract / SOW Capture</h1>
+    <p>Capture whether R&D was requested, intended, contemplated, or discovered during delivery, with public procurement and evidence links.</p>
+  </div>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Contracts</h2>
+    <div class="stack">
+      {% for contract in contracts %}
+        <article class="list-item">
+          <h3>{{ contract.contract_name }}</h3>
+          <p>{{ customer_map.get(contract.customer_id).customer_name if customer_map.get(contract.customer_id) else "Unknown customer" }} | <span class="badge weak">{{ contract.contract_type }}</span></p>
+          <p>
+            {% if contract.customer_requested_rd %}<span class="badge amber">requested R&D</span>{% endif %}
+            {% if contract.customer_intended_or_contemplated_rd %}<span class="badge amber">customer contemplated R&D</span>{% endif %}
+            {% if contract.technical_uncertainty_described %}<span class="badge amber">uncertainty in contract</span>{% endif %}
+          </p>
+          <p class="muted">{{ contract.public_sector_procurement_notes }}</p>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Add Contract</h2>
+    <form method="post" action="/contracts">
+      <div class="field"><label>Contract name</label><input name="contract_name" required></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Customer</label>
+          <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Contract type</label>
+          <select name="contract_type">{% for item in domain.CONTRACT_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field"><label>Start date</label><input name="start_date" type="date"></div>
+        <div class="field"><label>End date</label><input name="end_date" type="date"></div>
+      </div>
+      <div class="checkbox-row">
+        <label class="checkbox"><input type="checkbox" name="customer_requested_rd"> Customer explicitly requested R&D</label>
+        <label class="checkbox"><input type="checkbox" name="customer_intended_or_contemplated_rd"> Customer intended or contemplated R&D</label>
+        <label class="checkbox"><input type="checkbox" name="technical_uncertainty_described"> Technical uncertainty described in bid/contract/SOW/CR</label>
+      </div>
+      <div class="field"><label>IP / foreground knowledge owner</label><textarea name="ip_owner"></textarea></div>
+      <div class="field"><label>Funding / grant notes</label><textarea name="funding_grant_notes"></textarea></div>
+      <div class="field"><label>Public sector procurement notes</label><textarea name="public_sector_procurement_notes"></textarea></div>
+      <div class="field"><label>Contract evidence links</label><textarea name="contract_evidence_links" placeholder="SharePoint path, file path, or reference"></textarea></div>
+      <button type="submit">Save contract</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

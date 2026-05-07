@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Dashboard</h1>
+    <p>R&D candidate triage, evidence gaps, AIF readiness, and claim-period timing signals for transport-sector solution work.</p>
+  </div>
+  <a class="button secondary" href="/projects">Open project register</a>
+</div>
+
+<section class="metric-grid">
+  <div class="metric"><span class="value">{{ metrics.total_solutions }}</span><span class="label">Total solutions</span></div>
+  <div class="metric"><span class="value">{{ metrics.candidate_projects }}</span><span class="label">R&D candidate projects</span></div>
+  <div class="metric"><span class="value">{{ metrics.missing_competent_professional }}</span><span class="label">Missing signed competent professional opinion</span></div>
+  <div class="metric"><span class="value">{{ metrics.missing_evidence }}</span><span class="label">Projects missing evidence</span></div>
+</section>
+
+<section class="grid three">
+  <div class="panel">
+    <h2>Assessment Mix</h2>
+    <p><span class="badge green">green</span> {{ metrics.rating_counts.get("green", 0) }}</p>
+    <p><span class="badge amber">amber</span> {{ metrics.rating_counts.get("amber", 0) }}</p>
+    <p><span class="badge weak">weak</span> {{ metrics.rating_counts.get("weak", 0) }}</p>
+    <p><span class="badge red">red</span> {{ metrics.rating_counts.get("red", 0) }}</p>
+  </div>
+  <div class="panel">
+    <h2>AIF Readiness</h2>
+    <p><strong>{{ metrics.aif_ready_periods }}</strong> of <strong>{{ metrics.aif_total_periods }}</strong> claim period(s) currently ready.</p>
+    <p class="hint">Readiness checks company details, selected project descriptions, expenditure coverage, and CT600/AIF sequencing.</p>
+  </div>
+  <div class="panel">
+    <h2>Deadline Warnings</h2>
+    {% if metrics.deadline_warnings %}
+      <div class="warning-panel">
+        {% for warning in metrics.deadline_warnings %}<p>{{ warning }}</p>{% endfor %}
+      </div>
+    {% else %}
+      <div class="ok-panel">No claim notification deadline warning currently shown.</div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Project Register Snapshot</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Project</th>
+        <th>Rating</th>
+        <th>Score</th>
+        <th>Blockers</th>
+        <th>Next step</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for project in projects %}
+        {% set score = metrics.scores.get(project.id) %}
+        <tr>
+          <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
+          <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
+          <td>{{ score.score }}</td>
+          <td>{{ score.blockers|length }}</td>
+          <td><a href="/projects/{{ project.id }}/assessment">Review assessment</a></td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

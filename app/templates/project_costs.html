@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Costs - {{ context.project.project_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Cost Capture</h1>
+    <p>{{ context.project.project_title }}</p>
+  </div>
+</div>
+{% include "_project_tabs.html" %}
+
+<section class="grid two">
+  <section class="panel">
+    <h2>Add Cost Line</h2>
+    <form method="post" action="/projects/{{ context.project.id }}/costs" hx-post="/projects/{{ context.project.id }}/costs" hx-target="#cost-lines" hx-swap="outerHTML">
+      <div class="form-grid">
+        <div class="field"><label>Activity</label><input name="activity" placeholder="Prototype, test, spike, or QIA activity"></div>
+        <div class="field">
+          <label>Cost category</label>
+          <select name="cost_category">{% for item in domain.COST_CATEGORIES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field"><label>Person / supplier name</label><input name="person_or_supplier_name"></div>
+        <div class="field"><label>Gross cost</label><input name="gross_cost" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
+        <div class="field">
+          <label>Paid status</label>
+          <select name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>UK or overseas</label>
+          <select name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Connected party status</label>
+          <select name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <div class="field"><label>PAYE / NIC notes</label><textarea name="paye_nic_notes"></textarea></div>
+      <div class="field"><label>Evidence link</label><input name="evidence_link" placeholder="Timesheet, invoice, finance reference, cloud billing path"></div>
+      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <button type="submit">Add cost</button>
+    </form>
+  </section>
+  <div class="stack">
+    {% include "_score_panel.html" %}
+    <section class="panel">
+      <h2>Validation</h2>
+      <p class="hint">Qualifying amount is calculated as gross cost multiplied by apportionment percentage.</p>
+      <p class="hint">Unpaid costs, overseas contractor/EPW indicators, missing evidence, apportionment over 100%, and missing activity links are flagged for review.</p>
+    </section>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Cost Lines</h2>
+  {% include "_cost_lines.html" %}
+</section>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Competent Professional - {{ context.project.project_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Competent Professional Opinion</h1>
+    <p>{{ context.project.project_title }}</p>
+  </div>
+</div>
+{% include "_project_tabs.html" %}
+
+<section class="grid two">
+  <section class="panel">
+    <h2>Add Opinion</h2>
+    <form method="post" action="/projects/{{ context.project.id }}/competent-professional">
+      <div class="form-grid">
+        <div class="field"><label>Professional name</label><input name="professional_name" required></div>
+        <div class="field"><label>Role</label><input name="role"></div>
+        <div class="field"><label>Qualifications</label><input name="qualifications"></div>
+        <div class="field"><label>Years of relevant experience</label><input name="years_relevant_experience" type="number" min="0"></div>
+      </div>
+      <div class="field"><label>Relevant field expertise</label><textarea name="relevant_field_expertise"></textarea></div>
+      <div class="field"><label>Opinion text</label><textarea name="opinion_text"></textarea></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Sign-off status</label>
+          <select name="signoff_status">{% for item in domain.SIGNOFF_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field"><label>Sign-off date</label><input name="signoff_date" type="date"></div>
+      </div>
+      <div class="field"><label>Reviewer comments</label><textarea name="reviewer_comments"></textarea></div>
+      <button type="submit">Save opinion</button>
+    </form>
+  </section>
+  <div class="stack">
+    {% include "_score_panel.html" %}
+    <section class="panel">
+      <h2>Existing Opinions</h2>
+      <div class="stack">
+        {% for opinion in context.opinions %}
+          <article class="list-item">
+            <h3>{{ opinion.professional_name }}</h3>
+            <p><span class="badge {{ 'green' if opinion.signoff_status == 'signed' else 'amber' if opinion.signoff_status == 'draft' else 'red' }}">{{ opinion.signoff_status }}</span> {{ opinion.role }}</p>
+            <p>{{ opinion.opinion_text }}</p>
+            <p class="muted">{{ opinion.qualifications }} | {{ opinion.years_relevant_experience }} years</p>
+          </article>
+        {% else %}
+          <div class="danger-panel">No competent professional opinion recorded. A project cannot be green without a signed opinion.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}

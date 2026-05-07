@@ -1,0 +1,36 @@
+<div id="cost-lines" class="stack">
+  {% if context.costs %}
+    <table>
+      <thead>
+        <tr>
+          <th>Activity</th>
+          <th>Category</th>
+          <th>Gross</th>
+          <th>Apportionment</th>
+          <th>Qualifying</th>
+          <th>Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cost in context.costs %}
+          <tr>
+            <td>{{ cost.activity or "Missing" }}</td>
+            <td>{{ cost.cost_category }}</td>
+            <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
+            <td>{{ "%.1f"|format(cost.apportionment_percentage) }}%</td>
+            <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>
+            <td>
+              {% if cost.paid_status != "paid" %}<span class="badge amber">unpaid</span>{% endif %}
+              {% if cost.uk_or_overseas != "UK" and cost.cost_category in ["externally provided workers", "subcontractors"] %}<span class="badge amber">overseas review</span>{% endif %}
+              {% if not cost.evidence_link %}<span class="badge amber">missing evidence</span>{% endif %}
+              {% if cost.apportionment_percentage > 100 %}<span class="badge red">over 100%</span>{% endif %}
+              {% if not cost.activity and not cost.activity_id %}<span class="badge amber">activity missing</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="warning-panel">No cost lines linked yet.</div>
+  {% endif %}
+</div>

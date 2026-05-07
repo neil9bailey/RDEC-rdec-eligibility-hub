@@ -1,0 +1,41 @@
+version: "2026-05-07"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+caveat: "Decision support only. Requires competent professional and tax review."
+sources:
+  - title: "CIRD161000 - Contracted out R&D overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird161000"
+  - title: "CIRD163000 - Ineligible companies"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird163000"
+statuses:
+  supplier_likely: "Supplier appears to have stronger indicators, pending review."
+  customer_likely: "Customer appears to have stronger indicators, pending review."
+  ambiguous_tax_review: "Facts are mixed or unknown; tax review required."
+  blocked: "Current facts indicate claim should not be treated as supportable."
+customer_type_defaults:
+  UK Government department:
+    corporation_tax_status: "no"
+  local authority:
+    corporation_tax_status: "no"
+  mayoral / combined authority:
+    corporation_tax_status: "no"
+  transport authority:
+    corporation_tax_status: "no"
+  NHS or other public body:
+    corporation_tax_status: "no"
+  public corporation:
+    corporation_tax_status: "unknown"
+  arm's-length company:
+    corporation_tax_status: "unknown"
+  private transport operator:
+    corporation_tax_status: "yes"
+  prime contractor:
+    corporation_tax_status: "unknown"
+  other:
+    corporation_tax_status: "unknown"
+decision_tests:
+  - "Who decided to undertake or initiate the R&D?"
+  - "Did the customer intend or contemplate the R&D of the sort carried out?"
+  - "Was the technical uncertainty specified in the contract, bid, SOW, or change request?"
+  - "Is the customer an ineligible or irrelievable client?"
+  - "Was uncertainty discovered by the supplier during delivery?"
+  - "Could another party clearly claim the same R&D?"

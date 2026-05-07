@@ -1,0 +1,53 @@
+version: "2026-05-07"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+caveat: "Decision support only. Requires competent professional and tax review."
+sources:
+  - title: "CIRD131000 - Reformed reliefs qualifying expenditure overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird131000"
+  - title: "CIRD133000 - Staffing costs"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird133000"
+  - title: "CIRD134000 - Software"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird134000"
+  - title: "CIRD135000 - Data licences and cloud computing services"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird135000"
+  - title: "CIRD150500 - Overseas restrictions overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird150500"
+categories:
+  staff:
+    label: "Staff"
+    usually_qualifying_when: "Directly and actively engaged in relevant R&D or qualifying indirect activities."
+  externally provided workers:
+    label: "Externally provided workers"
+    review_flags:
+      - "UK PAYE/NIC and overseas restrictions require review."
+      - "Confirm this is provision of workers rather than subcontracted services."
+  subcontractors:
+    label: "Subcontractors"
+    review_flags:
+      - "Review contracted-out R&D rules and overseas restrictions."
+  software:
+    label: "Software"
+    usually_qualifying_when: "Employed in R&D; apportion where partly used."
+  cloud computing:
+    label: "Cloud computing"
+    usually_qualifying_when: "Directly contributes to resolving scientific or technological uncertainty."
+  data licences:
+    label: "Data licences"
+    usually_qualifying_when: "Directly contributes to resolving scientific or technological uncertainty."
+  consumables:
+    label: "Consumables"
+    usually_qualifying_when: "Consumed or transformed directly in R&D."
+  qualifying indirect activities:
+    label: "Qualifying indirect activities"
+    review_flags:
+      - "Trace activity to an R&D project boundary."
+  other:
+    label: "Other"
+    review_flags:
+      - "Review required before inclusion."
+validation_flags:
+  unpaid_cost: "Flag unpaid costs for review."
+  overseas_contractor_or_epw: "Flag overseas contractor or EPW costs for review."
+  missing_evidence: "Flag missing evidence."
+  apportionment_over_100: "Flag apportionment over 100%."
+  missing_activity_link: "Flag missing activity link."

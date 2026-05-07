@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}AIF Readiness - {{ readiness.period.label }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>AIF Readiness</h1>
+    <p>{{ readiness.company.company_name if readiness.company else "Company missing" }} | {{ readiness.period.label }}</p>
+  </div>
+  <a class="button" href="/claim-periods/{{ readiness.period.id }}/pack">Open claim pack</a>
+</div>
+
+<section class="grid two">
+  <section class="panel">
+    <h2>Readiness Summary</h2>
+    {% if readiness.ready %}
+      <div class="ok-panel">Potential AIF readiness looks complete for MVP checks. {{ caveat }}</div>
+    {% else %}
+      <div class="warning-panel">
+        <strong>Review required</strong>
+        <ul>{% for warning in readiness.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+    <p>Projects in period: <strong>{{ readiness.selection.project_count }}</strong></p>
+    <p>Total qualifying expenditure captured: <strong>GBP {{ "%.2f"|format(readiness.selection.total_qualifying_expenditure) }}</strong></p>
+    <p>Selected project IDs: <strong>{{ readiness.selection.selected_project_ids|join(", ") }}</strong></p>
+    <p>Selected coverage: <strong>{{ "%.2f"|format(readiness.selection.coverage_percentage) }}%</strong></p>
+    <p class="hint">Configured rule: 1 to 3 projects describe all; 4 to 10 describe at least 3 and enough to cover at least 50%; more than 10 follows the same rule with the 10-largest cap if needed.</p>
+  </section>
+  <section class="panel">
+    <h2>Submission Status</h2>
+    <form method="post" action="/claim-periods/{{ readiness.period.id }}/readiness">
+      {% set submission = readiness.submission %}
+      <div class="checkbox-row">
+        <label class="checkbox"><input type="checkbox" name="aif_submitted" {% if submission and submission.aif_submitted %}checked{% endif %}> AIF submitted</label>
+        <label class="checkbox"><input type="checkbox" name="ct600_submitted" {% if submission and submission.ct600_submitted %}checked{% endif %}> CT600 submitted</label>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>AIF submission date</label><input name="aif_submission_date" type="date" value="{{ submission.aif_submission_date if submission and submission.aif_submission_date else '' }}"></div>
+        <div class="field"><label>CT600 submission date</label><input name="ct600_submission_date" type="date" value="{{ submission.ct600_submission_date if submission and submission.ct600_submission_date else '' }}"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea name="notes">{{ submission.notes if submission else "" }}</textarea></div>
+      <button type="submit">Save submission status</button>
+    </form>
+  </section>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Projects Requiring Description</h2>
+  <table>
+    <thead><tr><th>ID</th><th>Project</th><th>Marked in AIF</th></tr></thead>
+    <tbody>
+      {% for project in readiness.projects %}
+        <tr>
+          <td>{{ project.id }}</td>
+          <td><a href="/projects/{{ project.id }}/assessment">{{ project.project_title }}</a></td>
+          <td>{% if project.described_in_aif %}<span class="badge green">described</span>{% else %}<span class="badge amber">pending</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

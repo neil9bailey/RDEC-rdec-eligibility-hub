@@ -1,0 +1,28 @@
+<div id="evidence-items" class="stack">
+  {% if context.evidence %}
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Type</th>
+          <th>Relevance</th>
+          <th>Strength</th>
+          <th>Reference</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in context.evidence %}
+          <tr>
+            <td>{{ item.source_system }}</td>
+            <td>{{ item.evidence_type }}</td>
+            <td>{{ item.relevance_tag }}</td>
+            <td><span class="badge {{ 'green' if item.strength == 'strong' else 'amber' if item.strength == 'moderate' else 'red' }}">{{ item.strength }}</span></td>
+            <td>{{ item.source_reference }}<br><span class="muted">{{ item.url_or_file_path }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="warning-panel">No evidence linked yet.</div>
+  {% endif %}
+</div>

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Evidence Index - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Evidence Index</h1>
+    <p>Grouped evidence export for claim pack preparation.</p>
+  </div>
+  <a class="button" href="/evidence-index?format=md">Download Markdown</a>
+</div>
+<section class="panel">
+  <pre class="report-pre">{{ markdown }}</pre>
+</section>
+{% endblock %}

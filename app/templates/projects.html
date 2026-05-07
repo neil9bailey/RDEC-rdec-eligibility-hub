@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}R&D Projects - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>R&D Project Register</h1>
+    <p>One solution can have multiple R&D projects. Each project carries its own boundary, evidence, costs, entitlement assessment, and score.</p>
+  </div>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Projects</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Solution</th>
+          <th>Period</th>
+          <th>Rating</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for project in projects %}
+          {% set score = scores.get(project.id) %}
+          <tr>
+            <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
+            <td>{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
+            <td>{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
+            <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
+            <td>{{ score.score }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Add Project</h2>
+    <form method="post" action="/projects">
+      <div class="field"><label>Project title</label><input name="project_title" required></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Solution</label>
+          <select name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}">{{ solution.solution_name }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Accounting period</label>
+          <select name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}">{{ period.label }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology"></textarea></div>
+      <div class="field"><label>Baseline level of knowledge/capability</label><textarea name="baseline_knowledge"></textarea></div>
+      <div class="field"><label>Advance sought</label><textarea name="advance_sought"></textarea></div>
+      <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties"></textarea></div>
+      <div class="form-grid">
+        <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date"></div>
+        <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date"></div>
+      </div>
+      <div class="field"><label>Boundary explanation</label><textarea name="boundary_explanation"></textarea></div>
+      <div class="field">
+        <label>Outcome</label>
+        <select name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option>{{ item }}</option>{% endfor %}</select>
+      </div>
+      <button type="submit">Create project</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

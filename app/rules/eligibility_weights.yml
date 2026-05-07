@@ -1,0 +1,53 @@
+version: "2026-05-07"
+effective_from: "2024-04-01"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+caveat: "Decision support only. Requires competent professional and tax review."
+sources:
+  - title: "CIRD81910 - DSIT Guidelines (2023)"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird81910"
+  - title: "CIRD81300 - Definition of R&D for tax purposes"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird81300"
+  - title: "Merged RDEC and ERIS guidance"
+    url: "https://www.gov.uk/guidance/research-and-development-rd-tax-relief-the-merged-scheme-and-enhanced-rd-intensive-support"
+weights:
+  qualifying_project_boundary: 10
+  field_of_science_or_technology: 10
+  advance_sought: 20
+  scientific_or_technological_uncertainty: 20
+  resolution_activity: 15
+  competent_professional_support: 10
+  cost_traceability: 10
+  claim_entitlement: 5
+score_bands:
+  green:
+    min: 80
+    max: 100
+    label: "green"
+    description: "strong candidate"
+  amber:
+    min: 60
+    max: 79
+    label: "amber"
+    description: "review required"
+  weak:
+    min: 40
+    max: 59
+    label: "weak"
+    description: "weak candidate"
+  red:
+    min: 0
+    max: 39
+    label: "red"
+    description: "not currently supportable"
+negative_advance_terms:
+  - commercial
+  - aesthetic
+  - project management
+  - procurement
+  - internal learning
+negative_uncertainty_terms:
+  - commercial
+  - budgetary
+  - resourcing
+  - customer adoption
+  - implementation planning

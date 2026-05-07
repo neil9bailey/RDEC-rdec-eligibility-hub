@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Claim Period Pack - {{ readiness.period.label }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Claim Period Pack</h1>
+    <p>{{ readiness.company.company_name if readiness.company else "Company missing" }} | {{ readiness.period.label }}</p>
+  </div>
+  <a class="button" href="/claim-periods/{{ readiness.period.id }}/pack?format=md">Download Markdown</a>
+</div>
+<section class="grid two">
+  <section class="panel">
+    <h2>Pack Readiness</h2>
+    <p><span class="badge {{ 'green' if readiness.ready else 'amber' }}">{{ 'ready' if readiness.ready else 'review required' }}</span></p>
+    <ul>{% for warning in readiness.warnings %}<li>{{ warning }}</li>{% else %}<li>No MVP readiness warnings.</li>{% endfor %}</ul>
+  </section>
+  <section class="panel">
+    <h2>AIF Selection</h2>
+    <p>Selected IDs: {{ readiness.selection.selected_project_ids|join(", ") }}</p>
+    <p>Coverage: {{ "%.2f"|format(readiness.selection.coverage_percentage) }}%</p>
+    <p>{{ caveat }}</p>
+  </section>
+</section>
+<section class="panel" style="margin-top: 18px;">
+  <h2>Markdown Preview</h2>
+  <pre class="report-pre">{{ markdown }}</pre>
+</section>
+{% endblock %}

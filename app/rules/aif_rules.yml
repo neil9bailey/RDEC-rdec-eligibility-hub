@@ -1,0 +1,29 @@
+version: "2026-05-07"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+caveat: "Decision support only. Requires competent professional and tax review."
+sources:
+  - title: "Additional information you must submit before you claim R&D tax relief"
+    url: "https://www.gov.uk/guidance/submit-detailed-information-before-you-claim-research-and-development-rd-tax-relief"
+project_selection:
+  one_to_three:
+    min_projects: 1
+    max_projects: 3
+    describe_all: true
+  four_to_ten:
+    min_projects: 4
+    max_projects: 10
+    minimum_described: 3
+    minimum_qualifying_expenditure_percentage: 50
+  more_than_ten:
+    min_projects: 11
+    minimum_described: 3
+    minimum_qualifying_expenditure_percentage: 50
+    max_described_if_threshold_requires_more: 10
+    selection_method: "largest qualifying expenditure first"
+project_fields:
+  - "main field of science or technology"
+  - "baseline level of knowledge or capability"
+  - "advance sought"
+  - "scientific or technological uncertainties"
+  - "method used to seek resolution"
+  - "qualifying costs"

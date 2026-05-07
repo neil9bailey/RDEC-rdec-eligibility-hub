@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/htmx.min.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <div class="brand">{{ app_name }}</div>
+          <nav class="nav" aria-label="Main navigation">
+            <a href="/">Dashboard</a>
+            <a href="/companies">Company</a>
+            <a href="/customers">Customers</a>
+            <a href="/contracts">Contracts</a>
+            <a href="/solutions">Solutions</a>
+            <a href="/projects">Projects</a>
+            <a href="/evidence-index">Evidence Index</a>
+          </nav>
+        </div>
+      </header>
+      <main class="container">
+        {% block content %}{% endblock %}
+      </main>
+      <footer class="footer">
+        <div class="footer-inner">
+          <span>Not tax advice. Decision support and evidence capture only.</span>
+          <span>{{ caveat }}</span>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>

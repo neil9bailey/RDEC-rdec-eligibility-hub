@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Solutions - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Solution Intake</h1>
+    <p>Capture transport constraints, architecture context, and the initial R&D radar position before detailed project assessment.</p>
+  </div>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Solutions</h2>
+    <div class="stack">
+      {% for solution in solutions %}
+        <article class="list-item">
+          <h3>{{ solution.solution_name }}</h3>
+          <p>
+            <span class="badge {{ solution.initial_radar_status }}">{{ solution.initial_radar_status }}</span>
+            {{ customer_map.get(solution.customer_id).customer_name if customer_map.get(solution.customer_id) else "Unknown customer" }}
+          </p>
+          <p>{{ solution.solution_description }}</p>
+          <p class="muted">{{ solution.transport_environment_constraints }}</p>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Add Solution</h2>
+    <form method="post" action="/solutions">
+      <div class="field"><label>Solution name</label><input name="solution_name" required></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Customer</label>
+          <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Contract</label>
+          <select name="contract_id"><option value="">No contract linked</option>{% for contract in contracts %}<option value="{{ contract.id }}">{{ contract.contract_name }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <div class="field"><label>Solution description</label><textarea name="solution_description"></textarea></div>
+      <div class="field"><label>Business problem</label><textarea name="business_problem"></textarea></div>
+      <div class="field"><label>Technical architecture summary</label><textarea name="technical_architecture_summary"></textarea></div>
+      <div class="field">
+        <label>Transport environment constraints</label>
+        <div class="checkbox-row">
+          {% for item in domain.TRANSPORT_CONSTRAINTS %}
+            <label class="checkbox"><input type="checkbox" name="transport_environment_constraints" value="{{ item }}"> {{ item }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Initial R&D radar status</label>
+          <select name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field"><label>Reason for radar status</label><textarea name="radar_reason"></textarea></div>
+      </div>
+      <button type="submit">Save solution</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

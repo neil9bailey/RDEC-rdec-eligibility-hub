@@ -1,0 +1,28 @@
+<section class="panel">
+  <h2>Eligibility Score</h2>
+  <p><span class="badge {{ score.rating }}">{{ score.rating }}</span> <strong>{{ score.score }}/100</strong> {{ score.rating_label }}</p>
+  {% if score.blockers %}
+    <div class="danger-panel">
+      <strong>Blockers</strong>
+      <ul>
+        {% for item in score.blockers %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  {% if score.warnings %}
+    <div class="warning-panel">
+      <strong>Warnings</strong>
+      <ul>
+        {% for item in score.warnings %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+  {% if score.positive_indicators %}
+    <div class="ok-panel">
+      <strong>Positive indicators</strong>
+      <ul>
+        {% for item in score.positive_indicators %}<li>{{ item }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+</section>

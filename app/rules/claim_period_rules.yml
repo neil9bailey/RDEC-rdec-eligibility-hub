@@ -1,0 +1,17 @@
+version: "2026-05-07"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+caveat: "Decision support only. Requires competent professional and tax review."
+sources:
+  - title: "Tell HMRC you want to claim R&D tax relief"
+    url: "https://www.gov.uk/guidance/tell-hmrc-that-youre-planning-to-claim-research-and-development-rd-tax-relief"
+  - title: "CIRD183000 - Pre-notification of claims"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird183000"
+claim_notification:
+  required_for_accounting_periods_beginning_on_or_after: "2023-04-01"
+  period_starts: "first day of period of account"
+  period_ends_months_after_period_of_account_end: 6
+  prior_claim_window_years: 3
+  warning_days_before_deadline: 60
+aif:
+  must_be_submitted_before_or_same_day_as_ct600: true
+  ct600_before_aif_status: "red"

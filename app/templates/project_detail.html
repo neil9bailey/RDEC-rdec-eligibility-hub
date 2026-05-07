@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ context.project.project_title }} - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ context.project.project_title }}</h1>
+    <p>{{ context.solution.solution_name if context.solution else "No linked solution" }} | {{ context.customer.customer_name if context.customer else "No linked customer" }}</p>
+  </div>
+  <a class="button" href="/projects/{{ context.project.id }}/report">Generate memo</a>
+</div>
+
+{% include "_project_tabs.html" %}
+
+<section class="grid two">
+  {% include "_score_panel.html" %}
+  <section class="panel">
+    <h2>Entitlement Matrix</h2>
+    {% if context.entitlement %}
+      <p><span class="badge {{ context.entitlement.status }}">{{ context.entitlement.status }}</span></p>
+      <p>{{ context.entitlement.rationale }}</p>
+    {% else %}
+      <div class="warning-panel">Entitlement not assessed yet.</div>
+    {% endif %}
+    <h3>Project Boundary</h3>
+    <p>{{ context.project.boundary_explanation or "Not recorded" }}</p>
+    <h3>Non-Qualifying Delivery Activities</h3>
+    <p>{{ context.project.non_qualifying_delivery_activities or "Not recorded" }}</p>
+  </section>
+</section>
+
+<section class="grid three" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Evidence</h2>
+    <p><strong>{{ context.evidence|length }}</strong> item(s)</p>
+    <a href="/projects/{{ context.project.id }}/evidence">Open ledger</a>
+  </div>
+  <div class="panel">
+    <h2>Costs</h2>
+    <p><strong>{{ context.costs|length }}</strong> line(s)</p>
+    <a href="/projects/{{ context.project.id }}/costs">Open costs</a>
+  </div>
+  <div class="panel">
+    <h2>Competent Professional</h2>
+    <p><strong>{{ context.opinions|length }}</strong> opinion(s)</p>
+    <a href="/projects/{{ context.project.id }}/competent-professional">Open opinion</a>
+  </div>
+</section>
+{% endblock %}

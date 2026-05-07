@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Evidence - {{ context.project.project_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Evidence Ledger</h1>
+    <p>{{ context.project.project_title }}</p>
+  </div>
+</div>
+{% include "_project_tabs.html" %}
+
+<section class="grid two">
+  <section class="panel">
+    <h2>Add Evidence Item</h2>
+    <form method="post" action="/projects/{{ context.project.id }}/evidence" hx-post="/projects/{{ context.project.id }}/evidence" hx-target="#evidence-items" hx-swap="outerHTML">
+      <div class="form-grid">
+        <div class="field">
+          <label>Source system</label>
+          <select name="source_system">{% for item in domain.SOURCE_SYSTEMS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field"><label>Source reference</label><input name="source_reference"></div>
+        <div class="field"><label>URL or file path</label><input name="url_or_file_path"></div>
+        <div class="field"><label>Date created</label><input name="date_created" type="date"></div>
+        <div class="field">
+          <label>Evidence type</label>
+          <select name="evidence_type">{% for item in domain.EVIDENCE_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Relevance tag</label>
+          <select name="relevance_tag">{% for item in domain.RELEVANCE_TAGS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Strength</label>
+          <select name="strength">{% for item in domain.EVIDENCE_STRENGTHS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <button type="submit">Add evidence</button>
+    </form>
+  </section>
+  <div class="stack">
+    {% include "_score_panel.html" %}
+    <section class="panel">
+      <h2>Evidence Gaps</h2>
+      {% if not context.evidence %}
+        <div class="danger-panel">No evidence is linked. This is an automatic blocker.</div>
+      {% else %}
+        <div class="ok-panel">Evidence exists. Review whether it covers advance, uncertainty, resolution activity, costs, entitlement, boundary, and sign-off.</div>
+      {% endif %}
+    </section>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Ledger</h2>
+  {% include "_evidence_items.html" %}
+</section>
+{% endblock %}

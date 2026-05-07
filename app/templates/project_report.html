@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Project Report - {{ context.project.project_title }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Project Eligibility Memo</h1>
+    <p>{{ context.project.project_title }}</p>
+  </div>
+  <a class="button" href="/projects/{{ context.project.id }}/report?format=md">Download Markdown</a>
+</div>
+{% include "_project_tabs.html" %}
+<section class="grid two">
+  {% include "_score_panel.html" %}
+  <section class="panel">
+    <h2>Report Status</h2>
+    <p>This memo is audit-pack preparation material and remains marked pending competent professional and tax review.</p>
+    <p><span class="badge {{ score.rating }}">{{ score.rating }}</span> {{ score.rating_label }}</p>
+  </section>
+</section>
+<section class="panel" style="margin-top: 18px;">
+  <h2>Markdown Preview</h2>
+  <pre class="report-pre">{{ markdown }}</pre>
+</section>
+{% endblock %}
