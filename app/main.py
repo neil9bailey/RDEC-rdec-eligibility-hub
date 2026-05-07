@@ -12,6 +12,7 @@ from app import domain
 from app.database import engine, get_session, init_db
 from app.models import (
     AccountingPeriod,
+    BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
     CompetentProfessionalOpinion,
@@ -24,7 +25,7 @@ from app.models import (
 )
 from app.reports import generate_claim_period_pack_markdown, generate_evidence_index_markdown, generate_project_memo_markdown
 from app.rule_loader import rules_version_summary
-from app.seed import seed_demo_data
+from app.seed import seed_business_units, seed_demo_data
 from app.services import (
     CAVEAT,
     aif_readiness_for_period,
@@ -43,7 +44,11 @@ from app.settings import BASE_DIR, get_settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    if get_settings().seed_demo_data:
+    settings = get_settings()
+    if settings.seed_reference_data:
+        with Session(engine) as session:
+            seed_business_units(session)
+    if settings.seed_demo_data:
         with Session(engine) as session:
             seed_demo_data(session)
     yield
@@ -147,13 +152,24 @@ async def create_accounting_period(request: Request, session: Session = Depends(
 @app.get("/customers", response_class=HTMLResponse)
 def customers(request: Request, session: Session = Depends(get_session)):
     customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
-    return templates.TemplateResponse("customers.html", template_context(request, customers=customers))
+    business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
+    business_unit_map = {unit.id: unit for unit in business_units}
+    return templates.TemplateResponse(
+        "customers.html",
+        template_context(
+            request,
+            customers=customers,
+            business_units=business_units,
+            business_unit_map=business_unit_map,
+        ),
+    )
 
 
 @app.post("/customers")
 async def create_customer(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     customer = Customer(
+        business_unit_id=int(form.get("business_unit_id")) if form.get("business_unit_id") else None,
         customer_name=str(form.get("customer_name") or ""),
         sector=str(form.get("sector") or ""),
         transport_domain=str(form.get("transport_domain") or "other"),
@@ -164,6 +180,42 @@ async def create_customer(request: Request, session: Session = Depends(get_sessi
     session.add(customer)
     session.commit()
     return redirect("/customers")
+
+
+@app.get("/business-units", response_class=HTMLResponse)
+def business_units(request: Request, session: Session = Depends(get_session)):
+    units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
+    customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
+    children_by_parent: dict[int | None, list[BusinessUnit]] = {}
+    for unit in units:
+        children_by_parent.setdefault(unit.parent_id, []).append(unit)
+    customer_counts = {unit.id: 0 for unit in units}
+    for customer in customers:
+        if customer.business_unit_id in customer_counts:
+            customer_counts[customer.business_unit_id] += 1
+    return templates.TemplateResponse(
+        "business_units.html",
+        template_context(
+            request,
+            units=units,
+            children_by_parent=children_by_parent,
+            customer_counts=customer_counts,
+        ),
+    )
+
+
+@app.post("/business-units")
+async def create_business_unit(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    unit = BusinessUnit(
+        name=str(form.get("name") or ""),
+        parent_id=int(form.get("parent_id")) if form.get("parent_id") else None,
+        description=str(form.get("description") or ""),
+        active=as_bool(form.get("active")) if form.get("active") is not None else True,
+    )
+    session.add(unit)
+    session.commit()
+    return redirect("/business-units")
 
 
 @app.get("/contracts", response_class=HTMLResponse)

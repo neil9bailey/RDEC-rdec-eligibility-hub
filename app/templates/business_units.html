@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Business Units - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Business Units</h1>
+    <p>Reference structure for live customer and project intake. Demo customers and projects are no longer seeded by default.</p>
+  </div>
+  <a class="button secondary" href="/customers">Add live customers</a>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Current Structure</h2>
+    <div class="stack">
+      {% for unit in children_by_parent.get(None, []) %}
+        <article class="list-item">
+          <h3>{{ unit.name }}</h3>
+          <p class="muted">{{ unit.description }}</p>
+          <p><span class="badge {{ 'green' if unit.active else 'red' }}">{{ 'active' if unit.active else 'inactive' }}</span> {{ customer_counts.get(unit.id, 0) }} customer(s)</p>
+          {% set children = children_by_parent.get(unit.id, []) %}
+          {% if children %}
+            <table>
+              <thead><tr><th>Sub-unit</th><th>Description</th><th>Customers</th></tr></thead>
+              <tbody>
+                {% for child in children %}
+                  <tr>
+                    <td><strong>{{ child.name }}</strong></td>
+                    <td>{{ child.description }}</td>
+                    <td>{{ customer_counts.get(child.id, 0) }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Add Business Unit</h2>
+    <form method="post" action="/business-units">
+      <div class="field"><label>Name</label><input name="name" required></div>
+      <div class="field">
+        <label>Parent business unit</label>
+        <select name="parent_id">
+          <option value="">Top level</option>
+          {% for unit in units %}
+            <option value="{{ unit.id }}">{{ unit.name }}</option>
+          {% endfor %}
+        </select>
+        <p class="hint">Use this when Network Services or another BU needs local sub-units later.</p>
+      </div>
+      <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+      <label class="checkbox"><input type="checkbox" name="active" checked> Active</label>
+      <button type="submit">Save business unit</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

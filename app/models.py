@@ -46,8 +46,18 @@ class AccountingPeriod(SQLModel, table=True):
     scheme_notes: str = "Merged RDEC / ERIS review required for periods beginning on or after 1 April 2024."
 
 
+class BusinessUnit(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    parent_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
+    description: str = ""
+    active: bool = True
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class Customer(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
+    business_unit_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
     customer_name: str
     sector: str = "Public sector transport"
     transport_domain: str = "multimodal"

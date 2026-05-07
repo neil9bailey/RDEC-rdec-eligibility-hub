@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from app.models import (
     AccountingPeriod,
     Activity,
+    BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
     CompetentProfessionalOpinion,
@@ -20,7 +21,78 @@ from app.models import (
 from app.services import calculate_qualifying_amount, sync_entitlement_for_project
 
 
+BUSINESS_UNIT_TREE = [
+    {
+        "name": "Transport",
+        "parent": None,
+        "description": "Top-level transport business unit for transport customer work.",
+    },
+    {
+        "name": "Highways",
+        "parent": "Transport",
+        "description": "Transport business unit for highways customers and solutions.",
+    },
+    {
+        "name": "Rail",
+        "parent": "Transport",
+        "description": "Transport business unit for rail customers and solutions.",
+    },
+    {
+        "name": "Scada",
+        "parent": "Transport",
+        "description": "Transport business unit for SCADA and operational technology work.",
+    },
+    {
+        "name": "TfL",
+        "parent": "Transport",
+        "description": "Transport business unit for Transport for London customer work.",
+    },
+    {
+        "name": "Network Services",
+        "parent": None,
+        "description": "Network Services business unit; customers are added as live data.",
+    },
+    {
+        "name": "HPC / Hinckley Point C",
+        "parent": None,
+        "description": "HPC / Hinckley Point C business unit.",
+    },
+    {
+        "name": "Nuclear Power",
+        "parent": None,
+        "description": "Nuclear Power business unit.",
+    },
+    {
+        "name": "Core Central Asset Management",
+        "parent": None,
+        "description": "Core central asset management business unit.",
+    },
+]
+
+
+def seed_business_units(session: Session) -> None:
+    existing = {unit.name: unit for unit in session.exec(select(BusinessUnit))}
+    for item in BUSINESS_UNIT_TREE:
+        if item["name"] in existing:
+            continue
+        parent_id = existing[item["parent"]].id if item["parent"] else None
+        unit = BusinessUnit(
+            name=item["name"],
+            parent_id=parent_id,
+            description=item["description"],
+        )
+        session.add(unit)
+        session.commit()
+        session.refresh(unit)
+        existing[unit.name] = unit
+
+
+def business_unit_by_name(session: Session, name: str) -> BusinessUnit | None:
+    return session.exec(select(BusinessUnit).where(BusinessUnit.name == name)).first()
+
+
 def seed_demo_data(session: Session) -> None:
+    seed_business_units(session)
     if session.exec(select(Company)).first():
         return
 
@@ -71,6 +143,7 @@ def seed_demo_data(session: Session) -> None:
     )
 
     public_customer = Customer(
+        business_unit_id=business_unit_by_name(session, "Transport").id,
         customer_name="West Midlands Combined Transport Authority",
         sector="Public sector transport",
         transport_domain="multimodal",
@@ -79,6 +152,7 @@ def seed_demo_data(session: Session) -> None:
         notes="Public authority customer; supplier entitlement needs contracted-out and irrelievable client review.",
     )
     private_customer = Customer(
+        business_unit_id=business_unit_by_name(session, "Rail").id,
         customer_name="MetroRail Operating Ltd",
         sector="Transport operator",
         transport_domain="rail",
@@ -87,6 +161,7 @@ def seed_demo_data(session: Session) -> None:
         notes="Private operator likely within Corporation Tax; customer/supplier entitlement needs fact review.",
     )
     council_customer = Customer(
+        business_unit_id=business_unit_by_name(session, "Highways").id,
         customer_name="Northshire County Council Highways",
         sector="Local government",
         transport_domain="highways",

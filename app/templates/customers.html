@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Customer Setup</h1>
-    <p>Classify public sector and transport customers so entitlement review can separate supplier, customer, ambiguous, and blocked positions.</p>
+    <p>Assign live customers to a business unit, then classify public sector and transport facts for entitlement review.</p>
   </div>
 </div>
 
@@ -15,6 +15,13 @@
       {% for customer in customers %}
         <article class="list-item">
           <h3>{{ customer.customer_name }}</h3>
+          <p>
+            {% if customer.business_unit_id and business_unit_map.get(customer.business_unit_id) %}
+              <span class="badge green">{{ business_unit_map.get(customer.business_unit_id).name }}</span>
+            {% else %}
+              <span class="badge amber">BU pending</span>
+            {% endif %}
+          </p>
           <p><span class="badge amber">{{ customer.customer_type }}</span> <span class="badge weak">{{ customer.transport_domain }}</span></p>
           <p>Corporation Tax status: <strong>{{ customer.corporation_tax_status }}</strong></p>
           <p class="muted">{{ customer.notes }}</p>
@@ -26,6 +33,13 @@
     <h2>Add Customer</h2>
     <form method="post" action="/customers">
       <div class="field"><label>Customer name</label><input name="customer_name" required></div>
+      <div class="field">
+        <label>Business unit</label>
+        <select name="business_unit_id">
+          <option value="">Unassigned</option>
+          {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
+        </select>
+      </div>
       <div class="field"><label>Sector</label><input name="sector" placeholder="Public sector transport"></div>
       <div class="form-grid">
         <div class="field">

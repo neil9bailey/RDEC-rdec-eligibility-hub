@@ -12,7 +12,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Calculates qualifying cost amounts from gross cost and apportionment percentage.
 - Applies configurable Additional Information Form project-selection logic.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
-- Seeds three demo transport projects: strong, amber, and red.
+- Seeds only reference business units by default, ready for live customer and project entry.
 
 ## What It Does Not Do
 
@@ -62,18 +62,24 @@ Stop the app:
 docker compose down
 ```
 
-## Seed Data
+## Reference Data
 
-Seed data is loaded automatically when the SQLite database is empty. It creates:
+Reference business units are loaded automatically when the SQLite database is empty:
 
-- Strong candidate: real-time passenger prediction using inconsistent multi-operator transport data.
-- Amber candidate: legacy ticketing event integration with incomplete evidence.
-- Red candidate: standard cloud migration and dashboard implementation with no scientific or technological uncertainty.
+- Transport
+  - Highways
+  - Rail
+  - Scada
+  - TfL
+- Network Services
+- HPC / Hinckley Point C
+- Nuclear Power
+- Core Central Asset Management
 
-To disable seed data:
+Demo customers, contracts, solutions, projects, evidence, and costs are not seeded by default. To opt into the original demo data in a throwaway local instance:
 
 ```powershell
-$env:SEED_DEMO_DATA="false"
+$env:SEED_DEMO_DATA="true"
 docker compose up --build
 ```
 
@@ -87,7 +93,7 @@ Remove-Item -Recurse -Force .\data
 docker compose up --build
 ```
 
-The demo seed will be recreated on the next startup.
+The reference business units will be recreated on the next startup.
 
 ## Architecture Overview
 
@@ -95,7 +101,7 @@ The demo seed will be recreated on the next startup.
 - `app/models.py` - SQLModel database models.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, dashboard metrics.
 - `app/reports.py` - Markdown report generation.
-- `app/seed.py` - demo transport data.
+- `app/seed.py` - clean reference business units and optional demo transport data.
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
 - `app/rules/` - versioned YAML rules.
@@ -119,6 +125,7 @@ Each file includes a version and source metadata. Update the YAML first when HMR
 ## Main Pages
 
 - `/`
+- `/business-units`
 - `/companies`
 - `/customers`
 - `/contracts`

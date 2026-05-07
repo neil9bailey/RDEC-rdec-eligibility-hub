@@ -3,6 +3,7 @@ from sqlmodel import SQLModel
 from app.models import (
     AccountingPeriod,
     Activity,
+    BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
     CompetentProfessionalOpinion,
@@ -30,6 +31,7 @@ def test_database_model_creation_metadata_contains_required_tables(session):
         RDProject.__tablename__,
         TechnicalUncertainty.__tablename__,
         Activity.__tablename__,
+        BusinessUnit.__tablename__,
         CompetentProfessionalOpinion.__tablename__,
         EvidenceItem.__tablename__,
         CostLine.__tablename__,
