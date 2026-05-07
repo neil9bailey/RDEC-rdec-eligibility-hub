@@ -4,7 +4,9 @@
       <thead>
         <tr>
           <th>Activity</th>
+          <th>Basis</th>
           <th>Category</th>
+          <th>Person / supplier</th>
           <th>Gross</th>
           <th>Apportionment</th>
           <th>Qualifying</th>
@@ -15,7 +17,14 @@
         {% for cost in context.costs %}
           <tr>
             <td>{{ cost.activity or "Missing" }}</td>
+            <td>
+              {{ "people time" if cost.cost_input_type == "people_time" else "direct cost" }}
+              {% if cost.cost_input_type == "people_time" %}
+                <br><span class="muted">{{ "%.2f"|format(cost.hours) }}h @ GBP {{ "%.2f"|format(cost.hourly_rate) }} / {{ "%.2f"|format(cost.days) }}d @ GBP {{ "%.2f"|format(cost.day_rate) }}</span>
+              {% endif %}
+            </td>
             <td>{{ cost.cost_category }}</td>
+            <td>{{ cost.person_or_supplier_name or "Missing" }}{% if cost.person_role %}<br><span class="muted">{{ cost.person_role }}</span>{% endif %}</td>
             <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
             <td>{{ "%.1f"|format(cost.apportionment_percentage) }}%</td>
             <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>

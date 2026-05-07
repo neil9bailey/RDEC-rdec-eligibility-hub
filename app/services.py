@@ -64,6 +64,10 @@ def calculate_qualifying_amount(gross_cost: float, apportionment_percentage: flo
     return round(float(gross_cost or 0) * float(apportionment_percentage or 0) / 100, 2)
 
 
+def calculate_people_time_gross(hours: float, hourly_rate: float, days: float, day_rate: float) -> float:
+    return round((float(hours or 0) * float(hourly_rate or 0)) + (float(days or 0) * float(day_rate or 0)), 2)
+
+
 def project_qualifying_spend(costs: Iterable[CostLine]) -> float:
     return round(sum(c.qualifying_amount or calculate_qualifying_amount(c.gross_cost, c.apportionment_percentage) for c in costs), 2)
 
@@ -131,6 +135,13 @@ def cost_validation_warnings(cost: CostLine) -> list[str]:
         warnings.append(f"Cost line {cost.id or '-'} has apportionment over 100%.")
     if not cost.activity_id and not has_text(cost.activity):
         warnings.append(f"Cost line {cost.id or '-'} is missing an activity link.")
+    if cost.cost_input_type == "people_time":
+        if not has_text(cost.person_or_supplier_name):
+            warnings.append(f"Cost line {cost.id or '-'} is missing the person name.")
+        if cost.hours <= 0 and cost.days <= 0:
+            warnings.append(f"Cost line {cost.id or '-'} has no people time recorded.")
+        if cost.hourly_rate <= 0 and cost.day_rate <= 0 and cost.gross_cost <= 0:
+            warnings.append(f"Cost line {cost.id or '-'} has no people rate or gross cost recorded.")
     return warnings
 
 

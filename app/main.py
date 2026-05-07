@@ -32,6 +32,7 @@ from app.services import (
     aif_readiness_for_period,
     as_bool,
     calculate_project_score,
+    calculate_people_time_gross,
     calculate_qualifying_amount,
     dashboard_metrics,
     deadline_warning,
@@ -427,12 +428,27 @@ def project_costs(project_id: int, request: Request, session: Session = Depends(
 @app.post("/projects/{project_id}/costs")
 async def add_project_cost(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    hours = float(form.get("hours") or 0)
+    hourly_rate = float(form.get("hourly_rate") or 0)
+    days = float(form.get("days") or 0)
+    day_rate = float(form.get("day_rate") or 0)
+    gross_cost = float(form.get("gross_cost") or 0)
+    if str(form.get("cost_input_type") or "direct_cost") == "people_time" and gross_cost == 0:
+        gross_cost = calculate_people_time_gross(hours, hourly_rate, days, day_rate)
     cost = CostLine(
         project_id=project_id,
         activity=str(form.get("activity") or ""),
+        cost_input_type=str(form.get("cost_input_type") or "direct_cost"),
         cost_category=str(form.get("cost_category") or "other"),
         person_or_supplier_name=str(form.get("person_or_supplier_name") or ""),
-        gross_cost=float(form.get("gross_cost") or 0),
+        person_role=str(form.get("person_role") or ""),
+        time_period_start=parse_date(str(form.get("time_period_start") or "")),
+        time_period_end=parse_date(str(form.get("time_period_end") or "")),
+        hours=hours,
+        hourly_rate=hourly_rate,
+        days=days,
+        day_rate=day_rate,
+        gross_cost=gross_cost,
         apportionment_percentage=float(form.get("apportionment_percentage") or 0),
         paid_status=str(form.get("paid_status") or "paid"),
         uk_or_overseas=str(form.get("uk_or_overseas") or "unknown"),

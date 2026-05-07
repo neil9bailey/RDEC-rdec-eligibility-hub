@@ -20,6 +20,20 @@ def bullet_list(items: list[str]) -> str:
     return "".join(f"- {item}\n" for item in items)
 
 
+def people_time_lines(costs: list[CostLine]) -> list[str]:
+    lines = []
+    for cost in costs:
+        if cost.cost_input_type != "people_time":
+            continue
+        lines.append(
+            f"{cost.person_or_supplier_name or 'Unnamed person'}"
+            f" ({cost.person_role or 'role not recorded'}), {cost.activity or 'activity not recorded'}: "
+            f"{cost.hours:g} hours at {money(cost.hourly_rate)} / {cost.days:g} days at {money(cost.day_rate)}; "
+            f"gross {money(cost.gross_cost)}, qualifying {money(cost.qualifying_amount)}"
+        )
+    return lines
+
+
 def generate_project_memo_markdown(session: Session, project_id: int) -> str:
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
@@ -33,6 +47,7 @@ def generate_project_memo_markdown(session: Session, project_id: int) -> str:
         for item in context.evidence
     ]
     cost_lines = [f"{category}: {money(amount)}" for category, amount in cost_summary.items()]
+    time_lines = people_time_lines(context.costs)
 
     return f"""# Project Eligibility Memo: {project.project_title}
 
@@ -75,6 +90,8 @@ def generate_project_memo_markdown(session: Session, project_id: int) -> str:
 {bullet_list(cost_lines)}
 Total qualifying amount captured: {money(total_spend)}
 
+## People time detail
+{bullet_list(time_lines)}
 ## Entitlement assessment
 - Status: {entitlement.status if entitlement else "Not assessed"}
 - Rationale: {entitlement.rationale if entitlement else "Not assessed"}
@@ -102,6 +119,7 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
     evidence_gaps: list[str] = []
     entitlement_notes: list[str] = []
     project_lines: list[str] = []
+    people_time: list[str] = []
 
     for project in projects:
         context = get_project_context(session, project.id or 0)
@@ -111,6 +129,7 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
             evidence_gaps.append(f"{project.project_title}: no evidence linked")
         if context.entitlement:
             entitlement_notes.append(f"{project.project_title}: {context.entitlement.status} - {context.entitlement.rationale}")
+        people_time.extend([f"{project.project_title}: {line}" for line in people_time_lines(context.costs)])
         project_lines.append(
             f"{project.project_title}: {score.rating} / {score.score}, spend {money(project_qualifying_spend(context.costs))}"
         )
@@ -149,6 +168,8 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 {bullet_list(project_lines)}
 ## Total qualifying spend by category
 {bullet_list(cost_lines)}
+## People time detail
+{bullet_list(people_time)}
 ## AIF readiness
 - Ready: {readiness["ready"]}
 - Project count: {readiness["selection"].project_count}

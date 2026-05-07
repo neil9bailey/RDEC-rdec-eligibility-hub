@@ -11,8 +11,48 @@
 
 <section class="grid two">
   <section class="panel">
-    <h2>Add Cost Line</h2>
+    <h2>Add People Time</h2>
     <form method="post" action="/projects/{{ context.project.id }}/costs" hx-post="/projects/{{ context.project.id }}/costs" hx-target="#cost-lines" hx-swap="outerHTML">
+      <input type="hidden" name="cost_input_type" value="people_time">
+      <input type="hidden" name="cost_category" value="staff">
+      <div class="form-grid">
+        <div class="field"><label>Person name</label><input name="person_or_supplier_name" placeholder="Employee or worker name"></div>
+        <div class="field"><label>Role</label><input name="person_role" placeholder="Engineer, architect, tester, delivery lead"></div>
+        <div class="field">
+          <label>Activity</label>
+          <input name="activity" placeholder="Prototype, test, spike, or qualifying indirect activity">
+        </div>
+        <div class="field"><label>Time period start</label><input name="time_period_start" type="date"></div>
+        <div class="field"><label>Time period end</label><input name="time_period_end" type="date"></div>
+        <div class="field"><label>Hours</label><input name="hours" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Hourly cost rate</label><input name="hourly_rate" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Days</label><input name="days" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Day cost rate</label><input name="day_rate" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>Gross cost override</label><input name="gross_cost" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>R&D apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
+        <div class="field">
+          <label>Paid status</label>
+          <select name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>UK or overseas</label>
+          <select name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label>Connected party status</label>
+          <select name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+      </div>
+      <div class="field"><label>PAYE / NIC notes</label><textarea name="paye_nic_notes" placeholder="Payroll basis, employment status, EPW notes, or rate source"></textarea></div>
+      <div class="field"><label>Timesheet / PSA evidence link</label><input name="evidence_link" placeholder="Timesheet, PSA entry, resource plan, or finance reference"></div>
+      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <button type="submit">Add people time</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Add Direct Cost</h2>
+    <form method="post" action="/projects/{{ context.project.id }}/costs" hx-post="/projects/{{ context.project.id }}/costs" hx-target="#cost-lines" hx-swap="outerHTML">
+      <input type="hidden" name="cost_input_type" value="direct_cost">
       <div class="form-grid">
         <div class="field"><label>Activity</label><input name="activity" placeholder="Prototype, test, spike, or QIA activity"></div>
         <div class="field">
@@ -21,7 +61,7 @@
         </div>
         <div class="field"><label>Person / supplier name</label><input name="person_or_supplier_name"></div>
         <div class="field"><label>Gross cost</label><input name="gross_cost" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>Apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
+        <div class="field"><label>R&D apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
         <div class="field">
           <label>Paid status</label>
           <select name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
@@ -41,11 +81,15 @@
       <button type="submit">Add cost</button>
     </form>
   </section>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
   <div class="stack">
     {% include "_score_panel.html" %}
     <section class="panel">
       <h2>Validation</h2>
-      <p class="hint">Qualifying amount is calculated as gross cost multiplied by apportionment percentage.</p>
+      <p class="hint">People time gross cost can be calculated from hours and hourly rate, days and day rate, or a gross cost override.</p>
+      <p class="hint">Qualifying amount is calculated as gross cost multiplied by R&D apportionment percentage.</p>
       <p class="hint">Unpaid costs, overseas contractor/EPW indicators, missing evidence, apportionment over 100%, and missing activity links are flagged for review.</p>
     </section>
   </div>

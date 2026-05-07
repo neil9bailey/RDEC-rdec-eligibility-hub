@@ -5,6 +5,7 @@ from app.services import (
     aif_project_selection,
     assess_entitlement,
     calculate_project_score,
+    calculate_people_time_gross,
     calculate_qualifying_amount,
     cost_validation_warnings,
 )
@@ -83,6 +84,7 @@ def test_claimant_entitlement_statuses():
 
 def test_cost_apportionment_and_flags():
     assert calculate_qualifying_amount(1000, 37.5) == 375
+    assert calculate_people_time_gross(hours=10, hourly_rate=75, days=2, day_rate=600) == 1950
     cost = CostLine(
         project_id=1,
         cost_category="subcontractors",
@@ -99,6 +101,27 @@ def test_cost_apportionment_and_flags():
     assert any("missing cost evidence" in warning for warning in warnings)
     assert any("over 100%" in warning for warning in warnings)
     assert any("activity link" in warning for warning in warnings)
+
+
+def test_people_time_validation_flags_missing_time_and_rate():
+    cost = CostLine(
+        project_id=1,
+        cost_input_type="people_time",
+        cost_category="staff",
+        person_or_supplier_name="",
+        gross_cost=0,
+        apportionment_percentage=50,
+        paid_status="paid",
+        uk_or_overseas="UK",
+        activity="Prototype investigation",
+        evidence_link="Timesheet: 123",
+    )
+
+    warnings = cost_validation_warnings(cost)
+
+    assert any("person name" in warning for warning in warnings)
+    assert any("no people time" in warning for warning in warnings)
+    assert any("no people rate" in warning for warning in warnings)
 
 
 def test_aif_project_selection_logic():

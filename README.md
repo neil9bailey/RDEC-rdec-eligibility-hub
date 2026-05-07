@@ -7,6 +7,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 ## What It Does
 
 - Captures company, customer, contract/SOW, solution, R&D project, evidence, cost, competent professional, entitlement, and claim-period submission data.
+- Captures people time with roles, periods, hours or days, internal rates, apportionment, and timesheet / PSA evidence links.
 - Scores projects using configurable weighted rules.
 - Tracks official HMRC/GOV.UK guidance through a Knowledge Agent source register and optional live source checks.
 - Flags blockers such as missing scientific/technological uncertainty, missing signed competent professional opinion, missing evidence, missing costs, blocked entitlement, and AIF sequencing risk.

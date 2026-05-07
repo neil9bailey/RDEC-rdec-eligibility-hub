@@ -175,8 +175,16 @@ class CostLine(SQLModel, table=True):
     project_id: int = Field(foreign_key="rdproject.id")
     activity_id: Optional[int] = Field(default=None, foreign_key="activity.id")
     activity: str = ""
+    cost_input_type: str = "direct_cost"
     cost_category: str = "staff"
     person_or_supplier_name: str = ""
+    person_role: str = ""
+    time_period_start: Optional[date] = None
+    time_period_end: Optional[date] = None
+    hours: float = 0
+    hourly_rate: float = 0
+    days: float = 0
+    day_rate: float = 0
     gross_cost: float = 0
     apportionment_percentage: float = 0
     qualifying_amount: float = 0
