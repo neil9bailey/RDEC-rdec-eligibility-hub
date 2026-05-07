@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ScoreResult(BaseModel):
@@ -23,5 +23,7 @@ class AIFSelectionResult(BaseModel):
     selected_qualifying_expenditure: float
     coverage_percentage: float
     minimum_described_projects: int
+    selection_method: str = ""
+    notes: list[str] = Field(default_factory=list)
     ready: bool
     warnings: list[str]

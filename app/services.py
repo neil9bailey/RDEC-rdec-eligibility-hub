@@ -7,6 +7,7 @@ from typing import Iterable
 
 from sqlmodel import Session, col, select
 
+from app.audit import compact_snapshot, log_event
 from app.models import (
     AccountingPeriod,
     Activity,
@@ -21,7 +22,7 @@ from app.models import (
     RDProject,
     Solution,
 )
-from app.rule_loader import load_rule_file
+from app.rules_engine import get_rules
 from app.schemas import AIFSelectionResult, EntitlementResult, ScoreResult
 
 
@@ -124,17 +125,18 @@ def signed_opinion(opinions: list[CompetentProfessionalOpinion]) -> CompetentPro
 
 
 def cost_validation_warnings(cost: CostLine) -> list[str]:
+    rules = get_rules()
     warnings: list[str] = []
     if cost.paid_status != "paid":
-        warnings.append(f"Cost line {cost.id or '-'} is not fully paid.")
+        warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('unpaid_cost')}")
     if cost.cost_category in {"externally provided workers", "subcontractors"} and cost.uk_or_overseas != "UK":
-        warnings.append(f"Cost line {cost.id or '-'} has overseas contractor/EPW indicators.")
+        warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('overseas_contractor_or_epw')}")
     if not has_text(cost.evidence_link):
-        warnings.append(f"Cost line {cost.id or '-'} is missing cost evidence.")
+        warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('missing_evidence')}")
     if cost.apportionment_percentage > 100:
-        warnings.append(f"Cost line {cost.id or '-'} has apportionment over 100%.")
+        warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('apportionment_over_100')}")
     if not cost.activity_id and not has_text(cost.activity):
-        warnings.append(f"Cost line {cost.id or '-'} is missing an activity link.")
+        warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('missing_activity_link')}")
     if cost.cost_input_type == "people_time":
         if not has_text(cost.person_or_supplier_name):
             warnings.append(f"Cost line {cost.id or '-'} is missing the person name.")
@@ -156,6 +158,13 @@ def assess_entitlement(
     grant_funded_or_subsidised: bool,
     company_role: str,
 ) -> EntitlementResult:
+    rules = get_rules()
+    if customer_corporation_tax_status in {"", "unknown", None}:
+        customer_corporation_tax_status = rules.default_corporation_tax_status(
+            customer_type,
+            fallback="unknown",
+        )
+
     if another_party_could_claim and contract_specified_technical_uncertainty:
         return EntitlementResult(
             status="blocked",
@@ -209,9 +218,12 @@ def sync_entitlement_for_project(session: Session, project_id: int) -> Entitleme
     project = context.project
     customer = context.customer
     contract = context.contract
+    customer_tax_status = customer.corporation_tax_status if customer else "unknown"
+    if customer and customer_tax_status in {"", "unknown"}:
+        customer_tax_status = get_rules().default_corporation_tax_status(customer.customer_type)
     result = assess_entitlement(
         customer_type=customer.customer_type if customer else "",
-        customer_corporation_tax_status=customer.corporation_tax_status if customer else "unknown",
+        customer_corporation_tax_status=customer_tax_status,
         customer_intended_or_contemplated_rd=(
             contract.customer_intended_or_contemplated_rd if contract else False
         ),
@@ -224,9 +236,11 @@ def sync_entitlement_for_project(session: Session, project_id: int) -> Entitleme
         grant_funded_or_subsidised=project.grant_funded_or_subsidised,
         company_role=project.company_role,
     )
+    action = "update" if context.entitlement else "create"
     assessment = context.entitlement or EntitlementAssessment(project_id=project.id or 0)
+    before_snapshot = compact_snapshot(assessment) if context.entitlement else ""
     assessment.customer_type = customer.customer_type if customer else ""
-    assessment.customer_corporation_tax_status = customer.corporation_tax_status if customer else "unknown"
+    assessment.customer_corporation_tax_status = customer_tax_status
     assessment.customer_intended_or_contemplated_rd = contract.customer_intended_or_contemplated_rd if contract else False
     assessment.supplier_initiated_rd = project.supplier_initiated_rd
     assessment.uncertainty_discovered_during_delivery = project.uncertainty_discovered_during_delivery
@@ -239,16 +253,25 @@ def sync_entitlement_for_project(session: Session, project_id: int) -> Entitleme
     assessment.status = result.status
     assessment.rationale = result.rationale
     session.add(assessment)
+    session.flush()
+    log_event(
+        session,
+        entity_type="EntitlementAssessment",
+        entity_id=assessment.id,
+        action=action,
+        summary=f"Entitlement assessment {action}d for project {project.project_title}",
+        before=before_snapshot,
+        after=assessment,
+    )
     session.commit()
-    session.refresh(assessment)
     return assessment
 
 
 def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
-    rules = load_rule_file("eligibility_weights.yml")
-    weights = rules["weights"]
-    negative_advance_terms = rules.get("negative_advance_terms", [])
-    negative_uncertainty_terms = rules.get("negative_uncertainty_terms", [])
+    rules = get_rules()
+    weights = rules.eligibility_weights()
+    negative_advance_terms = rules.negative_advance_terms()
+    negative_uncertainty_terms = rules.negative_uncertainty_terms()
     context = get_project_context(session, project_id)
     project = context.project
     score = 0
@@ -260,7 +283,7 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
     if project.accounting_period_id:
         positives.append("Accounting period linked.")
     else:
-        blockers.append("Missing accounting period.")
+        blockers.append(rules.blocker_label("missing_accounting_period"))
 
     if project.rd_start_date and project.boundary_explanation:
         boundary_points = weights["qualifying_project_boundary"]
@@ -276,12 +299,12 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
         score += weights["field_of_science_or_technology"]
         positives.append("Field of science or technology captured.")
     else:
-        blockers.append("No field of science or technology.")
+        blockers.append(rules.blocker_label("missing_field"))
 
     if not has_text(project.advance_sought):
-        blockers.append("No advance sought.")
+        blockers.append(rules.blocker_label("missing_advance"))
     elif contains_any(project.advance_sought, negative_advance_terms):
-        blockers.append("Advance appears only commercial, aesthetic, project management, procurement, or internal learning.")
+        blockers.append(rules.blocker_label("non_technical_advance"))
     else:
         advance_points = weights["advance_sought"] if has_text(project.wider_field_explanation, 80) else 10
         score += advance_points
@@ -290,9 +313,9 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
             warnings.append("Explain more clearly why the advance is in the wider field, not only internal knowledge.")
 
     if not has_text(project.scientific_or_technological_uncertainties):
-        blockers.append("No scientific or technological uncertainty.")
+        blockers.append(rules.blocker_label("missing_uncertainty"))
     elif contains_any(project.scientific_or_technological_uncertainties, negative_uncertainty_terms):
-        blockers.append("Uncertainty appears only commercial, budgetary, resourcing, customer adoption, or implementation planning.")
+        blockers.append(rules.blocker_label("non_technical_uncertainty"))
     else:
         uncertainty_points = (
             weights["scientific_or_technological_uncertainty"]
@@ -317,7 +340,7 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
         score += weights["competent_professional_support"]
         positives.append("Signed competent professional opinion present.")
     else:
-        blockers.append("No signed competent professional opinion.")
+        blockers.append(rules.blocker_label("missing_competent_professional_signoff"))
         next_actions.append("Obtain signed competent professional opinion before treating the project as green.")
 
     if context.evidence:
@@ -326,7 +349,7 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
         if strong_evidence == 0:
             warnings.append("Evidence exists but no item is marked strong.")
     else:
-        blockers.append("No evidence linked to the project.")
+        blockers.append(rules.blocker_label("missing_evidence"))
         next_actions.append("Add evidence for advance, uncertainty, resolution activity, cost, and boundaries.")
 
     if context.costs:
@@ -340,7 +363,7 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
             score += 5
             warnings.extend(all_cost_warnings)
     else:
-        blockers.append("No linked costs for a claimed project.")
+        blockers.append(rules.blocker_label("missing_costs"))
         next_actions.append("Add cost lines with activity links, evidence, and apportionment.")
 
     entitlement = context.entitlement or sync_entitlement_for_project(session, project_id)
@@ -354,7 +377,7 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
         score += 1
         warnings.append("Customer entitlement indicators may be stronger than supplier indicators.")
     elif entitlement.status == "blocked":
-        blockers.append("Customer/supplier entitlement is blocked.")
+        blockers.append(rules.blocker_label("entitlement_blocked"))
 
     if context.submission_status and context.submission_status.ct600_submitted:
         aif_missing = not context.submission_status.aif_submitted
@@ -364,28 +387,32 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
             and context.submission_status.aif_submission_date > context.submission_status.ct600_submission_date
         )
         if aif_missing or aif_after_ct600:
-            blockers.append("Additional Information Form timing risk.")
+            blockers.append(rules.blocker_label("aif_timing_risk"))
             next_actions.append("Review AIF and CT600 sequencing before relying on claim readiness.")
 
     score = max(0, min(100, int(score)))
-    if warnings and not blockers and score >= 80:
-        score = 79
+    bands = rules.score_bands()
+    green_min = int(bands["green"]["min"])
+    amber_min = int(bands["amber"]["min"])
+    weak_min = int(bands["weak"]["min"])
+    if warnings and not blockers and score >= green_min:
+        score = green_min - 1
         warnings.append("Warnings cap the current rating at amber until review points are resolved.")
     if blockers:
-        rating = "red"
-        rating_label = "not currently supportable"
-    elif score >= 80:
-        rating = "green"
-        rating_label = "strong candidate"
-    elif score >= 60:
-        rating = "amber"
-        rating_label = "review required"
-    elif score >= 40:
-        rating = "weak"
-        rating_label = "weak candidate"
+        rating = str(bands["red"]["label"])
+        rating_label = str(bands["red"]["description"])
+    elif score >= green_min:
+        rating = str(bands["green"]["label"])
+        rating_label = str(bands["green"]["description"])
+    elif score >= amber_min:
+        rating = str(bands["amber"]["label"])
+        rating_label = str(bands["amber"]["description"])
+    elif score >= weak_min:
+        rating = str(bands["weak"]["label"])
+        rating_label = str(bands["weak"]["description"])
     else:
-        rating = "red"
-        rating_label = "not currently supportable"
+        rating = str(bands["red"]["label"])
+        rating_label = str(bands["red"]["description"])
 
     if rating != "green":
         next_actions.append("Resolve blockers and warnings before including in an audit-ready claim pack.")
@@ -416,7 +443,8 @@ def claim_notification_deadline(period: AccountingPeriod) -> date:
     # HMRC describes this as 6 months after the period of account end. This MVP
     # uses a date-safe approximation by stepping to the same day six months later
     # and falling back to month end where needed.
-    month = period.period_of_account_end.month + 6
+    months_after_period_end = get_rules().claim_notification_months_after_period_end()
+    month = period.period_of_account_end.month + months_after_period_end
     year = period.period_of_account_end.year + (month - 1) // 12
     month = ((month - 1) % 12) + 1
     day = period.period_of_account_end.day
@@ -435,13 +463,17 @@ def deadline_warning(period: AccountingPeriod, today: date | None = None) -> str
         return None
     if today > deadline:
         return f"Claim notification deadline appears to have passed on {deadline.isoformat()}."
-    if deadline - today <= timedelta(days=60):
+    if deadline - today <= timedelta(days=get_rules().claim_notification_warning_days()):
         return f"Claim notification deadline approaching: {deadline.isoformat()}."
     return None
 
 
 def aif_project_selection(project_spend: dict[int, float], described_project_ids: set[int] | None = None) -> AIFSelectionResult:
     described_project_ids = described_project_ids or set()
+    rules = get_rules().aif_selection_rules()
+    one_to_three = rules["one_to_three"]
+    four_to_ten = rules["four_to_ten"]
+    more_than_ten = rules["more_than_ten"]
     total = round(sum(project_spend.values()), 2)
     count = len(project_spend)
     if count == 0:
@@ -452,16 +484,22 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
             selected_qualifying_expenditure=0,
             coverage_percentage=0,
             minimum_described_projects=0,
+            selection_method="none",
+            notes=[],
             ready=False,
             warnings=["No projects linked to this accounting period."],
         )
 
-    sorted_projects = sorted(project_spend.items(), key=lambda item: item[1], reverse=True)
-    if count <= 3:
+    sorted_projects = sorted(project_spend.items(), key=lambda item: (-item[1], item[0]))
+    notes: list[str] = []
+    selection_method = "describe all projects"
+    top_10_fallback = False
+    if count <= int(one_to_three["max_projects"]):
         selected = sorted_projects
         minimum_described = count
-    else:
-        target = total * 0.5
+    elif count <= int(four_to_ten["max_projects"]):
+        minimum_described = int(four_to_ten["minimum_described"])
+        target = total * (float(four_to_ten["minimum_qualifying_expenditure_percentage"]) / 100)
         selected = sorted_projects[:3]
         running = sum(amount for _, amount in selected)
         index = 3
@@ -469,9 +507,32 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
             selected.append(sorted_projects[index])
             running += sorted_projects[index][1]
             index += 1
-        minimum_described = 3
-        if count > 10 and len(selected) > 10:
-            selected = sorted_projects[:10]
+        selection_method = "minimum 3 projects and 50% qualifying expenditure"
+    else:
+        minimum_described = int(more_than_ten["minimum_described"])
+        max_described = int(more_than_ten["max_described_if_threshold_requires_more"])
+        target = total * (float(more_than_ten["minimum_qualifying_expenditure_percentage"]) / 100)
+        selected = sorted_projects[:minimum_described]
+        running = sum(amount for _, amount in selected)
+        index = minimum_described
+        while running < target and index < len(sorted_projects):
+            if len(selected) >= max_described:
+                top_10_fallback = True
+                break
+            selected.append(sorted_projects[index])
+            running += sorted_projects[index][1]
+            index += 1
+        if top_10_fallback:
+            selected = sorted_projects[:max_described]
+            selection_method = "top 10 fallback"
+            fallback_note = more_than_ten.get("top_10_fallback_note")
+            notes.append(
+                str(fallback_note)
+                if fallback_note
+                else "Top 10 fallback applied because reaching 50% qualifying expenditure would require more than 10 project descriptions."
+            )
+        else:
+            selection_method = str(more_than_ten.get("selection_method") or "largest qualifying expenditure first")
 
     selected_ids = [project_id for project_id, _ in selected]
     selected_spend = round(sum(amount for _, amount in selected), 2)
@@ -482,7 +543,7 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
     missing_descriptions = [project_id for project_id in selected_ids if project_id not in described_project_ids]
     if missing_descriptions:
         warnings.append(f"Selected project descriptions missing for: {', '.join(map(str, missing_descriptions))}.")
-    if count > 3 and coverage < 50:
+    if count > 3 and coverage < 50 and not top_10_fallback:
         warnings.append("Selected projects do not yet cover at least 50% of qualifying expenditure.")
 
     return AIFSelectionResult(
@@ -492,6 +553,8 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
         selected_qualifying_expenditure=selected_spend,
         coverage_percentage=coverage,
         minimum_described_projects=minimum_described,
+        selection_method=selection_method,
+        notes=notes,
         ready=not warnings,
         warnings=warnings,
     )

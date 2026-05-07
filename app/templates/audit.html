@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Audit - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Audit Events</h1>
+    <p>Latest local MVP audit events for claim-data changes. This is not an immutable production audit store.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <form method="get" action="/audit" class="form-grid">
+    <div class="field">
+      <label>Entity type</label>
+      <select name="entity_type">
+        <option value="">All entities</option>
+        {% for item in entity_types %}
+          <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label>Action</label>
+      <select name="action">
+        <option value="">All actions</option>
+        {% for item in actions %}
+          <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field actions">
+      <label>&nbsp;</label>
+      <button type="submit">Apply filters</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Latest Events</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Actor</th>
+        <th>Entity</th>
+        <th>Action</th>
+        <th>Summary</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in events %}
+        <tr>
+          <td>{{ event.created_at }}</td>
+          <td>{{ event.actor }}</td>
+          <td>{{ event.entity_type }} #{{ event.entity_id or "-" }}</td>
+          <td><span class="badge amber">{{ event.action }}</span></td>
+          <td>{{ event.summary }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="5">No audit events recorded yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

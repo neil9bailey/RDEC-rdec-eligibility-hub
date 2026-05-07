@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlmodel import Session, select
 
 from app.models import CostLine, EvidenceItem, ReviewDecision, RDProject
@@ -12,12 +14,25 @@ from app.services import (
     money,
     project_qualifying_spend,
 )
+from app.rule_loader import rules_version_summary
+
+
+COST_OUTPUT_CAVEAT = "Qualifying expenditure captured for review; relief value and payable credit are not calculated by this MVP."
+ENTITLEMENT_CAVEAT = "Contracted-out and irrelievable-client treatment requires tax review."
 
 
 def bullet_list(items: list[str]) -> str:
     if not items:
         return "- None recorded.\n"
     return "".join(f"- {item}\n" for item in items)
+
+
+def generated_timestamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def rule_version_lines() -> list[str]:
+    return [f"{name}: {version}" for name, version in rules_version_summary().items()]
 
 
 def people_time_lines(costs: list[CostLine]) -> list[str]:
@@ -52,6 +67,10 @@ def generate_project_memo_markdown(session: Session, project_id: int) -> str:
     return f"""# Project Eligibility Memo: {project.project_title}
 
 **Decision-support caveat:** {CAVEAT}
+**Generated at:** {generated_timestamp()}
+
+## Rule versions used
+{bullet_list(rule_version_lines())}
 
 ## Project identity
 - Solution: {context.solution.solution_name if context.solution else "Not linked"}
@@ -87,12 +106,16 @@ def generate_project_memo_markdown(session: Session, project_id: int) -> str:
 ## Evidence index
 {bullet_list(evidence_lines)}
 ## Cost summary
+{COST_OUTPUT_CAVEAT}
+
 {bullet_list(cost_lines)}
 Total qualifying amount captured: {money(total_spend)}
 
 ## People time detail
 {bullet_list(time_lines)}
 ## Entitlement assessment
+{ENTITLEMENT_CAVEAT}
+
 - Status: {entitlement.status if entitlement else "Not assessed"}
 - Rationale: {entitlement.rationale if entitlement else "Not assessed"}
 
@@ -151,6 +174,10 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
     return f"""# Claim Period Pack: {period.label}
 
 **Decision-support caveat:** {CAVEAT}
+**Generated at:** {generated_timestamp()}
+
+## Rule versions used
+{bullet_list(rule_version_lines())}
 
 ## Company details
 - Company: {company.company_name if company else "Missing"}
@@ -167,6 +194,8 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 ## Project list
 {bullet_list(project_lines)}
 ## Total qualifying spend by category
+{COST_OUTPUT_CAVEAT}
+
 {bullet_list(cost_lines)}
 ## People time detail
 {bullet_list(people_time)}
@@ -175,9 +204,15 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 - Project count: {readiness["selection"].project_count}
 - Selected project IDs: {", ".join(map(str, readiness["selection"].selected_project_ids)) or "None"}
 - Selected expenditure coverage: {readiness["selection"].coverage_percentage}%
+- Selection method: {readiness["selection"].selection_method or "Not recorded"}
 - Submission status: {submission_line}
 
+## AIF project-selection notes
+{bullet_list(readiness["selection"].notes)}
+
 ## Contracted-out / public sector entitlement notes
+{ENTITLEMENT_CAVEAT}
+
 {bullet_list(entitlement_notes)}
 ## Evidence gaps
 {bullet_list(evidence_gaps)}
@@ -190,7 +225,12 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 
 def generate_evidence_index_markdown(session: Session) -> str:
     projects = list(session.exec(select(RDProject)))
-    lines = [f"# Evidence Index\n\n**Decision-support caveat:** {CAVEAT}\n"]
+    lines = [
+        f"# Evidence Index\n\n**Decision-support caveat:** {CAVEAT}\n",
+        f"**Generated at:** {generated_timestamp()}\n\n",
+        "## Rule versions used\n",
+        bullet_list(rule_version_lines()),
+    ]
     for project in projects:
         lines.append(f"\n## {project.project_title}\n")
         items = list(session.exec(select(EvidenceItem).where(EvidenceItem.project_id == project.id)))

@@ -244,3 +244,15 @@ class KnowledgeSourceCheck(SQLModel, table=True):
     content_hash: str = ""
     checked_at: datetime = Field(default_factory=utc_now)
     notes: str = ""
+
+
+class AuditEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=utc_now, index=True)
+    actor: str = "local-user"
+    entity_type: str = Field(index=True)
+    entity_id: Optional[int] = Field(default=None, index=True)
+    action: str = Field(index=True)
+    summary: str = ""
+    before_json: str = ""
+    after_json: str = ""

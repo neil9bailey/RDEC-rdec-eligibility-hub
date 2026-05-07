@@ -12,6 +12,7 @@ from app.models import (
     Customer,
     EntitlementAssessment,
     EvidenceItem,
+    AuditEvent,
     KnowledgeSourceCheck,
     RDProject,
     ReviewDecision,
@@ -40,6 +41,7 @@ def test_database_model_creation_metadata_contains_required_tables(session):
         EntitlementAssessment.__tablename__,
         ReviewDecision.__tablename__,
         ClaimPeriodSubmissionStatus.__tablename__,
+        AuditEvent.__tablename__,
     }
     assert expected.issubset(set(SQLModel.metadata.tables.keys()))
 
@@ -52,5 +54,11 @@ def test_report_generation_smoke(seeded_session):
     assert "Project Eligibility Memo" in memo
     assert "Probabilistic Passenger Flow" in memo
     assert "Requires competent professional and tax review." in memo
+    assert "Rule versions used" in memo
+    assert "Generated at" in memo
+    assert "Qualifying expenditure captured for review" in memo
+    assert "Contracted-out and irrelievable-client treatment requires tax review." in memo
     assert "Claim Period Pack" in pack
     assert "Total qualifying spend by category" in pack
+    assert "Selection method" in pack
+    assert "AIF project-selection notes" in pack

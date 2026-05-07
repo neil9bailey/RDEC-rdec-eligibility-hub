@@ -24,6 +24,12 @@
     <p>Total qualifying expenditure captured: <strong>GBP {{ "%.2f"|format(readiness.selection.total_qualifying_expenditure) }}</strong></p>
     <p>Selected project IDs: <strong>{{ readiness.selection.selected_project_ids|join(", ") }}</strong></p>
     <p>Selected coverage: <strong>{{ "%.2f"|format(readiness.selection.coverage_percentage) }}%</strong></p>
+    <p>Selection method: <strong>{{ readiness.selection.selection_method or "Not recorded" }}</strong></p>
+    {% if readiness.selection.notes %}
+      <div class="ok-panel">
+        <ul>{% for note in readiness.selection.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
     <p class="hint">Configured rule: 1 to 3 projects describe all; 4 to 10 describe at least 3 and enough to cover at least 50%; more than 10 follows the same rule with the 10-largest cap if needed.</p>
   </section>
   <section class="panel">

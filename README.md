@@ -8,11 +8,12 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 
 - Captures company, customer, contract/SOW, solution, R&D project, evidence, cost, competent professional, entitlement, and claim-period submission data.
 - Captures people time with roles, periods, hours or days, internal rates, apportionment, and timesheet / PSA evidence links.
-- Scores projects using configurable weighted rules.
+- Scores projects using configurable YAML-backed runtime rules.
 - Tracks official HMRC/GOV.UK guidance through a Knowledge Agent source register and optional live source checks.
 - Flags blockers such as missing scientific/technological uncertainty, missing signed competent professional opinion, missing evidence, missing costs, blocked entitlement, and AIF sequencing risk.
 - Calculates qualifying cost amounts from gross cost and apportionment percentage.
 - Applies configurable Additional Information Form project-selection logic.
+- Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
 - Seeds only reference business units by default, ready for live customer and project entry.
 
@@ -24,6 +25,23 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - It does not replace competent professional judgement, tax review, legal review, or advisor sign-off.
 - It does not call external APIs or require cloud services for the MVP.
 - The Knowledge Agent does not auto-update rule logic. It flags source-review work; rule changes remain controlled YAML updates.
+
+## MVP Hardening Status
+
+This branch hardens the MVP without changing the Docker Desktop workflow or adding cloud services:
+
+- YAML files under `app/rules/` now drive scoring weights, blocker labels, AIF thresholds, cost-warning labels, claim notification timing, entitlement status labels, and customer-type Corporation Tax defaults.
+- AIF readiness now implements the GOV.UK more-than-10-project top-10 fallback. If 50% qualifying expenditure coverage would require more than 10 project descriptions, the Hub selects the 10 largest projects and treats the selection rule as satisfied, while showing an informational note.
+- Customer setup applies entitlement-rule defaults when Corporation Tax status is blank or unknown, while preserving explicit yes/no selections.
+- High-risk forms now return a friendly 400 validation page for malformed dates or numbers rather than raising server errors.
+- `/audit` shows the latest local audit events for key claim-data changes.
+- `/healthz` returns a simple JSON health check for local runtime verification.
+
+## Security And Data Governance Warning
+
+This remains an MVP for local evidence capture and decision support. It is not suitable for live public-sector evidence operations without additional controls, including SSO, role-based access control, formal audit-log review, backup/restore, deployment controls, encryption and retention policies, and evidence export governance.
+
+The current audit log is useful for local traceability, but it is not immutable or append-only. Production use should move to a controlled deployment model, stronger identity, and a database platform such as Postgres with managed migrations.
 
 ## Official Guidance Checked
 
@@ -56,7 +74,7 @@ http://localhost:8080
 Run tests:
 
 ```powershell
-docker compose run --rm app pytest
+docker compose run --rm app pytest -q
 ```
 
 Stop the app:
@@ -72,7 +90,7 @@ Reference business units are loaded automatically when the SQLite database is em
 - Transport
   - Highways
   - Rail
-- SCADA
+  - SCADA
   - TfL
 - Network Services
 - HPC / Hinkley Point C
@@ -127,13 +145,16 @@ It covers business-unit setup, company/accounting period setup, customer and con
 - `app/main.py` - FastAPI routes and Jinja rendering.
 - `app/models.py` - SQLModel database models.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, dashboard metrics.
+- `app/rules_engine.py` - typed runtime accessors and validation for YAML rules.
+- `app/form_utils.py` - safe form parsing helpers and validation responses.
+- `app/audit.py` - compact MVP audit-event helpers.
 - `app/reports.py` - Markdown report generation.
 - `app/knowledge_agent.py` - official source registry, optional live checks, and rule coverage monitoring.
 - `app/seed.py` - clean reference business units and optional demo transport data.
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
 - `app/rules/` - versioned YAML rules.
-- `tests/` - pytest coverage for rules, reports, costs, AIF logic, and models.
+- `tests/` - pytest coverage for rules, reports, costs, AIF logic, models, route smoke tests, validation, and audit logging.
 
 The app uses SQLite for MVP persistence and initialises tables automatically at startup. No secrets are required.
 
@@ -149,7 +170,9 @@ Rules are loaded from YAML at startup:
 - `entitlement_rules.yml`
 - `knowledge_sources.yml`
 
-Each file includes a version and source metadata. Update the YAML first when HMRC guidance changes, then adjust tests if the decision model intentionally changes.
+Each file includes a version and source metadata. The app validates required rule keys at startup and uses these files at runtime, not just as documentation. Update the YAML first when HMRC guidance changes, then adjust tests if the decision model intentionally changes.
+
+The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 projects, the Hub follows the GOV.UK top-10 fallback where reaching 50% qualifying expenditure would require more than 10 project descriptions.
 
 ## Main Pages
 
@@ -162,6 +185,8 @@ Each file includes a version and source metadata. Update the YAML first when HMR
 - `/solutions`
 - `/projects`
 - `/costs`
+- `/audit`
+- `/healthz`
 - `/projects/{id}`
 - `/projects/{id}/assessment`
 - `/projects/{id}/costs`

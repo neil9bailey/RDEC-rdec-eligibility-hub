@@ -1,15 +1,21 @@
+from datetime import date
+
 from sqlmodel import select
 
+from app import rule_loader
 from app.models import RDProject
+from app.rules_engine import clear_rules_cache, get_rules
 from app.services import (
     aif_project_selection,
     assess_entitlement,
+    claim_notification_deadline,
+    deadline_warning,
     calculate_project_score,
     calculate_people_time_gross,
     calculate_qualifying_amount,
     cost_validation_warnings,
 )
-from app.models import CostLine
+from app.models import AccountingPeriod, CostLine
 
 
 def project_by_title(session, title_part: str) -> RDProject:
@@ -96,11 +102,11 @@ def test_cost_apportionment_and_flags():
         activity="",
     )
     warnings = cost_validation_warnings(cost)
-    assert any("not fully paid" in warning for warning in warnings)
-    assert any("overseas contractor/EPW" in warning for warning in warnings)
-    assert any("missing cost evidence" in warning for warning in warnings)
+    assert any("unpaid costs" in warning for warning in warnings)
+    assert any("overseas contractor or EPW" in warning for warning in warnings)
+    assert any("missing evidence" in warning for warning in warnings)
     assert any("over 100%" in warning for warning in warnings)
-    assert any("activity link" in warning for warning in warnings)
+    assert any("missing activity link" in warning for warning in warnings)
 
 
 def test_people_time_validation_flags_missing_time_and_rate():
@@ -136,4 +142,129 @@ def test_aif_project_selection_logic():
     many = aif_project_selection({i: 1 for i in range(1, 31)}, set(range(1, 11)))
     assert len(many.selected_project_ids) == 10
     assert many.coverage_percentage < 50
-    assert not many.ready
+    assert many.ready
+    assert "Top 10 fallback applied" in many.notes[0]
+
+
+def test_aif_top_10_fallback_ready_for_equal_spend_projects():
+    selection = aif_project_selection({i: 1 for i in range(1, 31)}, set(range(1, 11)))
+
+    assert selection.selected_project_ids == list(range(1, 11))
+    assert selection.coverage_percentage == 33.33
+    assert selection.ready
+    assert selection.selection_method == "top 10 fallback"
+    assert any("Top 10 fallback applied" in note for note in selection.notes)
+
+
+def test_aif_top_10_fallback_requires_selected_descriptions():
+    selection = aif_project_selection({i: 1 for i in range(1, 31)}, {1, 2, 3})
+
+    assert selection.selected_project_ids == list(range(1, 11))
+    assert not selection.ready
+    assert any("Selected project descriptions missing" in warning for warning in selection.warnings)
+
+
+def test_aif_more_than_10_selects_projects_that_reach_50_percent():
+    spend = {1: 20, 2: 15, 3: 10, 4: 10}
+    spend.update({i: 5 for i in range(5, 14)})
+
+    selection = aif_project_selection(spend, {1, 2, 3, 4})
+
+    assert selection.selected_project_ids == [1, 2, 3, 4]
+    assert selection.coverage_percentage >= 50
+    assert selection.ready
+    assert not selection.notes
+
+
+def test_aif_four_to_ten_not_ready_without_required_descriptions():
+    selection = aif_project_selection({1: 40, 2: 30, 3: 20, 4: 10}, {1, 2})
+
+    assert selection.selected_project_ids == [1, 2, 3]
+    assert not selection.ready
+    assert any("Selected project descriptions missing" in warning for warning in selection.warnings)
+
+
+def test_aif_four_to_ten_not_ready_when_selected_projects_fail_50_percent():
+    selection = aif_project_selection({1: 0, 2: 0, 3: 0, 4: 0}, {1, 2, 3})
+
+    assert selection.coverage_percentage == 0
+    assert not selection.ready
+    assert any("50%" in warning for warning in selection.warnings)
+
+
+def test_aif_one_to_three_require_all_descriptions():
+    selection = aif_project_selection({1: 100, 2: 75, 3: 25}, {1, 2})
+
+    assert selection.selected_project_ids == [1, 2, 3]
+    assert not selection.ready
+    assert any("Selected project descriptions missing" in warning for warning in selection.warnings)
+
+
+def test_rule_accessors_expose_customer_defaults_and_blocker_labels():
+    rules = get_rules()
+
+    assert rules.default_corporation_tax_status("local authority") == "no"
+    assert rules.default_corporation_tax_status("private transport operator") == "yes"
+    assert rules.default_corporation_tax_status("public corporation") == "unknown"
+    assert rules.blocker_label("missing_field") == "No field of science or technology."
+
+
+def test_score_blocker_labels_are_read_from_yaml(tmp_path, monkeypatch, seeded_session):
+    original_rules_dir = rule_loader.RULES_DIR
+    for path in original_rules_dir.glob("*.yml"):
+        target = tmp_path / path.name
+        target.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    blockers_path = tmp_path / "blockers.yml"
+    text = blockers_path.read_text(encoding="utf-8")
+    text = text.replace("No field of science or technology", "Custom field blocker")
+    blockers_path.write_text(text, encoding="utf-8")
+
+    red = project_by_title(seeded_session, "Dashboard Migration")
+    monkeypatch.setattr(rule_loader, "RULES_DIR", tmp_path)
+    clear_rules_cache()
+    try:
+        score = calculate_project_score(seeded_session, red.id)
+        assert "Custom field blocker." in score.blockers
+    finally:
+        monkeypatch.setattr(rule_loader, "RULES_DIR", original_rules_dir)
+        clear_rules_cache()
+
+
+def test_claim_notification_warning_window_uses_yaml_value():
+    rules = get_rules()
+    period = AccountingPeriod(
+        company_id=1,
+        label="AP",
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 12, 31),
+        period_of_account_start=date(2025, 1, 1),
+        period_of_account_end=date(2025, 12, 31),
+    )
+    deadline = claim_notification_deadline(period)
+    today = deadline.replace(day=deadline.day - 1)
+
+    assert rules.claim_notification_warning_days() == 60
+    assert deadline_warning(period, today=today) is not None
+
+
+def test_changing_aif_threshold_config_changes_behaviour(tmp_path, monkeypatch):
+    original_rules_dir = rule_loader.RULES_DIR
+    for path in original_rules_dir.glob("*.yml"):
+        target = tmp_path / path.name
+        target.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    aif_path = tmp_path / "aif_rules.yml"
+    text = aif_path.read_text(encoding="utf-8")
+    text = text.replace("minimum_qualifying_expenditure_percentage: 50", "minimum_qualifying_expenditure_percentage: 80")
+    aif_path.write_text(text, encoding="utf-8")
+
+    monkeypatch.setattr(rule_loader, "RULES_DIR", tmp_path)
+    clear_rules_cache()
+    try:
+        selection = aif_project_selection({1: 40, 2: 20, 3: 15, 4: 10, 5: 10, 6: 5}, {1, 2, 3, 4})
+        assert selection.selected_project_ids == [1, 2, 3, 4]
+        assert selection.coverage_percentage >= 80
+    finally:
+        monkeypatch.setattr(rule_loader, "RULES_DIR", original_rules_dir)
+        clear_rules_cache()
