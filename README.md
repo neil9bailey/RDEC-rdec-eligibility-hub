@@ -153,6 +153,7 @@ Each file includes a version and source metadata. Update the YAML first when HMR
 - `/contracts`
 - `/solutions`
 - `/projects`
+- `/costs`
 - `/projects/{id}`
 - `/projects/{id}/assessment`
 - `/projects/{id}/costs`

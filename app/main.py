@@ -336,6 +336,40 @@ def projects(request: Request, session: Session = Depends(get_session)):
     )
 
 
+@app.get("/costs", response_class=HTMLResponse)
+def costs(request: Request, session: Session = Depends(get_session)):
+    cost_lines = list(session.exec(select(CostLine).order_by(col(CostLine.id))))
+    projects = list(session.exec(select(RDProject).order_by(col(RDProject.project_title))))
+    solutions = list(session.exec(select(Solution).order_by(col(Solution.solution_name))))
+    customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
+    solution_map = {solution.id: solution for solution in solutions}
+    customer_map = {customer.id: customer for customer in customers}
+    project_map = {project.id: project for project in projects}
+    project_cost_counts = {project.id: 0 for project in projects}
+    for cost in cost_lines:
+        if cost.project_id in project_cost_counts:
+            project_cost_counts[cost.project_id] += 1
+    totals = {
+        "gross_cost": round(sum(cost.gross_cost for cost in cost_lines), 2),
+        "qualifying_amount": round(sum(cost.qualifying_amount for cost in cost_lines), 2),
+        "people_time_lines": sum(1 for cost in cost_lines if cost.cost_input_type == "people_time"),
+        "direct_cost_lines": sum(1 for cost in cost_lines if cost.cost_input_type != "people_time"),
+    }
+    return templates.TemplateResponse(
+        "costs.html",
+        template_context(
+            request,
+            cost_lines=cost_lines,
+            projects=projects,
+            project_map=project_map,
+            solution_map=solution_map,
+            customer_map=customer_map,
+            project_cost_counts=project_cost_counts,
+            totals=totals,
+        ),
+    )
+
+
 @app.post("/projects")
 async def create_project(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
