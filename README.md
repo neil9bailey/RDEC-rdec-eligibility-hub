@@ -8,6 +8,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 
 - Captures company, customer, contract/SOW, solution, R&D project, evidence, cost, competent professional, entitlement, and claim-period submission data.
 - Scores projects using configurable weighted rules.
+- Tracks official HMRC/GOV.UK guidance through a Knowledge Agent source register and optional live source checks.
 - Flags blockers such as missing scientific/technological uncertainty, missing signed competent professional opinion, missing evidence, missing costs, blocked entitlement, and AIF sequencing risk.
 - Calculates qualifying cost amounts from gross cost and apportionment percentage.
 - Applies configurable Additional Information Form project-selection logic.
@@ -21,6 +22,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - It does not calculate Corporation Tax relief values or payable credits.
 - It does not replace competent professional judgement, tax review, legal review, or advisor sign-off.
 - It does not call external APIs or require cloud services for the MVP.
+- The Knowledge Agent does not auto-update rule logic. It flags source-review work; rule changes remain controlled YAML updates.
 
 ## Official Guidance Checked
 
@@ -95,12 +97,29 @@ docker compose up --build
 
 The reference business units will be recreated on the next startup.
 
+## Knowledge Agent
+
+The Knowledge Agent is available at `/knowledge-agent`.
+
+It uses `app/rules/knowledge_sources.yml` as a curated register of official sources covering R&D definition, merged RDEC / ERIS, AIF, claim notification, qualifying costs, overseas restrictions, and contracted-out entitlement rules.
+
+Normal app operation does not require internet access. When internet access is available, use **Check official sources** to fetch approved official domains and record:
+
+- HTTP status
+- detected GOV.UK updated date where available
+- last-modified header where available
+- content hash
+- check timestamp
+
+The agent is intentionally conservative: it never changes scoring, blockers, entitlement, AIF logic, or cost rules automatically. A user must review official changes, update the relevant YAML rule file, and keep the output caveat: "Requires competent professional and tax review."
+
 ## Architecture Overview
 
 - `app/main.py` - FastAPI routes and Jinja rendering.
 - `app/models.py` - SQLModel database models.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, dashboard metrics.
 - `app/reports.py` - Markdown report generation.
+- `app/knowledge_agent.py` - official source registry, optional live checks, and rule coverage monitoring.
 - `app/seed.py` - clean reference business units and optional demo transport data.
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
@@ -119,12 +138,14 @@ Rules are loaded from YAML at startup:
 - `claim_period_rules.yml`
 - `aif_rules.yml`
 - `entitlement_rules.yml`
+- `knowledge_sources.yml`
 
 Each file includes a version and source metadata. Update the YAML first when HMRC guidance changes, then adjust tests if the decision model intentionally changes.
 
 ## Main Pages
 
 - `/`
+- `/knowledge-agent`
 - `/business-units`
 - `/companies`
 - `/customers`

@@ -23,6 +23,7 @@ from app.models import (
     RDProject,
     Solution,
 )
+from app.knowledge_agent import knowledge_agent_summary, knowledge_review_actions, run_live_source_checks
 from app.reports import generate_claim_period_pack_markdown, generate_evidence_index_markdown, generate_project_memo_markdown
 from app.rule_loader import rules_version_summary
 from app.seed import seed_business_units, seed_demo_data
@@ -86,6 +87,27 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     return templates.TemplateResponse(
         "dashboard.html",
         template_context(request, metrics=metrics, projects=projects),
+    )
+
+
+@app.get("/knowledge-agent", response_class=HTMLResponse)
+def knowledge_agent(request: Request, session: Session = Depends(get_session)):
+    summary = knowledge_agent_summary(session)
+    actions = knowledge_review_actions(session)
+    return templates.TemplateResponse(
+        "knowledge_agent.html",
+        template_context(request, summary=summary, actions=actions, live_checks=None),
+    )
+
+
+@app.post("/knowledge-agent/check", response_class=HTMLResponse)
+def knowledge_agent_check(request: Request, session: Session = Depends(get_session)):
+    live_checks = run_live_source_checks(session)
+    summary = knowledge_agent_summary(session)
+    actions = knowledge_review_actions(session)
+    return templates.TemplateResponse(
+        "knowledge_agent.html",
+        template_context(request, summary=summary, actions=actions, live_checks=live_checks),
     )
 
 

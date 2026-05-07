@@ -222,3 +222,17 @@ class ClaimPeriodSubmissionStatus(SQLModel, table=True):
     aif_submitted: bool = False
     aif_submission_date: Optional[date] = None
     notes: str = ""
+
+
+class KnowledgeSourceCheck(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: str = Field(index=True)
+    title: str
+    url: str
+    ok: bool = False
+    status_code: int = 0
+    last_modified_header: str = ""
+    detected_last_updated: str = ""
+    content_hash: str = ""
+    checked_at: datetime = Field(default_factory=utc_now)
+    notes: str = ""

@@ -1,0 +1,194 @@
+version: "2026-05-07"
+agent_policy:
+  scope: "Official GOV.UK, HMRC manuals, and official publishing.service.gov.uk documents only."
+  runtime_network_required: false
+  auto_update_rules: false
+  caveat: "Knowledge Agent monitoring is decision support only. Requires competent professional and tax review."
+sources:
+  - id: dsit-guidelines-2023
+    title: "CIRD81910 - DSIT Guidelines (2023)"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird81910"
+    topic: "R&D definition"
+    applies_to_rules:
+      - eligibility_weights.yml
+      - blockers.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: rd-definition-tax
+    title: "CIRD81300 - Definition of R&D for tax purposes"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird81300"
+    topic: "R&D definition and competent professional"
+    applies_to_rules:
+      - eligibility_weights.yml
+      - blockers.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: merged-rdec-eris-guidance
+    title: "Merged RDEC and ERIS guidance"
+    url: "https://www.gov.uk/guidance/research-and-development-rd-tax-relief-the-merged-scheme-and-enhanced-rd-intensive-support"
+    topic: "Merged RDEC / ERIS"
+    applies_to_rules:
+      - claim_period_rules.yml
+      - cost_categories.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird111000-new-rdec
+    title: "CIRD111000 - New RDEC overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird111000"
+    topic: "New RDEC overview"
+    applies_to_rules:
+      - claim_period_rules.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird120000-eris
+    title: "CIRD120000 - ERIS contents"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird120000"
+    topic: "Enhanced R&D intensive support"
+    applies_to_rules:
+      - claim_period_rules.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: aif-gov-guidance
+    title: "Additional information before claiming R&D tax relief"
+    url: "https://www.gov.uk/guidance/submit-detailed-information-before-you-claim-research-and-development-rd-tax-relief"
+    topic: "Additional Information Form"
+    applies_to_rules:
+      - aif_rules.yml
+      - claim_period_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird182000-aif
+    title: "CIRD182000 - Claims process: Additional Information Form"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird182000"
+    topic: "Additional Information Form"
+    applies_to_rules:
+      - aif_rules.yml
+      - claim_period_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: claim-notification-gov-guidance
+    title: "Tell HMRC you want to claim R&D tax relief"
+    url: "https://www.gov.uk/guidance/tell-hmrc-that-youre-planning-to-claim-research-and-development-rd-tax-relief"
+    topic: "Claim notification"
+    applies_to_rules:
+      - claim_period_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird183000-pre-notification
+    title: "CIRD183000 - Pre-notification of claims"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird183000"
+    topic: "Claim notification"
+    applies_to_rules:
+      - claim_period_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird131000-qualifying-expenditure
+    title: "CIRD131000 - Qualifying expenditure overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird131000"
+    topic: "Qualifying costs"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird133000-staffing-costs
+    title: "CIRD133000 - Staffing costs"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird133000"
+    topic: "Staff costs"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird134000-software
+    title: "CIRD134000 - Software"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird134000"
+    topic: "Software costs"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird135000-data-cloud
+    title: "CIRD135000 - Data licences and cloud computing services"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird135000"
+    topic: "Data and cloud costs"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird136000-consumables
+    title: "CIRD136000 - Consumable items"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird136000"
+    topic: "Consumables"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "medium"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 60
+  - id: cird137000-epw
+    title: "CIRD137000 - Externally provided workers"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird137000"
+    topic: "Externally provided workers"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird138000-contractor-payments
+    title: "CIRD138000 - Contractor payments"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird138000"
+    topic: "Subcontractors and contractor payments"
+    applies_to_rules:
+      - cost_categories.yml
+      - entitlement_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird150500-overseas
+    title: "CIRD150500 - Overseas restrictions overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird150500"
+    topic: "Overseas contractor and EPW restrictions"
+    applies_to_rules:
+      - cost_categories.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird161000-contracted-out
+    title: "CIRD161000 - Contracted out R&D overview"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird161000"
+    topic: "Contracted-out R&D and entitlement"
+    applies_to_rules:
+      - entitlement_rules.yml
+    priority: "critical"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 30
+  - id: cird163000-ineligible-companies
+    title: "CIRD163000 - Ineligible companies"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird163000"
+    topic: "Irrelievable and ineligible client handling"
+    applies_to_rules:
+      - entitlement_rules.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
+  - id: cird165000-transitional
+    title: "CIRD165000 - Contracted-out R&D transitional provisions"
+    url: "https://www.gov.uk/hmrc-internal-manuals/corporate-intangibles-research-and-development-manual/cird165000"
+    topic: "Contracted-out transitional provisions"
+    applies_to_rules:
+      - entitlement_rules.yml
+      - claim_period_rules.yml
+    priority: "high"
+    last_reviewed: "2026-05-07"
+    review_interval_days: 45
