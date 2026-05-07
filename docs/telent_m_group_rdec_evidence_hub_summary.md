@@ -47,10 +47,10 @@ The current clean instance is configured with the following business-unit refere
 - Transport
   - Highways
   - Rail
-  - Scada
+  - SCADA
   - TfL
 - Network Services
-- HPC / Hinckley Point C
+- HPC / Hinkley Point C
 - Nuclear Power
 - Core Central Asset Management
 

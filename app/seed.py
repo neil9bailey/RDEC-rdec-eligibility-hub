@@ -21,6 +21,12 @@ from app.models import (
 from app.services import calculate_qualifying_amount, sync_entitlement_for_project
 
 
+BUSINESS_UNIT_RENAMES = {
+    "Scada": "SCADA",
+    "HPC / Hinckley Point C": "HPC / Hinkley Point C",
+}
+
+
 BUSINESS_UNIT_TREE = [
     {
         "name": "Transport",
@@ -38,7 +44,7 @@ BUSINESS_UNIT_TREE = [
         "description": "Transport business unit for rail customers and solutions.",
     },
     {
-        "name": "Scada",
+        "name": "SCADA",
         "parent": "Transport",
         "description": "Transport business unit for SCADA and operational technology work.",
     },
@@ -53,9 +59,9 @@ BUSINESS_UNIT_TREE = [
         "description": "Network Services business unit; customers are added as live data.",
     },
     {
-        "name": "HPC / Hinckley Point C",
+        "name": "HPC / Hinkley Point C",
         "parent": None,
-        "description": "HPC / Hinckley Point C business unit.",
+        "description": "HPC / Hinkley Point C business unit.",
     },
     {
         "name": "Nuclear Power",
@@ -71,6 +77,15 @@ BUSINESS_UNIT_TREE = [
 
 
 def seed_business_units(session: Session) -> None:
+    for old_name, new_name in BUSINESS_UNIT_RENAMES.items():
+        old_unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == old_name)).first()
+        new_unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == new_name)).first()
+        if old_unit and not new_unit:
+            old_unit.name = new_name
+            old_unit.description = old_unit.description.replace(old_name, new_name)
+            session.add(old_unit)
+            session.commit()
+
     existing = {unit.name: unit for unit in session.exec(select(BusinessUnit))}
     for item in BUSINESS_UNIT_TREE:
         if item["name"] in existing:

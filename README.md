@@ -72,10 +72,10 @@ Reference business units are loaded automatically when the SQLite database is em
 - Transport
   - Highways
   - Rail
-  - Scada
+- SCADA
   - TfL
 - Network Services
-- HPC / Hinckley Point C
+- HPC / Hinkley Point C
 - Nuclear Power
 - Core Central Asset Management
 
@@ -113,6 +113,14 @@ Normal app operation does not require internet access. When internet access is a
 - check timestamp
 
 The agent is intentionally conservative: it never changes scoring, blockers, entitlement, AIF logic, or cost rules automatically. A user must review official changes, update the relevant YAML rule file, and keep the output caveat: "Requires competent professional and tax review."
+
+## Operating Procedure
+
+The end-to-end Telent / M Group operating procedure is available at:
+
+- [`docs/telent_m_group_rdec_evidence_hub_operating_procedure.md`](docs/telent_m_group_rdec_evidence_hub_operating_procedure.md)
+
+It covers business-unit setup, company/accounting period setup, customer and contract capture, solution intake, R&D candidate assessment, competent professional sign-off, evidence capture, people time and cost capture, AIF readiness, Finance handover, Ayming handover, and a National Highways NRTS3 worked example.
 
 ## Architecture Overview
 
