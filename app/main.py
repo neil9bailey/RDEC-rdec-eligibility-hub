@@ -212,6 +212,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     projects = list(session.exec(select(RDProject).order_by(col(RDProject.project_title))))
     metrics = dashboard_metrics(session)
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         template_context(request, metrics=metrics, projects=projects),
     )
@@ -222,6 +223,7 @@ def knowledge_agent(request: Request, session: Session = Depends(get_session)):
     summary = knowledge_agent_summary(session)
     actions = knowledge_review_actions(session)
     return templates.TemplateResponse(
+        request,
         "knowledge_agent.html",
         template_context(request, summary=summary, actions=actions, live_checks=None),
     )
@@ -233,6 +235,7 @@ def knowledge_agent_check(request: Request, session: Session = Depends(get_sessi
     summary = knowledge_agent_summary(session)
     actions = knowledge_review_actions(session)
     return templates.TemplateResponse(
+        request,
         "knowledge_agent.html",
         template_context(request, summary=summary, actions=actions, live_checks=live_checks),
     )
@@ -243,6 +246,7 @@ def companies(request: Request, session: Session = Depends(get_session)):
     companies = list(session.exec(select(Company).order_by(col(Company.company_name))))
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
     return templates.TemplateResponse(
+        request,
         "companies.html",
         template_context(request, companies=companies, periods=periods),
     )
@@ -407,6 +411,7 @@ def customers(request: Request, session: Session = Depends(get_session)):
     business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
     business_unit_map = {unit.id: unit for unit in business_units}
     return templates.TemplateResponse(
+        request,
         "customers.html",
         template_context(
             request,
@@ -515,6 +520,7 @@ def business_units(request: Request, session: Session = Depends(get_session)):
         if customer.business_unit_id in customer_counts:
             customer_counts[customer.business_unit_id] += 1
     return templates.TemplateResponse(
+        request,
         "business_units.html",
         template_context(
             request,
@@ -573,6 +579,7 @@ def contracts(request: Request, session: Session = Depends(get_session)):
     customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
     customer_map = {customer.id: customer for customer in customers}
     return templates.TemplateResponse(
+        request,
         "contracts.html",
         template_context(request, contracts=contracts, customers=customers, customer_map=customer_map),
     )
@@ -649,6 +656,7 @@ def solutions(request: Request, session: Session = Depends(get_session)):
     customer_map = {customer.id: customer for customer in customers}
     contract_map = {contract.id: contract for contract in contracts}
     return templates.TemplateResponse(
+        request,
         "solutions.html",
         template_context(
             request,
@@ -727,6 +735,7 @@ def projects(request: Request, session: Session = Depends(get_session)):
     period_map = {period.id: period for period in periods}
     scores = {project.id: calculate_project_score(session, project.id or 0) for project in projects}
     return templates.TemplateResponse(
+        request,
         "projects.html",
         template_context(
             request,
@@ -760,6 +769,7 @@ def costs(request: Request, session: Session = Depends(get_session)):
         "direct_cost_lines": sum(1 for cost in cost_lines if cost.cost_input_type != "people_time"),
     }
     return templates.TemplateResponse(
+        request,
         "costs.html",
         template_context(
             request,
@@ -855,6 +865,7 @@ def project_detail(project_id: int, request: Request, session: Session = Depends
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
+        request,
         "project_detail.html",
         template_context(request, context=context, score=score),
     )
@@ -866,6 +877,7 @@ def project_assessment(project_id: int, request: Request, session: Session = Dep
     score = calculate_project_score(session, project_id)
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
     return templates.TemplateResponse(
+        request,
         "project_assessment.html",
         template_context(request, context=context, score=score, periods=periods),
     )
@@ -919,6 +931,7 @@ def project_costs(project_id: int, request: Request, session: Session = Depends(
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
+        request,
         "project_costs.html",
         template_context(request, context=context, score=score),
     )
@@ -934,7 +947,7 @@ async def add_project_cost(project_id: int, request: Request, session: Session =
     save_with_audit(session, cost, "create", f"Created cost line for project {project_id}")
     context = get_project_context(session, project_id)
     if wants_partial(request):
-        return templates.TemplateResponse("_cost_lines.html", template_context(request, context=context))
+        return templates.TemplateResponse(request, "_cost_lines.html", template_context(request, context=context))
     return redirect(f"/projects/{project_id}/costs")
 
 
@@ -970,6 +983,7 @@ def project_evidence(project_id: int, request: Request, session: Session = Depen
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
+        request,
         "project_evidence.html",
         template_context(request, context=context, score=score),
     )
@@ -1000,7 +1014,7 @@ async def add_project_evidence(project_id: int, request: Request, session: Sessi
     save_with_audit(session, evidence, "create", f"Created evidence item for project {project_id}")
     context = get_project_context(session, project_id)
     if wants_partial(request):
-        return templates.TemplateResponse("_evidence_items.html", template_context(request, context=context))
+        return templates.TemplateResponse(request, "_evidence_items.html", template_context(request, context=context))
     return redirect(f"/projects/{project_id}/evidence")
 
 
@@ -1045,6 +1059,7 @@ def project_competent_professional(project_id: int, request: Request, session: S
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
+        request,
         "project_competent_professional.html",
         template_context(request, context=context, score=score),
     )
@@ -1123,6 +1138,7 @@ def project_report(project_id: int, request: Request, format: str | None = None,
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
+        request,
         "project_report.html",
         template_context(request, context=context, score=score, markdown=markdown),
     )
@@ -1132,6 +1148,7 @@ def project_report(project_id: int, request: Request, format: str | None = None,
 def claim_period_readiness(period_id: int, request: Request, session: Session = Depends(get_session)):
     readiness = aif_readiness_for_period(session, period_id)
     return templates.TemplateResponse(
+        request,
         "claim_period_readiness.html",
         template_context(request, readiness=readiness),
     )
@@ -1179,6 +1196,7 @@ def claim_period_pack(period_id: int, request: Request, format: str | None = Non
         )
     readiness = aif_readiness_for_period(session, period_id)
     return templates.TemplateResponse(
+        request,
         "claim_period_pack.html",
         template_context(request, readiness=readiness, markdown=markdown),
     )
@@ -1193,7 +1211,7 @@ def evidence_index(request: Request, format: str | None = None, session: Session
             media_type="text/markdown",
             headers={"Content-Disposition": 'attachment; filename="evidence-index.md"'},
         )
-    return templates.TemplateResponse("evidence_index.html", template_context(request, markdown=markdown))
+    return templates.TemplateResponse(request, "evidence_index.html", template_context(request, markdown=markdown))
 
 
 @app.get("/audit", response_class=HTMLResponse)
@@ -1212,6 +1230,7 @@ def audit(
     entity_types = sorted({item for item in session.exec(select(AuditEvent.entity_type)).all() if item})
     actions = sorted({item for item in session.exec(select(AuditEvent.action)).all() if item})
     return templates.TemplateResponse(
+        request,
         "audit.html",
         template_context(
             request,
