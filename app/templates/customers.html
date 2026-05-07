@@ -25,6 +25,40 @@
           <p><span class="badge amber">{{ customer.customer_type }}</span> <span class="badge weak">{{ customer.transport_domain }}</span></p>
           <p>Corporation Tax status: <strong>{{ customer.corporation_tax_status }}</strong></p>
           <p class="muted">{{ customer.notes }}</p>
+          <details>
+            <summary>Edit / delete</summary>
+            <form method="post" action="/customers/{{ customer.id }}/update">
+              <div class="field"><label>Customer name</label><input name="customer_name" value="{{ customer.customer_name }}" required></div>
+              <div class="field">
+                <label>Business unit</label>
+                <select name="business_unit_id">
+                  <option value="">Unassigned</option>
+                  {% for unit in business_units %}<option value="{{ unit.id }}" {% if customer.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="field"><label>Sector</label><input name="sector" value="{{ customer.sector }}"></div>
+              <div class="form-grid">
+                <div class="field">
+                  <label>Transport domain</label>
+                  <select name="transport_domain">{% for item in domain.TRANSPORT_DOMAINS %}<option {% if customer.transport_domain == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                </div>
+                <div class="field">
+                  <label>Customer type</label>
+                  <select name="customer_type">{% for item in domain.CUSTOMER_TYPES %}<option {% if customer.customer_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                </div>
+                <div class="field">
+                  <label>Likely chargeable to Corporation Tax</label>
+                  <select name="corporation_tax_status">{% for item in domain.CORPORATION_TAX_STATUSES %}<option {% if customer.corporation_tax_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                </div>
+              </div>
+              <div class="field"><label>Notes</label><textarea name="notes">{{ customer.notes }}</textarea></div>
+              <button type="submit">Update customer</button>
+            </form>
+            <form method="post" action="/customers/{{ customer.id }}/delete">
+              <button class="secondary" type="submit">Delete</button>
+              <p class="hint">Delete is blocked if contracts or solutions are linked.</p>
+            </form>
+          </details>
         </article>
       {% endfor %}
     </div>

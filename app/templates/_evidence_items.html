@@ -17,7 +17,38 @@
             <td>{{ item.evidence_type }}</td>
             <td>{{ item.relevance_tag }}</td>
             <td><span class="badge {{ 'green' if item.strength == 'strong' else 'amber' if item.strength == 'moderate' else 'red' }}">{{ item.strength }}</span></td>
-            <td>{{ item.source_reference }}<br><span class="muted">{{ item.url_or_file_path }}</span></td>
+            <td>
+              {{ item.source_reference }}<br><span class="muted">{{ item.url_or_file_path }}</span>
+              <details>
+                <summary>Edit</summary>
+                <form method="post" action="/evidence/{{ item.id }}/update">
+                  <div class="field">
+                    <label>Source system</label>
+                    <select name="source_system">{% for option in domain.SOURCE_SYSTEMS %}<option {% if item.source_system == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                  </div>
+                  <div class="field"><label>Source reference</label><input name="source_reference" value="{{ item.source_reference }}"></div>
+                  <div class="field"><label>URL or file path</label><input name="url_or_file_path" value="{{ item.url_or_file_path }}"></div>
+                  <div class="field"><label>Date created</label><input name="date_created" type="date" value="{{ item.date_created or '' }}"></div>
+                  <div class="field">
+                    <label>Evidence type</label>
+                    <select name="evidence_type">{% for option in domain.EVIDENCE_TYPES %}<option {% if item.evidence_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                  </div>
+                  <div class="field">
+                    <label>Relevance tag</label>
+                    <select name="relevance_tag">{% for option in domain.RELEVANCE_TAGS %}<option {% if item.relevance_tag == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                  </div>
+                  <div class="field">
+                    <label>Strength</label>
+                    <select name="strength">{% for option in domain.EVIDENCE_STRENGTHS %}<option {% if item.strength == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                  </div>
+                  <div class="field"><label>Notes</label><textarea name="notes">{{ item.notes }}</textarea></div>
+                  <button type="submit">Update evidence</button>
+                </form>
+              </details>
+              <form method="post" action="/evidence/{{ item.id }}/delete" style="margin-top: 8px;">
+                <button class="secondary" type="submit">Delete</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
       </tbody>

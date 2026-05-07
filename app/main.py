@@ -12,6 +12,7 @@ from app import domain
 from app.database import engine, get_session, init_db
 from app.models import (
     AccountingPeriod,
+    Activity,
     BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
@@ -19,9 +20,12 @@ from app.models import (
     Contract,
     CostLine,
     Customer,
+    EntitlementAssessment,
     EvidenceItem,
     RDProject,
+    ReviewDecision,
     Solution,
+    TechnicalUncertainty,
 )
 from app.knowledge_agent import knowledge_agent_summary, knowledge_review_actions, run_live_source_checks
 from app.reports import generate_claim_period_pack_markdown, generate_evidence_index_markdown, generate_project_memo_markdown
@@ -41,6 +45,27 @@ from app.services import (
     sync_entitlement_for_project,
 )
 from app.settings import BASE_DIR, get_settings
+
+
+DEPENDENCY_RULES = {
+    Company: [(AccountingPeriod, AccountingPeriod.company_id, "accounting periods")],
+    AccountingPeriod: [(RDProject, RDProject.accounting_period_id, "R&D projects")],
+    BusinessUnit: [
+        (BusinessUnit, BusinessUnit.parent_id, "child business units"),
+        (Customer, Customer.business_unit_id, "customers"),
+    ],
+    Customer: [(Contract, Contract.customer_id, "contracts"), (Solution, Solution.customer_id, "solutions")],
+    Contract: [(Solution, Solution.contract_id, "solutions")],
+    Solution: [(RDProject, RDProject.solution_id, "R&D projects")],
+    RDProject: [
+        (TechnicalUncertainty, TechnicalUncertainty.project_id, "technical uncertainties"),
+        (Activity, Activity.project_id, "activities"),
+        (CostLine, CostLine.project_id, "cost lines"),
+        (EvidenceItem, EvidenceItem.project_id, "evidence items"),
+        (CompetentProfessionalOpinion, CompetentProfessionalOpinion.project_id, "competent professional opinions"),
+        (ReviewDecision, ReviewDecision.project_id, "review decisions"),
+    ],
+}
 
 
 @asynccontextmanager
@@ -79,6 +104,53 @@ def redirect(path: str) -> RedirectResponse:
 
 def wants_partial(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def cost_line_from_form(form, project_id: int, cost: CostLine | None = None) -> CostLine:
+    hours = float(form.get("hours") or 0)
+    hourly_rate = float(form.get("hourly_rate") or 0)
+    days = float(form.get("days") or 0)
+    day_rate = float(form.get("day_rate") or 0)
+    gross_cost = float(form.get("gross_cost") or 0)
+    cost_input_type = str(form.get("cost_input_type") or "direct_cost")
+    if cost_input_type == "people_time" and gross_cost == 0:
+        gross_cost = calculate_people_time_gross(hours, hourly_rate, days, day_rate)
+    cost = cost or CostLine(project_id=project_id)
+    cost.project_id = project_id
+    cost.activity = str(form.get("activity") or "")
+    cost.cost_input_type = cost_input_type
+    cost.cost_category = str(form.get("cost_category") or "other")
+    cost.person_or_supplier_name = str(form.get("person_or_supplier_name") or "")
+    cost.person_role = str(form.get("person_role") or "")
+    cost.time_period_start = parse_date(str(form.get("time_period_start") or ""))
+    cost.time_period_end = parse_date(str(form.get("time_period_end") or ""))
+    cost.hours = hours
+    cost.hourly_rate = hourly_rate
+    cost.days = days
+    cost.day_rate = day_rate
+    cost.gross_cost = gross_cost
+    cost.apportionment_percentage = float(form.get("apportionment_percentage") or 0)
+    cost.qualifying_amount = calculate_qualifying_amount(cost.gross_cost, cost.apportionment_percentage)
+    cost.paid_status = str(form.get("paid_status") or "paid")
+    cost.uk_or_overseas = str(form.get("uk_or_overseas") or "unknown")
+    cost.connected_party_status = str(form.get("connected_party_status") or "unknown")
+    cost.paye_nic_notes = str(form.get("paye_nic_notes") or "")
+    cost.evidence_link = str(form.get("evidence_link") or "")
+    cost.notes = str(form.get("notes") or "")
+    return cost
+
+
+def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -> RedirectResponse:
+    item = session.get(model, item_id)
+    if not item:
+        return redirect(redirect_path)
+    for child_model, child_field, label in DEPENDENCY_RULES.get(model, []):
+        child = session.exec(select(child_model).where(child_field == item_id)).first()
+        if child:
+            return redirect(f"{redirect_path}?error=delete_blocked_{label.replace(' ', '_')}")
+    session.delete(item)
+    session.commit()
+    return redirect(redirect_path)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -149,6 +221,39 @@ async def create_company(request: Request, session: Session = Depends(get_sessio
     return redirect("/companies")
 
 
+@app.post("/companies/{company_id}/update")
+async def update_company(company_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    company = session.get(Company, company_id)
+    if not company:
+        return redirect("/companies")
+    company.company_name = str(form.get("company_name") or "")
+    company.utr = str(form.get("utr") or "")
+    company.paye_reference = str(form.get("paye_reference") or "")
+    company.vat_number = str(form.get("vat_number") or "")
+    company.sic_code = str(form.get("sic_code") or "")
+    company.registered_office_country = str(form.get("registered_office_country") or "United Kingdom")
+    company.registered_office_region = str(form.get("registered_office_region") or "")
+    company.northern_ireland_registered = as_bool(form.get("northern_ireland_registered"))
+    company.senior_rd_contact_name = str(form.get("senior_rd_contact_name") or "")
+    company.senior_rd_contact_role = str(form.get("senior_rd_contact_role") or "")
+    company.senior_rd_contact_email = str(form.get("senior_rd_contact_email") or "")
+    company.senior_rd_contact_phone = str(form.get("senior_rd_contact_phone") or "")
+    company.agent_name = str(form.get("agent_name") or "")
+    company.agent_reference = str(form.get("agent_reference") or "")
+    company.agent_email = str(form.get("agent_email") or "")
+    company.agent_phone = str(form.get("agent_phone") or "")
+    company.agent_role = str(form.get("agent_role") or "")
+    session.add(company)
+    session.commit()
+    return redirect("/companies")
+
+
+@app.post("/companies/{company_id}/delete")
+def delete_company(company_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, Company, company_id, "/companies")
+
+
 @app.post("/accounting-periods")
 async def create_accounting_period(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
@@ -170,6 +275,41 @@ async def create_accounting_period(request: Request, session: Session = Depends(
     session.add(ClaimPeriodSubmissionStatus(accounting_period_id=period.id or 0))
     session.commit()
     return redirect("/companies")
+
+
+@app.post("/accounting-periods/{period_id}/update")
+async def update_accounting_period(period_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    period = session.get(AccountingPeriod, period_id)
+    if not period:
+        return redirect("/companies")
+    period.company_id = int(form.get("company_id") or 0)
+    period.label = str(form.get("label") or "")
+    period.start_date = parse_date(str(form.get("start_date") or "")) or date.today()
+    period.end_date = parse_date(str(form.get("end_date") or "")) or date.today()
+    period.period_of_account_start = parse_date(str(form.get("period_of_account_start") or "")) or date.today()
+    period.period_of_account_end = parse_date(str(form.get("period_of_account_end") or "")) or date.today()
+    period.claim_notification_submitted = as_bool(form.get("claim_notification_submitted"))
+    period.claim_notification_date = parse_date(str(form.get("claim_notification_date") or ""))
+    period.prior_claim_within_3_years = as_bool(form.get("prior_claim_within_3_years"))
+    period.scheme_notes = str(form.get("scheme_notes") or "")
+    session.add(period)
+    session.commit()
+    return redirect("/companies")
+
+
+@app.post("/accounting-periods/{period_id}/delete")
+def delete_accounting_period(period_id: int, session: Session = Depends(get_session)):
+    linked_project = session.exec(select(RDProject).where(RDProject.accounting_period_id == period_id)).first()
+    if linked_project:
+        return redirect("/companies?error=delete_blocked_R&D_projects")
+    submission = session.exec(
+        select(ClaimPeriodSubmissionStatus).where(ClaimPeriodSubmissionStatus.accounting_period_id == period_id)
+    ).first()
+    if submission:
+        session.delete(submission)
+        session.commit()
+    return delete_or_block(session, AccountingPeriod, period_id, "/companies")
 
 
 @app.get("/customers", response_class=HTMLResponse)
@@ -203,6 +343,29 @@ async def create_customer(request: Request, session: Session = Depends(get_sessi
     session.add(customer)
     session.commit()
     return redirect("/customers")
+
+
+@app.post("/customers/{customer_id}/update")
+async def update_customer(customer_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    customer = session.get(Customer, customer_id)
+    if not customer:
+        return redirect("/customers")
+    customer.business_unit_id = int(form.get("business_unit_id")) if form.get("business_unit_id") else None
+    customer.customer_name = str(form.get("customer_name") or "")
+    customer.sector = str(form.get("sector") or "")
+    customer.transport_domain = str(form.get("transport_domain") or "other")
+    customer.customer_type = str(form.get("customer_type") or "other")
+    customer.corporation_tax_status = str(form.get("corporation_tax_status") or "unknown")
+    customer.notes = str(form.get("notes") or "")
+    session.add(customer)
+    session.commit()
+    return redirect("/customers")
+
+
+@app.post("/customers/{customer_id}/delete")
+def delete_customer(customer_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, Customer, customer_id, "/customers")
 
 
 @app.get("/business-units", response_class=HTMLResponse)
@@ -241,6 +404,26 @@ async def create_business_unit(request: Request, session: Session = Depends(get_
     return redirect("/business-units")
 
 
+@app.post("/business-units/{unit_id}/update")
+async def update_business_unit(unit_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    unit = session.get(BusinessUnit, unit_id)
+    if not unit:
+        return redirect("/business-units")
+    unit.name = str(form.get("name") or "")
+    unit.parent_id = int(form.get("parent_id")) if form.get("parent_id") else None
+    unit.description = str(form.get("description") or "")
+    unit.active = as_bool(form.get("active"))
+    session.add(unit)
+    session.commit()
+    return redirect("/business-units")
+
+
+@app.post("/business-units/{unit_id}/delete")
+def delete_business_unit(unit_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, BusinessUnit, unit_id, "/business-units")
+
+
 @app.get("/contracts", response_class=HTMLResponse)
 def contracts(request: Request, session: Session = Depends(get_session)):
     contracts = list(session.exec(select(Contract).order_by(col(Contract.contract_name))))
@@ -272,6 +455,34 @@ async def create_contract(request: Request, session: Session = Depends(get_sessi
     session.add(contract)
     session.commit()
     return redirect("/contracts")
+
+
+@app.post("/contracts/{contract_id}/update")
+async def update_contract(contract_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    contract = session.get(Contract, contract_id)
+    if not contract:
+        return redirect("/contracts")
+    contract.contract_name = str(form.get("contract_name") or "")
+    contract.customer_id = int(form.get("customer_id") or 0)
+    contract.contract_type = str(form.get("contract_type") or "other")
+    contract.start_date = parse_date(str(form.get("start_date") or ""))
+    contract.end_date = parse_date(str(form.get("end_date") or ""))
+    contract.customer_requested_rd = as_bool(form.get("customer_requested_rd"))
+    contract.customer_intended_or_contemplated_rd = as_bool(form.get("customer_intended_or_contemplated_rd"))
+    contract.technical_uncertainty_described = as_bool(form.get("technical_uncertainty_described"))
+    contract.ip_owner = str(form.get("ip_owner") or "")
+    contract.funding_grant_notes = str(form.get("funding_grant_notes") or "")
+    contract.public_sector_procurement_notes = str(form.get("public_sector_procurement_notes") or "")
+    contract.contract_evidence_links = str(form.get("contract_evidence_links") or "")
+    session.add(contract)
+    session.commit()
+    return redirect("/contracts")
+
+
+@app.post("/contracts/{contract_id}/delete")
+def delete_contract(contract_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, Contract, contract_id, "/contracts")
 
 
 @app.get("/solutions", response_class=HTMLResponse)
@@ -312,6 +523,32 @@ async def create_solution(request: Request, session: Session = Depends(get_sessi
     session.add(solution)
     session.commit()
     return redirect("/solutions")
+
+
+@app.post("/solutions/{solution_id}/update")
+async def update_solution(solution_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    solution = session.get(Solution, solution_id)
+    if not solution:
+        return redirect("/solutions")
+    solution.solution_name = str(form.get("solution_name") or "")
+    solution.customer_id = int(form.get("customer_id") or 0)
+    solution.contract_id = int(form.get("contract_id")) if form.get("contract_id") else None
+    solution.solution_description = str(form.get("solution_description") or "")
+    solution.business_problem = str(form.get("business_problem") or "")
+    solution.technical_architecture_summary = str(form.get("technical_architecture_summary") or "")
+    selected_constraints = form.getlist("transport_environment_constraints")
+    solution.transport_environment_constraints = ", ".join(selected_constraints) if selected_constraints else str(form.get("transport_environment_constraints_text") or "")
+    solution.initial_radar_status = str(form.get("initial_radar_status") or "amber")
+    solution.radar_reason = str(form.get("radar_reason") or "")
+    session.add(solution)
+    session.commit()
+    return redirect("/solutions")
+
+
+@app.post("/solutions/{solution_id}/delete")
+def delete_solution(solution_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, Solution, solution_id, "/solutions")
 
 
 @app.get("/projects", response_class=HTMLResponse)
@@ -393,6 +630,46 @@ async def create_project(request: Request, session: Session = Depends(get_sessio
     return redirect(f"/projects/{project.id}/assessment")
 
 
+@app.post("/projects/{project_id}/update")
+async def update_project(project_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    project = session.get(RDProject, project_id)
+    if not project:
+        return redirect("/projects")
+    project.solution_id = int(form.get("solution_id") or 0)
+    project.accounting_period_id = int(form.get("accounting_period_id")) if form.get("accounting_period_id") else None
+    project.project_title = str(form.get("project_title") or "")
+    project.field_of_science_or_technology = str(form.get("field_of_science_or_technology") or "")
+    project.baseline_knowledge = str(form.get("baseline_knowledge") or "")
+    project.advance_sought = str(form.get("advance_sought") or "")
+    project.scientific_or_technological_uncertainties = str(form.get("scientific_or_technological_uncertainties") or "")
+    project.outcome = str(form.get("outcome") or "unresolved")
+    project.rd_start_date = parse_date(str(form.get("rd_start_date") or ""))
+    project.rd_end_date = parse_date(str(form.get("rd_end_date") or ""))
+    project.boundary_explanation = str(form.get("boundary_explanation") or "")
+    session.add(project)
+    session.commit()
+    sync_entitlement_for_project(session, project_id)
+    return redirect("/projects")
+
+
+@app.post("/projects/{project_id}/delete")
+def delete_project(project_id: int, session: Session = Depends(get_session)):
+    for child_model, child_field, label in DEPENDENCY_RULES[RDProject]:
+        child = session.exec(select(child_model).where(child_field == project_id)).first()
+        if child:
+            return redirect(f"/projects?error=delete_blocked_{label.replace(' ', '_')}")
+    project = session.get(RDProject, project_id)
+    if not project:
+        return redirect("/projects")
+    entitlement = session.exec(select(EntitlementAssessment).where(EntitlementAssessment.project_id == project_id)).first()
+    if entitlement:
+        session.delete(entitlement)
+    session.delete(project)
+    session.commit()
+    return redirect("/projects")
+
+
 @app.get("/projects/{project_id}", response_class=HTMLResponse)
 def project_detail(project_id: int, request: Request, session: Session = Depends(get_session)):
     context = get_project_context(session, project_id)
@@ -462,42 +739,35 @@ def project_costs(project_id: int, request: Request, session: Session = Depends(
 @app.post("/projects/{project_id}/costs")
 async def add_project_cost(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
-    hours = float(form.get("hours") or 0)
-    hourly_rate = float(form.get("hourly_rate") or 0)
-    days = float(form.get("days") or 0)
-    day_rate = float(form.get("day_rate") or 0)
-    gross_cost = float(form.get("gross_cost") or 0)
-    if str(form.get("cost_input_type") or "direct_cost") == "people_time" and gross_cost == 0:
-        gross_cost = calculate_people_time_gross(hours, hourly_rate, days, day_rate)
-    cost = CostLine(
-        project_id=project_id,
-        activity=str(form.get("activity") or ""),
-        cost_input_type=str(form.get("cost_input_type") or "direct_cost"),
-        cost_category=str(form.get("cost_category") or "other"),
-        person_or_supplier_name=str(form.get("person_or_supplier_name") or ""),
-        person_role=str(form.get("person_role") or ""),
-        time_period_start=parse_date(str(form.get("time_period_start") or "")),
-        time_period_end=parse_date(str(form.get("time_period_end") or "")),
-        hours=hours,
-        hourly_rate=hourly_rate,
-        days=days,
-        day_rate=day_rate,
-        gross_cost=gross_cost,
-        apportionment_percentage=float(form.get("apportionment_percentage") or 0),
-        paid_status=str(form.get("paid_status") or "paid"),
-        uk_or_overseas=str(form.get("uk_or_overseas") or "unknown"),
-        connected_party_status=str(form.get("connected_party_status") or "unknown"),
-        paye_nic_notes=str(form.get("paye_nic_notes") or ""),
-        evidence_link=str(form.get("evidence_link") or ""),
-        notes=str(form.get("notes") or ""),
-    )
-    cost.qualifying_amount = calculate_qualifying_amount(cost.gross_cost, cost.apportionment_percentage)
+    cost = cost_line_from_form(form, project_id)
     session.add(cost)
     session.commit()
     context = get_project_context(session, project_id)
     if wants_partial(request):
         return templates.TemplateResponse("_cost_lines.html", template_context(request, context=context))
     return redirect(f"/projects/{project_id}/costs")
+
+
+@app.post("/costs/{cost_id}/update")
+async def update_cost_line(cost_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    cost = session.get(CostLine, cost_id)
+    if not cost:
+        return redirect("/costs")
+    cost = cost_line_from_form(form, cost.project_id, cost)
+    session.add(cost)
+    session.commit()
+    return redirect(f"/projects/{cost.project_id}/costs")
+
+
+@app.post("/costs/{cost_id}/delete")
+def delete_cost_line(cost_id: int, session: Session = Depends(get_session)):
+    cost = session.get(CostLine, cost_id)
+    project_id = cost.project_id if cost else None
+    if cost:
+        session.delete(cost)
+        session.commit()
+    return redirect(f"/projects/{project_id}/costs" if project_id else "/costs")
 
 
 @app.get("/projects/{project_id}/evidence", response_class=HTMLResponse)
@@ -532,6 +802,35 @@ async def add_project_evidence(project_id: int, request: Request, session: Sessi
     return redirect(f"/projects/{project_id}/evidence")
 
 
+@app.post("/evidence/{evidence_id}/update")
+async def update_evidence_item(evidence_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    evidence = session.get(EvidenceItem, evidence_id)
+    if not evidence:
+        return redirect("/evidence-index")
+    evidence.source_system = str(form.get("source_system") or "Manual upload / note")
+    evidence.source_reference = str(form.get("source_reference") or "")
+    evidence.url_or_file_path = str(form.get("url_or_file_path") or "")
+    evidence.date_created = parse_date(str(form.get("date_created") or ""))
+    evidence.evidence_type = str(form.get("evidence_type") or "technical spike")
+    evidence.relevance_tag = str(form.get("relevance_tag") or "uncertainty")
+    evidence.strength = str(form.get("strength") or "moderate")
+    evidence.notes = str(form.get("notes") or "")
+    session.add(evidence)
+    session.commit()
+    return redirect(f"/projects/{evidence.project_id}/evidence")
+
+
+@app.post("/evidence/{evidence_id}/delete")
+def delete_evidence_item(evidence_id: int, session: Session = Depends(get_session)):
+    evidence = session.get(EvidenceItem, evidence_id)
+    project_id = evidence.project_id if evidence else None
+    if evidence:
+        session.delete(evidence)
+        session.commit()
+    return redirect(f"/projects/{project_id}/evidence" if project_id else "/evidence-index")
+
+
 @app.get("/projects/{project_id}/competent-professional", response_class=HTMLResponse)
 def project_competent_professional(project_id: int, request: Request, session: Session = Depends(get_session)):
     context = get_project_context(session, project_id)
@@ -560,6 +859,36 @@ async def add_competent_professional(project_id: int, request: Request, session:
     session.add(opinion)
     session.commit()
     return redirect(f"/projects/{project_id}/competent-professional")
+
+
+@app.post("/competent-professional/{opinion_id}/update")
+async def update_competent_professional(opinion_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    opinion = session.get(CompetentProfessionalOpinion, opinion_id)
+    if not opinion:
+        return redirect("/projects")
+    opinion.professional_name = str(form.get("professional_name") or "")
+    opinion.role = str(form.get("role") or "")
+    opinion.qualifications = str(form.get("qualifications") or "")
+    opinion.years_relevant_experience = int(form.get("years_relevant_experience") or 0)
+    opinion.relevant_field_expertise = str(form.get("relevant_field_expertise") or "")
+    opinion.opinion_text = str(form.get("opinion_text") or "")
+    opinion.signoff_status = str(form.get("signoff_status") or "draft")
+    opinion.signoff_date = parse_date(str(form.get("signoff_date") or ""))
+    opinion.reviewer_comments = str(form.get("reviewer_comments") or "")
+    session.add(opinion)
+    session.commit()
+    return redirect(f"/projects/{opinion.project_id}/competent-professional")
+
+
+@app.post("/competent-professional/{opinion_id}/delete")
+def delete_competent_professional(opinion_id: int, session: Session = Depends(get_session)):
+    opinion = session.get(CompetentProfessionalOpinion, opinion_id)
+    project_id = opinion.project_id if opinion else None
+    if opinion:
+        session.delete(opinion)
+        session.commit()
+    return redirect(f"/projects/{project_id}/competent-professional" if project_id else "/projects")
 
 
 @app.get("/projects/{project_id}/report", response_class=HTMLResponse)

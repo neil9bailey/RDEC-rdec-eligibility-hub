@@ -17,6 +17,39 @@
           <h3>{{ company.company_name }}</h3>
           <p class="muted">UTR {{ company.utr or "missing" }} | PAYE {{ company.paye_reference or "missing" }} | SIC {{ company.sic_code or "missing" }}</p>
           <p>Senior contact: {{ company.senior_rd_contact_name or "missing" }}{% if company.northern_ireland_registered %} <span class="badge amber">NI registered</span>{% endif %}</p>
+          <details>
+            <summary>Edit / delete</summary>
+            <form method="post" action="/companies/{{ company.id }}/update">
+              <div class="form-grid">
+                <div class="field"><label>Company name</label><input name="company_name" value="{{ company.company_name }}" required></div>
+                <div class="field"><label>UTR</label><input name="utr" value="{{ company.utr }}"></div>
+                <div class="field"><label>PAYE reference</label><input name="paye_reference" value="{{ company.paye_reference }}"></div>
+                <div class="field"><label>VAT number</label><input name="vat_number" value="{{ company.vat_number }}"></div>
+                <div class="field"><label>SIC code</label><input name="sic_code" value="{{ company.sic_code }}"></div>
+                <div class="field"><label>Registered office country</label><input name="registered_office_country" value="{{ company.registered_office_country }}"></div>
+                <div class="field"><label>Registered office region</label><input name="registered_office_region" value="{{ company.registered_office_region }}"></div>
+                <label class="checkbox"><input type="checkbox" name="northern_ireland_registered" {% if company.northern_ireland_registered %}checked{% endif %}> Northern Ireland flag</label>
+              </div>
+              <div class="form-grid">
+                <div class="field"><label>Senior R&D contact</label><input name="senior_rd_contact_name" value="{{ company.senior_rd_contact_name }}"></div>
+                <div class="field"><label>Contact role</label><input name="senior_rd_contact_role" value="{{ company.senior_rd_contact_role }}"></div>
+                <div class="field"><label>Contact email</label><input name="senior_rd_contact_email" value="{{ company.senior_rd_contact_email }}"></div>
+                <div class="field"><label>Contact phone</label><input name="senior_rd_contact_phone" value="{{ company.senior_rd_contact_phone }}"></div>
+              </div>
+              <div class="form-grid">
+                <div class="field"><label>Agent name</label><input name="agent_name" value="{{ company.agent_name }}"></div>
+                <div class="field"><label>Agent reference</label><input name="agent_reference" value="{{ company.agent_reference }}"></div>
+                <div class="field"><label>Agent email</label><input name="agent_email" value="{{ company.agent_email }}"></div>
+                <div class="field"><label>Agent phone</label><input name="agent_phone" value="{{ company.agent_phone }}"></div>
+                <div class="field"><label>Agent role</label><input name="agent_role" value="{{ company.agent_role }}"></div>
+              </div>
+              <button type="submit">Update company</button>
+            </form>
+            <form method="post" action="/companies/{{ company.id }}/delete">
+              <button class="secondary" type="submit">Delete</button>
+              <p class="hint">Delete is blocked if accounting periods are linked.</p>
+            </form>
+          </details>
         </article>
       {% endfor %}
     </div>
@@ -63,7 +96,38 @@
             <td><a href="/claim-periods/{{ period.id }}/readiness">{{ period.label }}</a></td>
             <td>{{ period.start_date }} to {{ period.end_date }}</td>
             <td>{% if period.claim_notification_submitted or period.prior_claim_within_3_years %}<span class="badge green">covered</span>{% else %}<span class="badge amber">check</span>{% endif %}</td>
-            <td><a href="/claim-periods/{{ period.id }}/readiness">Readiness</a> | <a href="/claim-periods/{{ period.id }}/pack">Pack</a></td>
+            <td>
+              <a href="/claim-periods/{{ period.id }}/readiness">Readiness</a> | <a href="/claim-periods/{{ period.id }}/pack">Pack</a>
+              <details>
+                <summary>Edit / delete</summary>
+                <form method="post" action="/accounting-periods/{{ period.id }}/update">
+                  <div class="field">
+                    <label>Company</label>
+                    <select name="company_id" required>
+                      {% for company in companies %}<option value="{{ company.id }}" {% if period.company_id == company.id %}selected{% endif %}>{{ company.company_name }}</option>{% endfor %}
+                    </select>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field"><label>Label</label><input name="label" value="{{ period.label }}" required></div>
+                    <div class="field"><label>Accounting period start</label><input name="start_date" type="date" value="{{ period.start_date }}" required></div>
+                    <div class="field"><label>Accounting period end</label><input name="end_date" type="date" value="{{ period.end_date }}" required></div>
+                    <div class="field"><label>Period of account start</label><input name="period_of_account_start" type="date" value="{{ period.period_of_account_start }}" required></div>
+                    <div class="field"><label>Period of account end</label><input name="period_of_account_end" type="date" value="{{ period.period_of_account_end }}" required></div>
+                  </div>
+                  <div class="checkbox-row">
+                    <label class="checkbox"><input type="checkbox" name="claim_notification_submitted" {% if period.claim_notification_submitted %}checked{% endif %}> Claim notification submitted</label>
+                    <label class="checkbox"><input type="checkbox" name="prior_claim_within_3_years" {% if period.prior_claim_within_3_years %}checked{% endif %}> Prior claim within 3 years</label>
+                  </div>
+                  <div class="field"><label>Claim notification date</label><input name="claim_notification_date" type="date" value="{{ period.claim_notification_date or '' }}"></div>
+                  <div class="field"><label>Scheme notes</label><textarea name="scheme_notes">{{ period.scheme_notes }}</textarea></div>
+                  <button type="submit">Update period</button>
+                </form>
+                <form method="post" action="/accounting-periods/{{ period.id }}/delete">
+                  <button class="secondary" type="submit">Delete</button>
+                  <p class="hint">Delete is blocked if R&D projects are linked.</p>
+                </form>
+              </details>
+            </td>
           </tr>
         {% endfor %}
       </tbody>

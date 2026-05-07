@@ -31,6 +31,44 @@
             <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
             <td>{{ score.score }}</td>
           </tr>
+          <tr>
+            <td colspan="5">
+              <details>
+                <summary>Edit / delete project</summary>
+                <form method="post" action="/projects/{{ project.id }}/update">
+                  <div class="field"><label>Project title</label><input name="project_title" value="{{ project.project_title }}" required></div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label>Solution</label>
+                      <select name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}" {% if project.solution_id == solution.id %}selected{% endif %}>{{ solution.solution_name }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field">
+                      <label>Accounting period</label>
+                      <select name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}" {% if project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>{% endfor %}</select>
+                    </div>
+                  </div>
+                  <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology">{{ project.field_of_science_or_technology }}</textarea></div>
+                  <div class="field"><label>Baseline level of knowledge/capability</label><textarea name="baseline_knowledge">{{ project.baseline_knowledge }}</textarea></div>
+                  <div class="field"><label>Advance sought</label><textarea name="advance_sought">{{ project.advance_sought }}</textarea></div>
+                  <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties">{{ project.scientific_or_technological_uncertainties }}</textarea></div>
+                  <div class="form-grid">
+                    <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date" value="{{ project.rd_start_date or '' }}"></div>
+                    <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date" value="{{ project.rd_end_date or '' }}"></div>
+                  </div>
+                  <div class="field"><label>Boundary explanation</label><textarea name="boundary_explanation">{{ project.boundary_explanation }}</textarea></div>
+                  <div class="field">
+                    <label>Outcome</label>
+                    <select name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option {% if project.outcome == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  </div>
+                  <button type="submit">Update project</button>
+                </form>
+                <form method="post" action="/projects/{{ project.id }}/delete">
+                  <button class="secondary" type="submit">Delete</button>
+                  <p class="hint">Delete is blocked if costs, evidence, or competent professional opinions are linked.</p>
+                </form>
+              </details>
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
