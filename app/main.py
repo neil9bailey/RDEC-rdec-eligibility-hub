@@ -271,10 +271,105 @@ def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -
 def dashboard(request: Request, session: Session = Depends(get_session)):
     projects = list(session.exec(select(RDProject).order_by(col(RDProject.project_title))))
     metrics = dashboard_metrics(session)
+    business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
+    customers = list(session.exec(select(Customer)))
+    unit_customer_counts = {unit.id: 0 for unit in business_units}
+    for customer in customers:
+        if customer.business_unit_id in unit_customer_counts:
+            unit_customer_counts[customer.business_unit_id] += 1
+    focus_names = [
+        "Highways",
+        "Rail",
+        "SCADA",
+        "TfL",
+        "Network Services",
+        "HPC / Hinkley Point C",
+        "Nuclear Power",
+        "Core Central Asset Management",
+    ]
+    focus_units = [
+        {"name": unit.name, "count": unit_customer_counts.get(unit.id, 0)}
+        for unit in business_units
+        if unit.name in focus_names
+    ]
+    signed_project_ids = {
+        opinion.project_id
+        for opinion in session.exec(
+            select(CompetentProfessionalOpinion).where(CompetentProfessionalOpinion.signoff_status == "signed")
+        )
+    }
+    strong_evidence_project_ids = {
+        item.project_id for item in session.exec(select(EvidenceItem).where(EvidenceItem.strength == "strong"))
+    }
+    total_qualifying_costs = round(sum(cost.qualifying_amount or 0 for cost in session.exec(select(CostLine))), 2)
+    framework_metrics = framework_intelligence_metrics(session)
+    framework_signals = list(
+        session.exec(select(RDECOpportunitySignal).order_by(col(RDECOpportunitySignal.created_at).desc()).limit(3))
+    )
+    recent_requirements = list(
+        session.exec(select(ExtractedRequirement).order_by(col(ExtractedRequirement.created_at).desc()).limit(3))
+    )
+    opportunity_ids = {signal.opportunity_id for signal in framework_signals}
+    opportunity_ids.update(requirement.opportunity_id for requirement in recent_requirements)
+    opportunities = {
+        opportunity.id: opportunity
+        for opportunity in session.exec(select(FrameworkOpportunity))
+        if opportunity.id in opportunity_ids
+    }
+    next_actions = []
+    if metrics["missing_competent_professional"]:
+        next_actions.append(
+            {
+                "title": "Competent professional sign-off",
+                "text": f"{metrics['missing_competent_professional']} project(s) need signed competent professional opinions.",
+                "status": "open",
+                "tone": "amber",
+            }
+        )
+    if metrics["missing_evidence"]:
+        next_actions.append(
+            {
+                "title": "Evidence gap closure",
+                "text": f"{metrics['missing_evidence']} project(s) need evidence linked before claim-pack review.",
+                "status": "review",
+                "tone": "red",
+            }
+        )
+    if framework_metrics["pending_signals"]:
+        next_actions.append(
+            {
+                "title": "Framework intelligence review",
+                "text": f"{framework_metrics['pending_signals']} RDEC candidate signal(s) need human review.",
+                "status": "review",
+                "tone": "weak",
+            }
+        )
+    if metrics["aif_total_periods"]:
+        next_actions.append(
+            {
+                "title": "AIF and Ayming pack",
+                "text": "Generate the claim-period pack once selected project descriptions and cost evidence are complete.",
+                "status": "blocked" if metrics["aif_ready_periods"] < metrics["aif_total_periods"] else "ready",
+                "tone": "red" if metrics["aif_ready_periods"] < metrics["aif_total_periods"] else "green",
+            }
+        )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
-        template_context(request, metrics=metrics, projects=projects),
+        template_context(
+            request,
+            metrics=metrics,
+            projects=projects,
+            focus_units=focus_units,
+            signed_project_count=len(signed_project_ids),
+            strong_evidence_project_count=len(strong_evidence_project_ids),
+            total_qualifying_costs=total_qualifying_costs,
+            framework_metrics=framework_metrics,
+            framework_signals=framework_signals,
+            recent_requirements=recent_requirements,
+            opportunity_map=opportunities,
+            next_actions=next_actions[:3],
+        ),
     )
 
 

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=telent-enterprise-3">
     <script src="/static/htmx.min.js" defer></script>
   </head>
   <body>
@@ -29,18 +29,18 @@
           </div>
         </div>
         <nav class="nav" aria-label="Main navigation">
-          <a href="/">Dashboard</a>
-          <a href="/framework-intelligence">Framework Intelligence</a>
-          <a href="/knowledge-agent">Knowledge Agent</a>
-          <a href="/business-units">Business Units</a>
-          <a href="/companies">Company</a>
-          <a href="/customers">Customers</a>
-          <a href="/contracts">Contracts</a>
-          <a href="/solutions">Solutions</a>
-          <a href="/projects">Projects</a>
-          <a href="/costs">Costs</a>
-          <a href="/evidence-index">Evidence Index</a>
-          <a href="/audit">Audit</a>
+          <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">Dashboard</a>
+          <a class="{{ 'active' if request.url.path.startswith('/framework-intelligence') else '' }}" href="/framework-intelligence">Framework Intelligence</a>
+          <a class="{{ 'active' if request.url.path.startswith('/knowledge-agent') else '' }}" href="/knowledge-agent">Knowledge Agent</a>
+          <a class="{{ 'active' if request.url.path.startswith('/business-units') else '' }}" href="/business-units">Business Units</a>
+          <a class="{{ 'active' if request.url.path.startswith('/companies') else '' }}" href="/companies">Company</a>
+          <a class="{{ 'active' if request.url.path.startswith('/customers') else '' }}" href="/customers">Customers</a>
+          <a class="{{ 'active' if request.url.path.startswith('/contracts') else '' }}" href="/contracts">Contracts</a>
+          <a class="{{ 'active' if request.url.path.startswith('/solutions') else '' }}" href="/solutions">Solutions</a>
+          <a class="{{ 'active' if request.url.path.startswith('/projects') else '' }}" href="/projects">Projects</a>
+          <a class="{{ 'active' if request.url.path.startswith('/costs') else '' }}" href="/costs">Costs</a>
+          <a class="{{ 'active' if request.url.path.startswith('/evidence-index') else '' }}" href="/evidence-index">Evidence Index</a>
+          <a class="{{ 'active' if request.url.path.startswith('/audit') else '' }}" href="/audit">Audit</a>
         </nav>
       </header>
       <main class="container">
