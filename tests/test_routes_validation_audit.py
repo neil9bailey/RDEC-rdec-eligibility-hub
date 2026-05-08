@@ -23,6 +23,13 @@ def test_route_smoke_pages(seeded_session):
         paths = [
             "/",
             "/knowledge-agent",
+            "/framework-intelligence",
+            "/framework-intelligence/sources",
+            "/framework-intelligence/watch-profiles",
+            "/framework-intelligence/opportunities",
+            "/framework-intelligence/requirements",
+            "/framework-intelligence/agent-runs",
+            "/framework-intelligence/reports",
             "/business-units",
             "/companies",
             "/customers",

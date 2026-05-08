@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Framework Intelligence Reports - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Framework Intelligence Reports</h1>
+    <p>Create exportable Markdown summaries for leadership, Finance, bid teams, engineering, and Ayming discussions.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Reports</h2>
+    <div class="stack">
+      {% for report in reports %}
+        <article class="list-item">
+          <h3><a href="/framework-intelligence/reports/{{ report.id }}">{{ report.report_name }}</a></h3>
+          <p>
+            <span class="badge amber">{{ report.report_type }}</span>
+            <span class="badge weak">{{ report.generated_at }}</span>
+          </p>
+          <p class="muted">{{ report.caveat }}</p>
+          <p><a href="/framework-intelligence/reports/{{ report.id }}?format=md">Download Markdown</a></p>
+        </article>
+      {% else %}
+        <p>No intelligence reports generated yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Create Report</h2>
+    <form method="post" action="/framework-intelligence/reports">
+      <div class="field"><label>Report name</label><input name="report_name" value="Public Sector Framework Intelligence Summary" required></div>
+      <div class="field">
+        <label>Report type</label>
+        <select name="report_type">
+          <option value="framework_summary">framework_summary</option>
+          <option value="customer_summary">customer_summary</option>
+          <option value="business_unit_summary">business_unit_summary</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Customer filter</label>
+        <select name="customer_id">
+          <option value="">All customers</option>
+          {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Business unit filter</label>
+        <select name="business_unit_id">
+          <option value="">All business units</option>
+          {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <button type="submit">Generate report</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

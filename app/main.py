@@ -20,6 +20,14 @@ from app.form_utils import (
     parse_required_int,
     validation_error_response,
 )
+from app.framework_intelligence import (
+    FRAMEWORK_AGENT_CAVEAT,
+    create_intelligence_report,
+    framework_intelligence_metrics,
+    official_framework_source_allowed,
+    run_framework_agent_for_profile,
+    seed_framework_sources,
+)
 from app.models import (
     AccountingPeriod,
     Activity,
@@ -31,9 +39,17 @@ from app.models import (
     Contract,
     CostLine,
     Customer,
+    CustomerWatchProfile,
     EntitlementAssessment,
     EvidenceItem,
+    ExtractedRequirement,
+    FrameworkAgentRun,
+    FrameworkOpportunity,
+    FrameworkSource,
+    IntelligenceReport,
+    OpportunityDocument,
     RDProject,
+    RDECOpportunitySignal,
     ReviewDecision,
     Solution,
     TechnicalUncertainty,
@@ -63,8 +79,17 @@ DEPENDENCY_RULES = {
     BusinessUnit: [
         (BusinessUnit, BusinessUnit.parent_id, "child business units"),
         (Customer, Customer.business_unit_id, "customers"),
+        (CustomerWatchProfile, CustomerWatchProfile.business_unit_id, "framework watch profiles"),
+        (FrameworkOpportunity, FrameworkOpportunity.business_unit_id, "framework opportunities"),
+        (IntelligenceReport, IntelligenceReport.business_unit_id, "framework intelligence reports"),
     ],
-    Customer: [(Contract, Contract.customer_id, "contracts"), (Solution, Solution.customer_id, "solutions")],
+    Customer: [
+        (Contract, Contract.customer_id, "contracts"),
+        (Solution, Solution.customer_id, "solutions"),
+        (CustomerWatchProfile, CustomerWatchProfile.customer_id, "framework watch profiles"),
+        (FrameworkOpportunity, FrameworkOpportunity.customer_id, "framework opportunities"),
+        (IntelligenceReport, IntelligenceReport.customer_id, "framework intelligence reports"),
+    ],
     Contract: [(Solution, Solution.contract_id, "solutions")],
     Solution: [(RDProject, RDProject.solution_id, "R&D projects")],
     RDProject: [
@@ -75,6 +100,14 @@ DEPENDENCY_RULES = {
         (CompetentProfessionalOpinion, CompetentProfessionalOpinion.project_id, "competent professional opinions"),
         (ReviewDecision, ReviewDecision.project_id, "review decisions"),
     ],
+    FrameworkSource: [(FrameworkOpportunity, FrameworkOpportunity.source_id, "framework opportunities")],
+    CustomerWatchProfile: [(FrameworkAgentRun, FrameworkAgentRun.watch_profile_id, "framework agent runs")],
+    FrameworkOpportunity: [
+        (OpportunityDocument, OpportunityDocument.opportunity_id, "opportunity documents"),
+        (ExtractedRequirement, ExtractedRequirement.opportunity_id, "extracted requirements"),
+        (RDECOpportunitySignal, RDECOpportunitySignal.opportunity_id, "RDEC opportunity signals"),
+    ],
+    ExtractedRequirement: [(RDECOpportunitySignal, RDECOpportunitySignal.requirement_id, "RDEC opportunity signals")],
 }
 
 
@@ -86,6 +119,7 @@ async def lifespan(app: FastAPI):
     if settings.seed_reference_data:
         with Session(engine) as session:
             seed_business_units(session)
+            seed_framework_sources(session)
     if settings.seed_demo_data:
         with Session(engine) as session:
             seed_demo_data(session)
@@ -117,6 +151,11 @@ def wants_partial(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+FRAMEWORK_SOURCE_TYPES = ["ocds_api", "web_page"]
+FRAMEWORK_OPPORTUNITY_STATUSES = ["new", "watching", "bid_review", "archived", "rejected"]
+FRAMEWORK_REVIEW_STATUSES = ["pending", "accepted", "challenged", "rejected"]
+
+
 def apply_corporation_tax_default(customer_type: str, submitted_status: str | None, errors: list[str] | None = None) -> str:
     submitted = str(submitted_status or "").strip()
     if submitted in {"yes", "no"}:
@@ -140,6 +179,27 @@ def save_with_audit(session: Session, item, action: str, summary: str, before_sn
     )
     session.commit()
     return item
+
+
+def framework_reference_context(session: Session) -> dict:
+    customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
+    business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
+    sources = list(session.exec(select(FrameworkSource).order_by(col(FrameworkSource.name))))
+    profiles = list(session.exec(select(CustomerWatchProfile).order_by(col(CustomerWatchProfile.profile_name))))
+    return {
+        "customers": customers,
+        "business_units": business_units,
+        "sources": sources,
+        "profiles": profiles,
+        "customer_map": {customer.id: customer for customer in customers},
+        "business_unit_map": {unit.id: unit for unit in business_units},
+        "source_map": {source.id: source for source in sources},
+        "profile_map": {profile.id: profile for profile in profiles},
+        "framework_source_types": FRAMEWORK_SOURCE_TYPES,
+        "framework_opportunity_statuses": FRAMEWORK_OPPORTUNITY_STATUSES,
+        "framework_review_statuses": FRAMEWORK_REVIEW_STATUSES,
+        "framework_agent_caveat": FRAMEWORK_AGENT_CAVEAT,
+    }
 
 
 def delete_with_audit(session: Session, item, summary: str) -> None:
@@ -238,6 +298,393 @@ def knowledge_agent_check(request: Request, session: Session = Depends(get_sessi
         request,
         "knowledge_agent.html",
         template_context(request, summary=summary, actions=actions, live_checks=live_checks),
+    )
+
+
+@app.get("/framework-intelligence", response_class=HTMLResponse)
+def framework_intelligence(request: Request, session: Session = Depends(get_session)):
+    opportunities = list(
+        session.exec(select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc()).limit(8))
+    )
+    requirements = list(
+        session.exec(select(ExtractedRequirement).order_by(col(ExtractedRequirement.created_at).desc()).limit(8))
+    )
+    reports = list(session.exec(select(IntelligenceReport).order_by(col(IntelligenceReport.generated_at).desc()).limit(5)))
+    context = framework_reference_context(session)
+    return templates.TemplateResponse(
+        request,
+        "framework_intelligence.html",
+        template_context(
+            request,
+            metrics=framework_intelligence_metrics(session),
+            opportunities=opportunities,
+            requirements=requirements,
+            reports=reports,
+            **context,
+        ),
+    )
+
+
+@app.get("/framework-intelligence/sources", response_class=HTMLResponse)
+def framework_sources(request: Request, session: Session = Depends(get_session)):
+    return templates.TemplateResponse(
+        request,
+        "framework_sources.html",
+        template_context(request, **framework_reference_context(session)),
+    )
+
+
+@app.post("/framework-intelligence/sources")
+async def create_framework_source(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    errors: list[str] = []
+    source_type = parse_enum(
+        form.get("source_type"),
+        FRAMEWORK_SOURCE_TYPES,
+        "Source type",
+        errors,
+        "ocds_api",
+    )
+    query_url = str(form.get("query_url") or "").strip()
+    if query_url and not official_framework_source_allowed(query_url):
+        errors.append("Query URL must be HTTPS and on the approved official/public procurement source allow-list.")
+    if not str(form.get("name") or "").strip():
+        errors.append("Source name is required.")
+    if not query_url:
+        errors.append("Query URL is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/sources")
+    source = FrameworkSource(
+        name=str(form.get("name") or ""),
+        source_type=source_type,
+        base_url=str(form.get("base_url") or query_url),
+        query_url=query_url,
+        official=parse_form_bool(form.get("official")) if form.get("official") is not None else True,
+        active=parse_form_bool(form.get("active")) if form.get("active") is not None else True,
+        review_frequency=str(form.get("review_frequency") or "manual"),
+        notes=str(form.get("notes") or ""),
+    )
+    save_with_audit(session, source, "create", f"Created framework source {source.name}")
+    return redirect("/framework-intelligence/sources")
+
+
+@app.post("/framework-intelligence/sources/{source_id}/update")
+async def update_framework_source(source_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    source = session.get(FrameworkSource, source_id)
+    if not source:
+        return redirect("/framework-intelligence/sources")
+    errors: list[str] = []
+    source_type = parse_enum(
+        form.get("source_type"),
+        FRAMEWORK_SOURCE_TYPES,
+        "Source type",
+        errors,
+        "ocds_api",
+    )
+    query_url = str(form.get("query_url") or "").strip()
+    if query_url and not official_framework_source_allowed(query_url):
+        errors.append("Query URL must be HTTPS and on the approved official/public procurement source allow-list.")
+    if not str(form.get("name") or "").strip():
+        errors.append("Source name is required.")
+    if not query_url:
+        errors.append("Query URL is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/sources")
+    before_snapshot = compact_snapshot(source)
+    source.name = str(form.get("name") or "")
+    source.source_type = source_type
+    source.base_url = str(form.get("base_url") or query_url)
+    source.query_url = query_url
+    source.official = parse_form_bool(form.get("official"))
+    source.active = parse_form_bool(form.get("active"))
+    source.review_frequency = str(form.get("review_frequency") or "manual")
+    source.notes = str(form.get("notes") or "")
+    save_with_audit(session, source, "update", f"Updated framework source {source.name}", before_snapshot)
+    return redirect("/framework-intelligence/sources")
+
+
+@app.post("/framework-intelligence/sources/{source_id}/delete")
+def delete_framework_source(source_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, FrameworkSource, source_id, "/framework-intelligence/sources")
+
+
+@app.get("/framework-intelligence/watch-profiles", response_class=HTMLResponse)
+def framework_watch_profiles(request: Request, session: Session = Depends(get_session)):
+    return templates.TemplateResponse(
+        request,
+        "framework_watch_profiles.html",
+        template_context(request, **framework_reference_context(session)),
+    )
+
+
+@app.post("/framework-intelligence/watch-profiles")
+async def create_watch_profile(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    errors: list[str] = []
+    customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
+    business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
+    minimum_value = parse_float(form.get("minimum_value"), "Minimum value", errors)
+    profile_name = str(form.get("profile_name") or "").strip()
+    if not profile_name:
+        errors.append("Watch profile name is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/watch-profiles")
+    profile = CustomerWatchProfile(
+        profile_name=profile_name,
+        customer_id=customer_id,
+        business_unit_id=business_unit_id,
+        buyer_aliases=str(form.get("buyer_aliases") or ""),
+        keywords=str(form.get("keywords") or ""),
+        cpv_codes=str(form.get("cpv_codes") or ""),
+        domains=str(form.get("domains") or ""),
+        minimum_value=minimum_value,
+        include_awards=parse_form_bool(form.get("include_awards")) if form.get("include_awards") is not None else True,
+        include_future_pipeline=(
+            parse_form_bool(form.get("include_future_pipeline"))
+            if form.get("include_future_pipeline") is not None
+            else True
+        ),
+        active=parse_form_bool(form.get("active")) if form.get("active") is not None else True,
+        review_notes=str(form.get("review_notes") or ""),
+    )
+    save_with_audit(session, profile, "create", f"Created framework watch profile {profile.profile_name}")
+    return redirect("/framework-intelligence/watch-profiles")
+
+
+@app.post("/framework-intelligence/watch-profiles/{profile_id}/update")
+async def update_watch_profile(profile_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    profile = session.get(CustomerWatchProfile, profile_id)
+    if not profile:
+        return redirect("/framework-intelligence/watch-profiles")
+    errors: list[str] = []
+    customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
+    business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
+    minimum_value = parse_float(form.get("minimum_value"), "Minimum value", errors)
+    profile_name = str(form.get("profile_name") or "").strip()
+    if not profile_name:
+        errors.append("Watch profile name is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/watch-profiles")
+    before_snapshot = compact_snapshot(profile)
+    profile.profile_name = profile_name
+    profile.customer_id = customer_id
+    profile.business_unit_id = business_unit_id
+    profile.buyer_aliases = str(form.get("buyer_aliases") or "")
+    profile.keywords = str(form.get("keywords") or "")
+    profile.cpv_codes = str(form.get("cpv_codes") or "")
+    profile.domains = str(form.get("domains") or "")
+    profile.minimum_value = minimum_value
+    profile.include_awards = parse_form_bool(form.get("include_awards"))
+    profile.include_future_pipeline = parse_form_bool(form.get("include_future_pipeline"))
+    profile.active = parse_form_bool(form.get("active"))
+    profile.review_notes = str(form.get("review_notes") or "")
+    save_with_audit(session, profile, "update", f"Updated framework watch profile {profile.profile_name}", before_snapshot)
+    return redirect("/framework-intelligence/watch-profiles")
+
+
+@app.post("/framework-intelligence/watch-profiles/{profile_id}/delete")
+def delete_watch_profile(profile_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, CustomerWatchProfile, profile_id, "/framework-intelligence/watch-profiles")
+
+
+@app.post("/framework-intelligence/watch-profiles/{profile_id}/run")
+def run_watch_profile(profile_id: int, session: Session = Depends(get_session)):
+    try:
+        run_framework_agent_for_profile(session, profile_id)
+    except ValueError as exc:
+        return validation_error_response([str(exc)], "/framework-intelligence/watch-profiles")
+    return redirect("/framework-intelligence/agent-runs")
+
+
+@app.get("/framework-intelligence/opportunities", response_class=HTMLResponse)
+def framework_opportunities(request: Request, session: Session = Depends(get_session)):
+    opportunities = list(
+        session.exec(select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc()).limit(200))
+    )
+    signals = list(session.exec(select(RDECOpportunitySignal)))
+    signal_counts: dict[int, int] = {}
+    for signal in signals:
+        signal_counts[signal.opportunity_id] = signal_counts.get(signal.opportunity_id, 0) + 1
+    return templates.TemplateResponse(
+        request,
+        "framework_opportunities.html",
+        template_context(
+            request,
+            opportunities=opportunities,
+            signal_counts=signal_counts,
+            **framework_reference_context(session),
+        ),
+    )
+
+
+@app.post("/framework-intelligence/opportunities/{opportunity_id}/update")
+async def update_framework_opportunity(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    opportunity = session.get(FrameworkOpportunity, opportunity_id)
+    if not opportunity:
+        return redirect("/framework-intelligence/opportunities")
+    errors: list[str] = []
+    status = parse_enum(
+        form.get("status"),
+        FRAMEWORK_OPPORTUNITY_STATUSES,
+        "Opportunity status",
+        errors,
+        "new",
+    )
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/opportunities")
+    before_snapshot = compact_snapshot(opportunity)
+    opportunity.status = status
+    opportunity.relevance_rationale = str(form.get("relevance_rationale") or opportunity.relevance_rationale)
+    save_with_audit(
+        session,
+        opportunity,
+        "update",
+        f"Updated framework opportunity {opportunity.title}",
+        before_snapshot,
+    )
+    return redirect("/framework-intelligence/opportunities")
+
+
+@app.post("/framework-intelligence/opportunities/{opportunity_id}/delete")
+def delete_framework_opportunity(opportunity_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, FrameworkOpportunity, opportunity_id, "/framework-intelligence/opportunities")
+
+
+@app.get("/framework-intelligence/requirements", response_class=HTMLResponse)
+def framework_requirements(request: Request, session: Session = Depends(get_session)):
+    requirements = list(
+        session.exec(select(ExtractedRequirement).order_by(col(ExtractedRequirement.created_at).desc()).limit(200))
+    )
+    signals = list(session.exec(select(RDECOpportunitySignal)))
+    return templates.TemplateResponse(
+        request,
+        "framework_requirements.html",
+        template_context(
+            request,
+            requirements=requirements,
+            signals=signals,
+            **framework_reference_context(session),
+        ),
+    )
+
+
+@app.post("/framework-intelligence/requirements/{requirement_id}/review")
+async def review_framework_requirement(requirement_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    requirement = session.get(ExtractedRequirement, requirement_id)
+    if not requirement:
+        return redirect("/framework-intelligence/requirements")
+    errors: list[str] = []
+    status = parse_enum(
+        form.get("human_review_status"),
+        FRAMEWORK_REVIEW_STATUSES,
+        "Human review status",
+        errors,
+        "pending",
+    )
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/requirements")
+    before_snapshot = compact_snapshot(requirement)
+    requirement.human_review_status = status
+    requirement.rdec_relevance_note = str(form.get("rdec_relevance_note") or requirement.rdec_relevance_note)
+    save_with_audit(
+        session,
+        requirement,
+        "update",
+        f"Updated extracted requirement {requirement.id}",
+        before_snapshot,
+    )
+    return redirect("/framework-intelligence/requirements")
+
+
+@app.post("/framework-intelligence/signals/{signal_id}/review")
+async def review_framework_signal(signal_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    signal = session.get(RDECOpportunitySignal, signal_id)
+    if not signal:
+        return redirect("/framework-intelligence/requirements")
+    errors: list[str] = []
+    status = parse_enum(
+        form.get("human_review_status"),
+        FRAMEWORK_REVIEW_STATUSES,
+        "Human review status",
+        errors,
+        "pending",
+    )
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/requirements")
+    before_snapshot = compact_snapshot(signal)
+    signal.human_review_status = status
+    signal.recommended_action = str(form.get("recommended_action") or signal.recommended_action)
+    save_with_audit(session, signal, "update", f"Updated RDEC opportunity signal {signal.id}", before_snapshot)
+    return redirect("/framework-intelligence/requirements")
+
+
+@app.get("/framework-intelligence/agent-runs", response_class=HTMLResponse)
+def framework_agent_runs(request: Request, session: Session = Depends(get_session)):
+    runs = list(session.exec(select(FrameworkAgentRun).order_by(col(FrameworkAgentRun.started_at).desc()).limit(100)))
+    return templates.TemplateResponse(
+        request,
+        "framework_agent_runs.html",
+        template_context(request, runs=runs, **framework_reference_context(session)),
+    )
+
+
+@app.get("/framework-intelligence/reports", response_class=HTMLResponse)
+def framework_reports(request: Request, session: Session = Depends(get_session)):
+    reports = list(session.exec(select(IntelligenceReport).order_by(col(IntelligenceReport.generated_at).desc())))
+    return templates.TemplateResponse(
+        request,
+        "framework_reports.html",
+        template_context(request, reports=reports, **framework_reference_context(session)),
+    )
+
+
+@app.post("/framework-intelligence/reports")
+async def create_framework_report(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    errors: list[str] = []
+    customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
+    business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
+    report_name = str(form.get("report_name") or "Framework intelligence summary").strip()
+    if not report_name:
+        errors.append("Report name is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/reports")
+    report = create_intelligence_report(
+        session,
+        report_name=report_name,
+        report_type=str(form.get("report_type") or "framework_summary"),
+        customer_id=customer_id,
+        business_unit_id=business_unit_id,
+    )
+    return redirect(f"/framework-intelligence/reports/{report.id}")
+
+
+@app.get("/framework-intelligence/reports/{report_id}", response_class=HTMLResponse)
+def framework_report_detail(
+    report_id: int,
+    request: Request,
+    format: str | None = None,
+    session: Session = Depends(get_session),
+):
+    report = session.get(IntelligenceReport, report_id)
+    if not report:
+        return redirect("/framework-intelligence/reports")
+    if format == "md":
+        filename = f"framework-intelligence-report-{report_id}.md"
+        return Response(
+            report.markdown,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    return templates.TemplateResponse(
+        request,
+        "framework_report_detail.html",
+        template_context(request, report=report, **framework_reference_context(session)),
     )
 
 

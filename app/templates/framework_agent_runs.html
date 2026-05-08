@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Framework Agent Runs - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Framework Agent Runs</h1>
+    <p>Logged manual runs of the guarded public-sector framework intelligence agent.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Profile</th>
+        <th>Status</th>
+        <th>Sources</th>
+        <th>Opportunities</th>
+        <th>Requirements</th>
+        <th>Signals</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for run in runs %}
+        {% set profile = profile_map.get(run.watch_profile_id) %}
+        <tr>
+          <td>{{ run.started_at }}</td>
+          <td>{{ run.finished_at or "Running" }}</td>
+          <td>{{ profile.profile_name if profile else "Profile deleted" }}</td>
+          <td><span class="badge {{ 'green' if run.status == 'completed' else 'amber' }}">{{ run.status }}</span></td>
+          <td>{{ run.sources_checked }}</td>
+          <td>{{ run.opportunities_found }}</td>
+          <td>{{ run.requirements_extracted }}</td>
+          <td>{{ run.signals_created }}</td>
+          <td>
+            <p>{{ run.guardrail_summary }}</p>
+            {% if run.error_summary %}<p class="muted">{{ run.error_summary }}</p>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9">No agent runs recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

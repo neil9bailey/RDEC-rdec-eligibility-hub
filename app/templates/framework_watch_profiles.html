@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Watch Profiles - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Customer Watch Profiles</h1>
+    <p>Define what the agent should look for across public-sector procurement sources: customer aliases, domains, CPV codes, and technical keywords.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Profiles</h2>
+    <div class="stack">
+      {% for profile in profiles %}
+        <article class="list-item">
+          <h3>{{ profile.profile_name }}</h3>
+          <p>
+            <span class="badge {{ 'green' if profile.active else 'amber' }}">{{ 'active' if profile.active else 'inactive' }}</span>
+            {% if profile.customer_id and customer_map.get(profile.customer_id) %}
+              <span class="badge weak">{{ customer_map.get(profile.customer_id).customer_name }}</span>
+            {% endif %}
+            {% if profile.business_unit_id and business_unit_map.get(profile.business_unit_id) %}
+              <span class="badge amber">{{ business_unit_map.get(profile.business_unit_id).name }}</span>
+            {% endif %}
+          </p>
+          <p><strong>Keywords:</strong> {{ profile.keywords or "not recorded" }}</p>
+          <p><strong>Aliases:</strong> {{ profile.buyer_aliases or "not recorded" }}</p>
+          <p class="muted">{{ profile.review_notes }}</p>
+          <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/run">
+            <button type="submit">Run guarded source check</button>
+          </form>
+          <details>
+            <summary>Edit / delete</summary>
+            <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/update">
+              <div class="field"><label>Profile name</label><input name="profile_name" value="{{ profile.profile_name }}" required></div>
+              <div class="form-grid">
+                <div class="field">
+                  <label>Customer</label>
+                  <select name="customer_id">
+                    <option value="">No specific customer</option>
+                    {% for customer in customers %}<option value="{{ customer.id }}" {% if profile.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Business unit</label>
+                  <select name="business_unit_id">
+                    <option value="">No specific BU</option>
+                    {% for unit in business_units %}<option value="{{ unit.id }}" {% if profile.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div class="field"><label>Buyer aliases</label><textarea name="buyer_aliases">{{ profile.buyer_aliases }}</textarea></div>
+              <div class="field"><label>Keywords</label><textarea name="keywords">{{ profile.keywords }}</textarea></div>
+              <div class="field"><label>CPV codes</label><input name="cpv_codes" value="{{ profile.cpv_codes }}"></div>
+              <div class="field"><label>Domains</label><input name="domains" value="{{ profile.domains }}"></div>
+              <div class="field"><label>Minimum value</label><input name="minimum_value" type="number" step="0.01" value="{{ profile.minimum_value }}"></div>
+              <div class="form-grid">
+                <label><input type="checkbox" name="include_awards" {% if profile.include_awards %}checked{% endif %}> Include awards</label>
+                <label><input type="checkbox" name="include_future_pipeline" {% if profile.include_future_pipeline %}checked{% endif %}> Include future pipeline</label>
+                <label><input type="checkbox" name="active" {% if profile.active %}checked{% endif %}> Active</label>
+              </div>
+              <div class="field"><label>Review notes</label><textarea name="review_notes">{{ profile.review_notes }}</textarea></div>
+              <button type="submit">Update profile</button>
+            </form>
+            <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/delete">
+              <button class="secondary" type="submit">Delete</button>
+              <p class="hint">Delete is blocked if agent runs are linked.</p>
+            </form>
+          </details>
+        </article>
+      {% else %}
+        <p>No watch profiles configured yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Add Watch Profile</h2>
+    <p class="hint">Create profiles for National Highways, TfL, Network Services customers, HPC / Hinkley Point C, or sector-level themes such as SCADA and asset management.</p>
+    <form method="post" action="/framework-intelligence/watch-profiles">
+      <div class="field"><label>Profile name</label><input name="profile_name" required></div>
+      <div class="form-grid">
+        <div class="field">
+          <label>Customer</label>
+          <select name="customer_id">
+            <option value="">No specific customer</option>
+            {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Business unit</label>
+          <select name="business_unit_id">
+            <option value="">No specific BU</option>
+            {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Buyer aliases</label><textarea name="buyer_aliases" placeholder="National Highways; Highways England"></textarea></div>
+      <div class="field"><label>Keywords</label><textarea name="keywords" placeholder="NRTS, roadside technology, SCADA, cyber security, asset management"></textarea></div>
+      <div class="field"><label>CPV codes</label><input name="cpv_codes" placeholder="72000000, 32400000"></div>
+      <div class="field"><label>Domains</label><input name="domains" placeholder="highways, traffic, operational technology"></div>
+      <div class="field"><label>Minimum value</label><input name="minimum_value" type="number" step="0.01" value="0"></div>
+      <div class="form-grid">
+        <label><input type="checkbox" name="include_awards" checked> Include awards</label>
+        <label><input type="checkbox" name="include_future_pipeline" checked> Include future pipeline</label>
+        <label><input type="checkbox" name="active" checked> Active</label>
+      </div>
+      <div class="field"><label>Review notes</label><textarea name="review_notes"></textarea></div>
+      <button type="submit">Save profile</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

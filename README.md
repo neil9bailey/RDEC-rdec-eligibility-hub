@@ -10,11 +10,13 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Captures people time with roles, periods, hours or days, internal rates, apportionment, and timesheet / PSA evidence links.
 - Scores projects using configurable YAML-backed runtime rules.
 - Tracks official HMRC/GOV.UK guidance through a Knowledge Agent source register and optional live source checks.
+- Tracks public-sector framework and procurement opportunity sources through a guarded Framework Intelligence Agent.
 - Flags blockers such as missing scientific/technological uncertainty, missing signed competent professional opinion, missing evidence, missing costs, blocked entitlement, and AIF sequencing risk.
 - Calculates qualifying cost amounts from gross cost and apportionment percentage.
 - Applies configurable Additional Information Form project-selection logic.
 - Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
+- Generates exportable Markdown framework intelligence summaries for bid, engineering, Finance, and Ayming review discussions.
 - Seeds only reference business units by default, ready for live customer and project entry.
 
 ## What It Does Not Do
@@ -23,8 +25,9 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - It does not submit AIFs, CT600s, or claim notifications.
 - It does not calculate Corporation Tax relief values or payable credits.
 - It does not replace competent professional judgement, tax review, legal review, or advisor sign-off.
-- It does not call external APIs or require cloud services for the MVP.
+- It does not require cloud services for the MVP. Optional Knowledge Agent and Framework Intelligence checks call approved public official URLs only when a user runs them.
 - The Knowledge Agent does not auto-update rule logic. It flags source-review work; rule changes remain controlled YAML updates.
+- The Framework Intelligence Agent does not make autonomous bid/no-bid, procurement, RDEC, tax, or claim decisions.
 
 ## MVP Hardening Status
 
@@ -132,6 +135,24 @@ Normal app operation does not require internet access. When internet access is a
 
 The agent is intentionally conservative: it never changes scoring, blockers, entitlement, AIF logic, or cost rules automatically. A user must review official changes, update the relevant YAML rule file, and keep the output caveat: "Requires competent professional and tax review."
 
+## Framework Intelligence Agent
+
+The Framework Intelligence Agent is available at `/framework-intelligence`.
+
+It uses customer and business-unit data to create watch profiles for public-sector customers and domains such as National Highways, TfL, Network Services customers, SCADA, Highways, Rail, HPC / Hinkley Point C, Nuclear Power, and asset management. A user can run a guarded source check against configured official/public procurement sources. The MVP seeds references for Find a Tender and Contracts Finder public/OCDS sources.
+
+The agent records:
+
+- source configuration and last check status
+- customer watch profiles, aliases, keywords, CPV codes, and domains
+- captured framework or bid opportunities
+- extracted requirement themes
+- RDEC candidate indicators for human review
+- agent run history and audit events
+- exportable Markdown framework intelligence reports
+
+The agent is deliberately bounded. It only checks approved HTTPS official/public procurement domains, and runs are explicit and logged. It does not auto-bid, contact customers, alter claim rules, or decide RDEC eligibility. Outputs are prompts for bid, engineering, Finance, and Ayming discussion and retain: "Requires competent professional and tax review."
+
 ## Operating Procedure
 
 The end-to-end Telent / M Group operating procedure is available at:
@@ -150,6 +171,7 @@ It covers business-unit setup, company/accounting period setup, customer and con
 - `app/audit.py` - compact MVP audit-event helpers.
 - `app/reports.py` - Markdown report generation.
 - `app/knowledge_agent.py` - official source registry, optional live checks, and rule coverage monitoring.
+- `app/framework_intelligence.py` - guarded public-sector procurement/source checks, opportunity capture, requirement extraction, RDEC candidate signals, and Markdown intelligence reports.
 - `app/seed.py` - clean reference business units and optional demo transport data.
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
@@ -178,6 +200,13 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 
 - `/`
 - `/knowledge-agent`
+- `/framework-intelligence`
+- `/framework-intelligence/sources`
+- `/framework-intelligence/watch-profiles`
+- `/framework-intelligence/opportunities`
+- `/framework-intelligence/requirements`
+- `/framework-intelligence/agent-runs`
+- `/framework-intelligence/reports`
 - `/business-units`
 - `/companies`
 - `/customers`

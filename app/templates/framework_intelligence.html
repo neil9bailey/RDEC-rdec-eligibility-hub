@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Framework Intelligence - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Public Sector Framework Intelligence Agent</h1>
+    <p>Tracks official/public procurement sources against customer and business-unit watch profiles, then builds a human-review knowledge base of opportunities, requirements, and RDEC candidate signals for Telent / M Group.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/framework-intelligence/watch-profiles">Watch profiles</a>
+    <a class="button secondary" href="/framework-intelligence/reports">Reports</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  {{ framework_agent_caveat }}
+</section>
+
+<section class="metric-grid" style="margin-top: 18px;">
+  <div class="metric">
+    <span class="value">{{ metrics.active_profiles }}</span>
+    <span class="label">Active watch profiles</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.active_sources }}</span>
+    <span class="label">Active official sources</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.new_opportunities }}</span>
+    <span class="label">New opportunities</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.pending_signals }}</span>
+    <span class="label">RDEC signals pending review</span>
+  </div>
+</section>
+
+<section class="grid two">
+  <div class="panel">
+    <h2>Agent Controls</h2>
+    <p class="hint">Runs are explicit, logged, and restricted to approved official/public sources. The agent creates review prompts, not autonomous claim or bid decisions.</p>
+    <div class="stack">
+      {% for profile in profiles %}
+        <article class="list-item">
+          <h3>{{ profile.profile_name }}</h3>
+          <p>
+            <span class="badge {{ 'green' if profile.active else 'amber' }}">{{ 'active' if profile.active else 'inactive' }}</span>
+            {% if profile.customer_id and customer_map.get(profile.customer_id) %}
+              <span class="badge weak">{{ customer_map.get(profile.customer_id).customer_name }}</span>
+            {% endif %}
+            {% if profile.business_unit_id and business_unit_map.get(profile.business_unit_id) %}
+              <span class="badge amber">{{ business_unit_map.get(profile.business_unit_id).name }}</span>
+            {% endif %}
+          </p>
+          <p class="muted">{{ profile.keywords or "No keywords recorded" }}</p>
+          <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/run">
+            <button type="submit">Run guarded source check</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No watch profiles yet. Create one for National Highways, TfL, Network Services customers, HPC, or another target account.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Latest Runs</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Started</th>
+          <th>Status</th>
+          <th>Finds</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in metrics.latest_runs %}
+          <tr>
+            <td>{{ run.started_at }}</td>
+            <td><span class="badge {{ 'green' if run.status == 'completed' else 'amber' }}">{{ run.status }}</span></td>
+            <td>{{ run.opportunities_found }} opps, {{ run.requirements_extracted }} reqs, {{ run.signals_created }} signals</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No runs recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p><a href="/framework-intelligence/agent-runs">View all agent runs</a></p>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Recent Opportunities</h2>
+    <div class="stack">
+      {% for opportunity in opportunities %}
+        <article class="list-item">
+          <h3>{{ opportunity.title }}</h3>
+          <p>
+            <span class="badge {{ 'green' if opportunity.status in ['watching', 'bid_review'] else 'amber' }}">{{ opportunity.status }}</span>
+            <span class="badge weak">relevance {{ opportunity.relevance_score|round(0) }}</span>
+          </p>
+          <p class="muted">{{ opportunity.buyer_name or "Buyer not detected" }} | {{ opportunity.deadline_date or "No deadline detected" }}</p>
+          <p>{{ opportunity.summary[:260] }}</p>
+        </article>
+      {% else %}
+        <p>No matching opportunities captured yet.</p>
+      {% endfor %}
+    </div>
+    <p><a href="/framework-intelligence/opportunities">Open opportunity catalogue</a></p>
+  </div>
+  <div class="panel">
+    <h2>Recent Requirement Themes</h2>
+    <div class="stack">
+      {% for requirement in requirements %}
+        <article class="list-item">
+          <h3>{{ requirement.requirement_theme }}</h3>
+          <p><span class="badge {{ 'green' if requirement.human_review_status == 'accepted' else 'amber' }}">{{ requirement.human_review_status }}</span></p>
+          <p>{{ requirement.requirement_text[:320] }}</p>
+        </article>
+      {% else %}
+        <p>No requirements extracted yet.</p>
+      {% endfor %}
+    </div>
+    <p><a href="/framework-intelligence/requirements">Review requirements and RDEC signals</a></p>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Knowledge Base Shortcuts</h2>
+  <p>
+    <a href="/framework-intelligence/sources">Sources</a> |
+    <a href="/framework-intelligence/watch-profiles">Watch profiles</a> |
+    <a href="/framework-intelligence/opportunities">Opportunity catalogue</a> |
+    <a href="/framework-intelligence/requirements">Requirement themes</a> |
+    <a href="/framework-intelligence/reports">Summary reports</a>
+  </p>
+  <p class="hint">Use this as a reference catalogue for bid shaping, early engineering involvement, people-time setup, Finance data planning, and Ayming review preparation.</p>
+</section>
+{% endblock %}

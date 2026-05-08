@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Catalogue - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Opportunity Catalogue</h1>
+    <p>Captured public-sector framework and bid opportunities matched to Telent / M Group customer or business-unit watch profiles.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>Opportunity</th>
+        <th>Buyer</th>
+        <th>Stage</th>
+        <th>Deadline</th>
+        <th>Value</th>
+        <th>Signals</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for opportunity in opportunities %}
+        <tr>
+          <td>
+            <strong>{{ opportunity.title }}</strong>
+            <p class="hint">
+              {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">source</a>{% else %}source not captured{% endif %}
+              | {{ opportunity.relevance_rationale }}
+            </p>
+            <p>{{ opportunity.summary[:260] }}</p>
+          </td>
+          <td>{{ opportunity.buyer_name or "Not detected" }}</td>
+          <td>{{ opportunity.procurement_stage or opportunity.notice_type or "Not detected" }}</td>
+          <td>{{ opportunity.deadline_date or "Not detected" }}</td>
+          <td>GBP {{ "%.2f"|format(opportunity.value_high or 0) }}</td>
+          <td><span class="badge weak">{{ signal_counts.get(opportunity.id, 0) }}</span></td>
+          <td>
+            <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/update">
+              <select name="status">
+                {% for item in framework_opportunity_statuses %}
+                  <option {% if opportunity.status == item %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+              </select>
+              <input type="hidden" name="relevance_rationale" value="{{ opportunity.relevance_rationale }}">
+              <button type="submit">Update</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">No opportunities captured yet. Create a watch profile and run a guarded source check.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -256,3 +256,126 @@ class AuditEvent(SQLModel, table=True):
     summary: str = ""
     before_json: str = ""
     after_json: str = ""
+
+
+class FrameworkSource(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    source_type: str = "ocds_api"
+    base_url: str
+    query_url: str
+    official: bool = True
+    active: bool = True
+    review_frequency: str = "manual"
+    last_checked_at: Optional[datetime] = None
+    last_status: str = ""
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class CustomerWatchProfile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    profile_name: str = Field(index=True)
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    business_unit_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
+    buyer_aliases: str = ""
+    keywords: str = ""
+    cpv_codes: str = ""
+    domains: str = ""
+    minimum_value: float = 0
+    include_awards: bool = True
+    include_future_pipeline: bool = True
+    active: bool = True
+    review_notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class FrameworkOpportunity(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: Optional[int] = Field(default=None, foreign_key="frameworksource.id")
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    business_unit_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
+    title: str = Field(index=True)
+    buyer_name: str = ""
+    notice_identifier: str = Field(default="", index=True)
+    ocid: str = ""
+    notice_type: str = ""
+    procurement_stage: str = ""
+    published_date: Optional[date] = None
+    deadline_date: Optional[date] = None
+    value_low: float = 0
+    value_high: float = 0
+    currency: str = "GBP"
+    cpv_codes: str = ""
+    location: str = ""
+    source_url: str = ""
+    summary: str = ""
+    status: str = "new"
+    relevance_score: float = 0
+    relevance_rationale: str = ""
+    content_hash: str = Field(default="", index=True)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class OpportunityDocument(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(foreign_key="frameworkopportunity.id")
+    title: str
+    document_type: str = "notice"
+    url_or_path: str = ""
+    source_hash: str = ""
+    extracted_at: datetime = Field(default_factory=utc_now)
+    notes: str = ""
+
+
+class ExtractedRequirement(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(foreign_key="frameworkopportunity.id")
+    requirement_theme: str = Field(index=True)
+    requirement_text: str
+    requirement_source: str = ""
+    confidence: str = "medium"
+    human_review_status: str = "pending"
+    rdec_relevance_note: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class RDECOpportunitySignal(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(foreign_key="frameworkopportunity.id")
+    requirement_id: Optional[int] = Field(default=None, foreign_key="extractedrequirement.id")
+    signal_type: str = "R&D candidate indicator"
+    signal_strength: str = "review"
+    signal_text: str
+    recommended_action: str = ""
+    caveat: str = "Requires competent professional and tax review."
+    human_review_status: str = "pending"
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class FrameworkAgentRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    watch_profile_id: Optional[int] = Field(default=None, foreign_key="customerwatchprofile.id")
+    run_type: str = "manual"
+    status: str = "started"
+    started_at: datetime = Field(default_factory=utc_now)
+    finished_at: Optional[datetime] = None
+    sources_checked: int = 0
+    opportunities_found: int = 0
+    requirements_extracted: int = 0
+    signals_created: int = 0
+    guardrail_summary: str = ""
+    error_summary: str = ""
+
+
+class IntelligenceReport(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    report_name: str = Field(index=True)
+    report_type: str = "framework_summary"
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    business_unit_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
+    generated_at: datetime = Field(default_factory=utc_now)
+    generated_by: str = "local-user"
+    markdown: str = ""
+    caveat: str = "Requires competent professional and tax review."
