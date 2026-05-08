@@ -40,6 +40,17 @@ This branch hardens the MVP without changing the Docker Desktop workflow or addi
 - `/audit` shows the latest local audit events for key claim-data changes.
 - `/healthz` returns a simple JSON health check for local runtime verification.
 
+## Live Demo Version 1.0 Baseline
+
+Current baseline: `live-demo-version 1.0`  
+Release tag: `live-demo-version-1.0`
+
+This baseline is prepared for local Telent / M Group live demonstration and review. It includes the Telent-styled dashboard, clean reference business-unit setup, YAML-backed runtime rules, AIF top-10 fallback logic, local audit logging, Knowledge Agent source checks, Framework Intelligence Agent source tracking, and Markdown exports for Finance / Ayming handover discussions.
+
+The full assessment record is in [`docs/live_demo_version_1_0_baseline.md`](docs/live_demo_version_1_0_baseline.md). The version marker is stored in [`VERSION`](VERSION), and release notes are in [`CHANGELOG.md`](CHANGELOG.md).
+
+The demo baseline remains a decision-support MVP. It is not legal, tax, accounting, HMRC submission, or bid/no-bid advice. Requires competent professional and tax review.
+
 ## Security And Data Governance Warning
 
 This remains an MVP for local evidence capture and decision support. It is not suitable for live public-sector evidence operations without additional controls, including SSO, role-based access control, formal audit-log review, backup/restore, deployment controls, encryption and retention policies, and evidence export governance.
