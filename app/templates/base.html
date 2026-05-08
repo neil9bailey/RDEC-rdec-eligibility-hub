@@ -11,22 +11,37 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="topbar-inner">
-          <div class="brand">{{ app_name }}</div>
-          <nav class="nav" aria-label="Main navigation">
-            <a href="/">Dashboard</a>
-            <a href="/knowledge-agent">Knowledge Agent</a>
-            <a href="/framework-intelligence">Framework Intelligence</a>
-            <a href="/business-units">Business Units</a>
-            <a href="/companies">Company</a>
-            <a href="/customers">Customers</a>
-            <a href="/contracts">Contracts</a>
-            <a href="/solutions">Solutions</a>
-            <a href="/projects">Projects</a>
-            <a href="/costs">Costs</a>
-            <a href="/evidence-index">Evidence Index</a>
-            <a href="/audit">Audit</a>
-          </nav>
+          <a class="brand-lockup" href="/" aria-label="Dashboard">
+            <span class="brand-logo-wrap"><img src="/static/telent-part-of-m-logo.svg" alt="Telent part of M Group"></span>
+            <span class="brand-copy">
+              <strong>{{ app_name }}</strong>
+              <span>Telent / M Group | RDEC decision support</span>
+            </span>
+          </a>
+          <div class="topbar-status" aria-label="Application status">
+            <span class="status-chip"><span class="status-dot"></span>Local MVP</span>
+            <span class="status-chip">AIF review</span>
+            <span class="status-chip">Not tax advice</span>
+          </div>
+          <div class="topbar-actions">
+            <a class="header-action" href="/projects">Projects</a>
+            <a class="header-action primary" href="/framework-intelligence">Framework Intel</a>
+          </div>
         </div>
+        <nav class="nav" aria-label="Main navigation">
+          <a href="/">Dashboard</a>
+          <a href="/framework-intelligence">Framework Intelligence</a>
+          <a href="/knowledge-agent">Knowledge Agent</a>
+          <a href="/business-units">Business Units</a>
+          <a href="/companies">Company</a>
+          <a href="/customers">Customers</a>
+          <a href="/contracts">Contracts</a>
+          <a href="/solutions">Solutions</a>
+          <a href="/projects">Projects</a>
+          <a href="/costs">Costs</a>
+          <a href="/evidence-index">Evidence Index</a>
+          <a href="/audit">Audit</a>
+        </nav>
       </header>
       <main class="container">
         {% block content %}{% endblock %}
