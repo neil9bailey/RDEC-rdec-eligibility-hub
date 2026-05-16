@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Source Catalogue - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Source Catalogue</h1>
+    <p>Five-source notice pipeline plus commercial backup configuration, normalised into the Framework Intelligence Opportunity Catalogue.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/framework-intelligence/source-changes">Source changes</a>
+    <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  Live checks are guarded by the approved-source allow-list. Commercial or portal sources stay inactive unless explicitly approved. {{ framework_agent_caveat }}
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Coverage</th>
+          <th>Format</th>
+          <th>Auth</th>
+          <th>Tracking</th>
+          <th>Status</th>
+          <th>Check</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for source in sources %}
+          <tr>
+            <td>
+              <strong>{{ source.name }}</strong>
+              <p class="hint">{{ source.source_family }} | {{ source.dedupe_strategy }}</p>
+              <p class="hint"><a href="{{ source.query_url }}">{{ source.query_url }}</a></p>
+            </td>
+            <td>{{ source.coverage or "Not recorded" }}</td>
+            <td>{{ source.data_format or source.source_type }}</td>
+            <td>{{ source.auth_model or "none" }}</td>
+            <td>
+              <span class="badge {{ 'green' if source.change_tracking_enabled else 'amber' }}">{{ 'tracked' if source.change_tracking_enabled else 'not tracked' }}</span>
+              {% if source.requires_human_approval %}<span class="badge amber">human approval</span>{% endif %}
+            </td>
+            <td>
+              <span class="badge {{ 'green' if source.active else 'amber' }}">{{ 'active' if source.active else 'inactive' }}</span>
+              <p class="hint">{{ source.connector_status }} | {{ source.last_status or "not checked" }}</p>
+            </td>
+            <td>
+              <form method="post" action="/framework-intelligence/sources/{{ source.id }}/check">
+                <button type="submit">Check source</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7">No sources configured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

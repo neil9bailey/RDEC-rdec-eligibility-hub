@@ -22,16 +22,21 @@ from app.form_utils import (
 )
 from app.framework_intelligence import (
     FRAMEWORK_AGENT_CAVEAT,
+    configured_framework_source_types,
     create_intelligence_report,
+    create_portal_retrieval_run,
+    extract_document_intelligence,
     framework_intelligence_metrics,
     official_framework_source_allowed,
     run_framework_agent_for_profile,
+    run_single_source_check,
     seed_framework_sources,
 )
 from app.models import (
     AccountingPeriod,
     Activity,
     AuditEvent,
+    BuyerPortalInstance,
     BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
@@ -40,6 +45,7 @@ from app.models import (
     CostLine,
     Customer,
     CustomerWatchProfile,
+    ExtractedQualityQuestion,
     EntitlementAssessment,
     EvidenceItem,
     ExtractedRequirement,
@@ -48,10 +54,13 @@ from app.models import (
     FrameworkSource,
     IntelligenceReport,
     OpportunityDocument,
+    PortalRetrievalRun,
+    ProcurementPlatform,
     RDProject,
     RDECOpportunitySignal,
     ReviewDecision,
     Solution,
+    SourceCheckSnapshot,
     TechnicalUncertainty,
 )
 from app.knowledge_agent import knowledge_agent_summary, knowledge_review_actions, run_live_source_checks
@@ -82,6 +91,7 @@ DEPENDENCY_RULES = {
         (CustomerWatchProfile, CustomerWatchProfile.business_unit_id, "framework watch profiles"),
         (FrameworkOpportunity, FrameworkOpportunity.business_unit_id, "framework opportunities"),
         (IntelligenceReport, IntelligenceReport.business_unit_id, "framework intelligence reports"),
+        (BuyerPortalInstance, BuyerPortalInstance.business_unit_id, "buyer portal instances"),
     ],
     Customer: [
         (Contract, Contract.customer_id, "contracts"),
@@ -89,6 +99,7 @@ DEPENDENCY_RULES = {
         (CustomerWatchProfile, CustomerWatchProfile.customer_id, "framework watch profiles"),
         (FrameworkOpportunity, FrameworkOpportunity.customer_id, "framework opportunities"),
         (IntelligenceReport, IntelligenceReport.customer_id, "framework intelligence reports"),
+        (BuyerPortalInstance, BuyerPortalInstance.customer_id, "buyer portal instances"),
     ],
     Contract: [(Solution, Solution.contract_id, "solutions")],
     Solution: [(RDProject, RDProject.solution_id, "R&D projects")],
@@ -100,14 +111,22 @@ DEPENDENCY_RULES = {
         (CompetentProfessionalOpinion, CompetentProfessionalOpinion.project_id, "competent professional opinions"),
         (ReviewDecision, ReviewDecision.project_id, "review decisions"),
     ],
-    FrameworkSource: [(FrameworkOpportunity, FrameworkOpportunity.source_id, "framework opportunities")],
+    FrameworkSource: [
+        (FrameworkOpportunity, FrameworkOpportunity.source_id, "framework opportunities"),
+        (SourceCheckSnapshot, SourceCheckSnapshot.source_id, "source check snapshots"),
+    ],
     CustomerWatchProfile: [(FrameworkAgentRun, FrameworkAgentRun.watch_profile_id, "framework agent runs")],
     FrameworkOpportunity: [
         (OpportunityDocument, OpportunityDocument.opportunity_id, "opportunity documents"),
         (ExtractedRequirement, ExtractedRequirement.opportunity_id, "extracted requirements"),
         (RDECOpportunitySignal, RDECOpportunitySignal.opportunity_id, "RDEC opportunity signals"),
+        (ExtractedQualityQuestion, ExtractedQualityQuestion.opportunity_id, "extracted quality questions"),
+        (PortalRetrievalRun, PortalRetrievalRun.opportunity_id, "portal retrieval runs"),
     ],
     ExtractedRequirement: [(RDECOpportunitySignal, RDECOpportunitySignal.requirement_id, "RDEC opportunity signals")],
+    OpportunityDocument: [(ExtractedQualityQuestion, ExtractedQualityQuestion.document_id, "extracted quality questions")],
+    ProcurementPlatform: [(BuyerPortalInstance, BuyerPortalInstance.platform_id, "buyer portal instances")],
+    BuyerPortalInstance: [(PortalRetrievalRun, PortalRetrievalRun.portal_instance_id, "portal retrieval runs")],
 }
 
 
@@ -151,9 +170,11 @@ def wants_partial(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
-FRAMEWORK_SOURCE_TYPES = ["ocds_api", "web_page"]
+FRAMEWORK_SOURCE_TYPES = configured_framework_source_types()
 FRAMEWORK_OPPORTUNITY_STATUSES = ["new", "watching", "bid_review", "archived", "rejected"]
 FRAMEWORK_REVIEW_STATUSES = ["pending", "accepted", "challenged", "rejected"]
+PORTAL_ACCESS_STATUSES = ["unknown", "registered", "needs_registration", "blocked", "retired"]
+DOCUMENT_RETRIEVAL_STATUSES = ["linked", "manual_required", "retrieved", "review_required", "archived"]
 
 
 def apply_corporation_tax_default(customer_type: str, submitted_status: str | None, errors: list[str] | None = None) -> str:
@@ -186,18 +207,26 @@ def framework_reference_context(session: Session) -> dict:
     business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
     sources = list(session.exec(select(FrameworkSource).order_by(col(FrameworkSource.name))))
     profiles = list(session.exec(select(CustomerWatchProfile).order_by(col(CustomerWatchProfile.profile_name))))
+    platforms = list(session.exec(select(ProcurementPlatform).order_by(col(ProcurementPlatform.name))))
+    portal_instances = list(session.exec(select(BuyerPortalInstance).order_by(col(BuyerPortalInstance.portal_name))))
     return {
         "customers": customers,
         "business_units": business_units,
         "sources": sources,
         "profiles": profiles,
+        "platforms": platforms,
+        "portal_instances": portal_instances,
         "customer_map": {customer.id: customer for customer in customers},
         "business_unit_map": {unit.id: unit for unit in business_units},
         "source_map": {source.id: source for source in sources},
         "profile_map": {profile.id: profile for profile in profiles},
+        "platform_map": {platform.id: platform for platform in platforms},
+        "portal_instance_map": {portal.id: portal for portal in portal_instances},
         "framework_source_types": FRAMEWORK_SOURCE_TYPES,
         "framework_opportunity_statuses": FRAMEWORK_OPPORTUNITY_STATUSES,
         "framework_review_statuses": FRAMEWORK_REVIEW_STATUSES,
+        "portal_access_statuses": PORTAL_ACCESS_STATUSES,
+        "document_retrieval_statuses": DOCUMENT_RETRIEVAL_STATUSES,
         "framework_agent_caveat": FRAMEWORK_AGENT_CAVEAT,
     }
 
@@ -452,11 +481,23 @@ async def create_framework_source(request: Request, session: Session = Depends(g
     source = FrameworkSource(
         name=str(form.get("name") or ""),
         source_type=source_type,
+        source_family=str(form.get("source_family") or "official_notice"),
         base_url=str(form.get("base_url") or query_url),
         query_url=query_url,
         official=parse_form_bool(form.get("official")) if form.get("official") is not None else True,
         active=parse_form_bool(form.get("active")) if form.get("active") is not None else True,
         review_frequency=str(form.get("review_frequency") or "manual"),
+        coverage=str(form.get("coverage") or ""),
+        auth_model=str(form.get("auth_model") or "none"),
+        data_format=str(form.get("data_format") or source_type),
+        dedupe_strategy=str(form.get("dedupe_strategy") or "ocid_or_reference"),
+        change_tracking_enabled=(
+            parse_form_bool(form.get("change_tracking_enabled"))
+            if form.get("change_tracking_enabled") is not None
+            else True
+        ),
+        requires_human_approval=parse_form_bool(form.get("requires_human_approval")),
+        connector_status=str(form.get("connector_status") or "configured"),
         notes=str(form.get("notes") or ""),
     )
     save_with_audit(session, source, "create", f"Created framework source {source.name}")
@@ -489,11 +530,19 @@ async def update_framework_source(source_id: int, request: Request, session: Ses
     before_snapshot = compact_snapshot(source)
     source.name = str(form.get("name") or "")
     source.source_type = source_type
+    source.source_family = str(form.get("source_family") or "official_notice")
     source.base_url = str(form.get("base_url") or query_url)
     source.query_url = query_url
     source.official = parse_form_bool(form.get("official"))
     source.active = parse_form_bool(form.get("active"))
     source.review_frequency = str(form.get("review_frequency") or "manual")
+    source.coverage = str(form.get("coverage") or "")
+    source.auth_model = str(form.get("auth_model") or "none")
+    source.data_format = str(form.get("data_format") or source_type)
+    source.dedupe_strategy = str(form.get("dedupe_strategy") or "ocid_or_reference")
+    source.change_tracking_enabled = parse_form_bool(form.get("change_tracking_enabled"))
+    source.requires_human_approval = parse_form_bool(form.get("requires_human_approval"))
+    source.connector_status = str(form.get("connector_status") or "configured")
     source.notes = str(form.get("notes") or "")
     save_with_audit(session, source, "update", f"Updated framework source {source.name}", before_snapshot)
     return redirect("/framework-intelligence/sources")
@@ -502,6 +551,123 @@ async def update_framework_source(source_id: int, request: Request, session: Ses
 @app.post("/framework-intelligence/sources/{source_id}/delete")
 def delete_framework_source(source_id: int, session: Session = Depends(get_session)):
     return delete_or_block(session, FrameworkSource, source_id, "/framework-intelligence/sources")
+
+
+@app.post("/framework-intelligence/sources/{source_id}/check")
+def check_framework_source(source_id: int, session: Session = Depends(get_session)):
+    try:
+        run_single_source_check(session, source_id)
+    except ValueError as exc:
+        return validation_error_response([str(exc)], "/framework-intelligence/source-catalogue")
+    return redirect("/framework-intelligence/source-changes")
+
+
+@app.get("/framework-intelligence/source-catalogue", response_class=HTMLResponse)
+def framework_source_catalogue_page(request: Request, session: Session = Depends(get_session)):
+    snapshots = list(
+        session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(50))
+    )
+    return templates.TemplateResponse(
+        request,
+        "framework_source_catalogue.html",
+        template_context(request, snapshots=snapshots, **framework_reference_context(session)),
+    )
+
+
+@app.get("/framework-intelligence/source-changes", response_class=HTMLResponse)
+def framework_source_changes(request: Request, session: Session = Depends(get_session)):
+    snapshots = list(
+        session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(200))
+    )
+    return templates.TemplateResponse(
+        request,
+        "framework_source_changes.html",
+        template_context(request, snapshots=snapshots, **framework_reference_context(session)),
+    )
+
+
+@app.get("/framework-intelligence/portal-platforms", response_class=HTMLResponse)
+def portal_platforms(request: Request, session: Session = Depends(get_session)):
+    return templates.TemplateResponse(
+        request,
+        "framework_portal_platforms.html",
+        template_context(request, **framework_reference_context(session)),
+    )
+
+
+@app.post("/framework-intelligence/portal-instances")
+async def create_portal_instance(request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    errors: list[str] = []
+    platform_id = parse_required_int(form.get("platform_id"), "Platform", errors)
+    customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
+    business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
+    access_status = parse_enum(
+        form.get("access_status"),
+        PORTAL_ACCESS_STATUSES,
+        "Access status",
+        errors,
+        "unknown",
+    )
+    portal_name = str(form.get("portal_name") or "").strip()
+    if not portal_name:
+        errors.append("Portal name is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/portal-platforms")
+    portal = BuyerPortalInstance(
+        portal_name=portal_name,
+        platform_id=platform_id,
+        customer_id=customer_id,
+        business_unit_id=business_unit_id,
+        portal_url=str(form.get("portal_url") or ""),
+        account_reference=str(form.get("account_reference") or ""),
+        access_status=access_status,
+        document_retrieval_mode=str(form.get("document_retrieval_mode") or "manual"),
+        notes=str(form.get("notes") or ""),
+    )
+    save_with_audit(session, portal, "create", f"Created buyer portal instance {portal.portal_name}")
+    return redirect("/framework-intelligence/portal-platforms")
+
+
+@app.post("/framework-intelligence/portal-instances/{portal_id}/update")
+async def update_portal_instance(portal_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    portal = session.get(BuyerPortalInstance, portal_id)
+    if not portal:
+        return redirect("/framework-intelligence/portal-platforms")
+    errors: list[str] = []
+    platform_id = parse_required_int(form.get("platform_id"), "Platform", errors)
+    customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
+    business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
+    access_status = parse_enum(
+        form.get("access_status"),
+        PORTAL_ACCESS_STATUSES,
+        "Access status",
+        errors,
+        "unknown",
+    )
+    portal_name = str(form.get("portal_name") or "").strip()
+    if not portal_name:
+        errors.append("Portal name is required.")
+    if errors:
+        return validation_error_response(errors, "/framework-intelligence/portal-platforms")
+    before_snapshot = compact_snapshot(portal)
+    portal.portal_name = portal_name
+    portal.platform_id = platform_id
+    portal.customer_id = customer_id
+    portal.business_unit_id = business_unit_id
+    portal.portal_url = str(form.get("portal_url") or "")
+    portal.account_reference = str(form.get("account_reference") or "")
+    portal.access_status = access_status
+    portal.document_retrieval_mode = str(form.get("document_retrieval_mode") or "manual")
+    portal.notes = str(form.get("notes") or "")
+    save_with_audit(session, portal, "update", f"Updated buyer portal instance {portal.portal_name}", before_snapshot)
+    return redirect("/framework-intelligence/portal-platforms")
+
+
+@app.post("/framework-intelligence/portal-instances/{portal_id}/delete")
+def delete_portal_instance(portal_id: int, session: Session = Depends(get_session)):
+    return delete_or_block(session, BuyerPortalInstance, portal_id, "/framework-intelligence/portal-platforms")
 
 
 @app.get("/framework-intelligence/watch-profiles", response_class=HTMLResponse)
@@ -599,9 +765,13 @@ def framework_opportunities(request: Request, session: Session = Depends(get_ses
         session.exec(select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc()).limit(200))
     )
     signals = list(session.exec(select(RDECOpportunitySignal)))
+    documents = list(session.exec(select(OpportunityDocument)))
     signal_counts: dict[int, int] = {}
     for signal in signals:
         signal_counts[signal.opportunity_id] = signal_counts.get(signal.opportunity_id, 0) + 1
+    document_counts: dict[int, int] = {}
+    for document in documents:
+        document_counts[document.opportunity_id] = document_counts.get(document.opportunity_id, 0) + 1
     return templates.TemplateResponse(
         request,
         "framework_opportunities.html",
@@ -609,6 +779,7 @@ def framework_opportunities(request: Request, session: Session = Depends(get_ses
             request,
             opportunities=opportunities,
             signal_counts=signal_counts,
+            document_counts=document_counts,
             **framework_reference_context(session),
         ),
     )
@@ -646,6 +817,110 @@ async def update_framework_opportunity(opportunity_id: int, request: Request, se
 @app.post("/framework-intelligence/opportunities/{opportunity_id}/delete")
 def delete_framework_opportunity(opportunity_id: int, session: Session = Depends(get_session)):
     return delete_or_block(session, FrameworkOpportunity, opportunity_id, "/framework-intelligence/opportunities")
+
+
+@app.get("/framework-intelligence/opportunities/{opportunity_id}/documents", response_class=HTMLResponse)
+def opportunity_documents(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
+    opportunity = session.get(FrameworkOpportunity, opportunity_id)
+    if not opportunity:
+        return redirect("/framework-intelligence/opportunities")
+    documents = list(
+        session.exec(
+            select(OpportunityDocument)
+            .where(OpportunityDocument.opportunity_id == opportunity_id)
+            .order_by(col(OpportunityDocument.extracted_at).desc())
+        )
+    )
+    quality_questions = list(
+        session.exec(
+            select(ExtractedQualityQuestion)
+            .where(ExtractedQualityQuestion.opportunity_id == opportunity_id)
+            .order_by(col(ExtractedQualityQuestion.created_at).desc())
+        )
+    )
+    retrieval_runs = list(
+        session.exec(
+            select(PortalRetrievalRun)
+            .where(PortalRetrievalRun.opportunity_id == opportunity_id)
+            .order_by(col(PortalRetrievalRun.started_at).desc())
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "framework_opportunity_documents.html",
+        template_context(
+            request,
+            opportunity=opportunity,
+            documents=documents,
+            quality_questions=quality_questions,
+            retrieval_runs=retrieval_runs,
+            **framework_reference_context(session),
+        ),
+    )
+
+
+@app.post("/framework-intelligence/opportunities/{opportunity_id}/documents")
+async def create_opportunity_document(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    opportunity = session.get(FrameworkOpportunity, opportunity_id)
+    if not opportunity:
+        return redirect("/framework-intelligence/opportunities")
+    errors: list[str] = []
+    title = str(form.get("title") or "").strip()
+    if not title:
+        errors.append("Document title is required.")
+    retrieval_status = parse_enum(
+        form.get("retrieval_status"),
+        DOCUMENT_RETRIEVAL_STATUSES,
+        "Retrieval status",
+        errors,
+        "linked",
+    )
+    if errors:
+        return validation_error_response(errors, f"/framework-intelligence/opportunities/{opportunity_id}/documents")
+    document = OpportunityDocument(
+        opportunity_id=opportunity_id,
+        title=title,
+        document_type=str(form.get("document_type") or "itt_document"),
+        url_or_path=str(form.get("url_or_path") or ""),
+        source_hash=str(form.get("source_hash") or ""),
+        retrieval_status=retrieval_status,
+        human_review_status="pending",
+        platform_name=str(form.get("platform_name") or ""),
+        content_summary=str(form.get("content_summary") or ""),
+        notes=str(form.get("notes") or ""),
+    )
+    session.add(document)
+    session.flush()
+    log_event(
+        session,
+        entity_type="OpportunityDocument",
+        entity_id=document.id,
+        action="create",
+        summary=f"Created opportunity document {document.title}",
+        after=document,
+    )
+    extract_document_intelligence(session, opportunity, document, str(form.get("document_text") or ""))
+    session.commit()
+    return redirect(f"/framework-intelligence/opportunities/{opportunity_id}/documents")
+
+
+@app.post("/framework-intelligence/opportunities/{opportunity_id}/retrieval-runs")
+async def create_retrieval_run(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
+    form = await request.form()
+    if not session.get(FrameworkOpportunity, opportunity_id):
+        return redirect("/framework-intelligence/opportunities")
+    errors: list[str] = []
+    portal_instance_id = parse_optional_int(form.get("portal_instance_id"), "Portal instance", errors)
+    if errors:
+        return validation_error_response(errors, f"/framework-intelligence/opportunities/{opportunity_id}/documents")
+    create_portal_retrieval_run(
+        session,
+        opportunity_id,
+        portal_instance_id=portal_instance_id,
+        notes=str(form.get("notes") or ""),
+    )
+    return redirect(f"/framework-intelligence/opportunities/{opportunity_id}/documents")
 
 
 @app.get("/framework-intelligence/requirements", response_class=HTMLResponse)

@@ -39,14 +39,24 @@
                     {% for item in framework_source_types %}<option {% if source.source_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
                   </select>
                 </div>
+                <div class="field"><label>Source family</label><input name="source_family" value="{{ source.source_family }}"></div>
                 <div class="field"><label>Review frequency</label><input name="review_frequency" value="{{ source.review_frequency }}"></div>
               </div>
               <div class="field"><label>Base URL</label><input name="base_url" value="{{ source.base_url }}"></div>
               <div class="field"><label>Query URL</label><input name="query_url" value="{{ source.query_url }}" required></div>
               <div class="form-grid">
+                <div class="field"><label>Coverage</label><input name="coverage" value="{{ source.coverage }}"></div>
+                <div class="field"><label>Auth model</label><input name="auth_model" value="{{ source.auth_model }}"></div>
+                <div class="field"><label>Data format</label><input name="data_format" value="{{ source.data_format }}"></div>
+                <div class="field"><label>Dedupe strategy</label><input name="dedupe_strategy" value="{{ source.dedupe_strategy }}"></div>
+              </div>
+              <div class="form-grid">
                 <label><input type="checkbox" name="official" {% if source.official %}checked{% endif %}> Official/public source</label>
                 <label><input type="checkbox" name="active" {% if source.active %}checked{% endif %}> Active</label>
+                <label><input type="checkbox" name="change_tracking_enabled" {% if source.change_tracking_enabled %}checked{% endif %}> Track changes</label>
+                <label><input type="checkbox" name="requires_human_approval" {% if source.requires_human_approval %}checked{% endif %}> Human approval required</label>
               </div>
+              <div class="field"><label>Connector status</label><input name="connector_status" value="{{ source.connector_status }}"></div>
               <div class="field"><label>Notes</label><textarea name="notes">{{ source.notes }}</textarea></div>
               <button type="submit">Update source</button>
             </form>
@@ -71,14 +81,24 @@
           <label>Source type</label>
           <select name="source_type">{% for item in framework_source_types %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
+        <div class="field"><label>Source family</label><input name="source_family" value="official_notice"></div>
         <div class="field"><label>Review frequency</label><input name="review_frequency" value="manual"></div>
       </div>
       <div class="field"><label>Base URL</label><input name="base_url" placeholder="https://www.find-tender.service.gov.uk"></div>
       <div class="field"><label>Query URL</label><input name="query_url" placeholder="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50" required></div>
       <div class="form-grid">
+        <div class="field"><label>Coverage</label><input name="coverage"></div>
+        <div class="field"><label>Auth model</label><input name="auth_model" value="none"></div>
+        <div class="field"><label>Data format</label><input name="data_format" value="REST OCDS JSON"></div>
+        <div class="field"><label>Dedupe strategy</label><input name="dedupe_strategy" value="ocid_or_reference"></div>
+      </div>
+      <div class="form-grid">
         <label><input type="checkbox" name="official" checked> Official/public source</label>
         <label><input type="checkbox" name="active" checked> Active</label>
+        <label><input type="checkbox" name="change_tracking_enabled" checked> Track changes</label>
+        <label><input type="checkbox" name="requires_human_approval"> Human approval required</label>
       </div>
+      <div class="field"><label>Connector status</label><input name="connector_status" value="configured"></div>
       <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
       <button type="submit">Save source</button>
     </form>

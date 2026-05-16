@@ -711,6 +711,11 @@ table {
   box-shadow: var(--soft-shadow);
 }
 
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
 th,
 td {
   padding: 12px 13px;

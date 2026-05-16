@@ -13,17 +13,23 @@ from sqlmodel import Session, col, select
 
 from app.audit import compact_snapshot, log_event
 from app.models import (
+    BuyerPortalInstance,
     BusinessUnit,
     Customer,
     CustomerWatchProfile,
+    ExtractedQualityQuestion,
     ExtractedRequirement,
     FrameworkAgentRun,
     FrameworkOpportunity,
     FrameworkSource,
     IntelligenceReport,
     OpportunityDocument,
+    PortalRetrievalRun,
+    ProcurementPlatform,
     RDECOpportunitySignal,
+    SourceCheckSnapshot,
 )
+from app.rule_loader import load_rule_file
 from app.services import CAVEAT, money
 
 
@@ -45,39 +51,6 @@ OFFICIAL_FRAMEWORK_DOMAINS = {
     "www.gca.gov.uk",
     "gca.gov.uk",
 }
-
-DEFAULT_FRAMEWORK_SOURCES = [
-    {
-        "name": "Find a Tender OCDS release package API",
-        "source_type": "ocds_api",
-        "base_url": "https://www.find-tender.service.gov.uk",
-        "query_url": "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50",
-        "notes": "Official UK high-value public and utilities procurement notice source. Uses public OCDS data where available.",
-    },
-    {
-        "name": "Contracts Finder OCDS search API",
-        "source_type": "ocds_api",
-        "base_url": "https://www.contractsfinder.service.gov.uk",
-        "query_url": "https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit=50",
-        "notes": "Official public-sector opportunity source for lower-value, future, live, award and early engagement notices.",
-    },
-    {
-        "name": "GOV.UK Contracts Finder guidance",
-        "source_type": "web_page",
-        "base_url": "https://www.gov.uk/contracts-finder",
-        "query_url": "https://www.gov.uk/contracts-finder",
-        "active": False,
-        "notes": "Official guidance reference. Inactive by default because it is not a live notice feed.",
-    },
-    {
-        "name": "GOV.UK Find a Tender guidance",
-        "source_type": "web_page",
-        "base_url": "https://www.gov.uk/find-tender",
-        "query_url": "https://www.gov.uk/find-tender",
-        "active": False,
-        "notes": "Official guidance reference. Inactive by default because it is not a live notice feed.",
-    },
-]
 
 REQUIREMENT_PATTERNS: dict[str, list[str]] = {
     "asset management": ["asset management", "asset", "maintenance"],
@@ -136,24 +109,88 @@ class CandidateOpportunity:
     content_hash: str = ""
 
 
+def framework_source_rules() -> dict:
+    return load_rule_file("framework_sources.yml")
+
+
+def procurement_platform_rules() -> dict:
+    return load_rule_file("procurement_platforms.yml")
+
+
+def source_change_rules() -> dict:
+    return load_rule_file("source_change_tracking.yml")
+
+
+def framework_source_catalogue() -> list[dict]:
+    return list(framework_source_rules().get("sources") or [])
+
+
+def procurement_platform_catalogue() -> list[dict]:
+    return list(procurement_platform_rules().get("platforms") or [])
+
+
+def configured_framework_source_types() -> list[str]:
+    return list(framework_source_rules().get("source_types") or ["ocds_api", "web_page"])
+
+
+def approved_framework_domains() -> set[str]:
+    guardrails = framework_source_rules().get("guardrails") or {}
+    configured = {str(domain).lower() for domain in guardrails.get("approved_domains") or []}
+    return OFFICIAL_FRAMEWORK_DOMAINS | configured
+
+
 def official_framework_source_allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.netloc.lower() in OFFICIAL_FRAMEWORK_DOMAINS
+    return parsed.scheme == "https" and parsed.netloc.lower() in approved_framework_domains()
 
 
 def seed_framework_sources(session: Session) -> None:
     existing_names = {source.name for source in session.exec(select(FrameworkSource))}
-    for item in DEFAULT_FRAMEWORK_SOURCES:
+    for item in framework_source_catalogue():
         if item["name"] in existing_names:
             continue
+        source_metadata = {
+            "config_key": item.get("key", ""),
+            "config_version": framework_source_rules().get("version", "unknown"),
+            "source_metadata": framework_source_rules().get("source_metadata", {}),
+        }
         session.add(
             FrameworkSource(
                 name=item["name"],
-                source_type=item["source_type"],
+                source_type=item.get("source_type", "ocds_api"),
+                source_family=item.get("source_family", "official_notice"),
                 base_url=item["base_url"],
                 query_url=item["query_url"],
+                official=bool(item.get("official", True)),
                 active=bool(item.get("active", True)),
+                review_frequency=item.get("review_frequency", "manual"),
+                coverage=item.get("coverage", ""),
+                auth_model=item.get("auth_model", "none"),
+                data_format=item.get("data_format", ""),
+                dedupe_strategy=item.get("dedupe_strategy", "ocid_or_reference"),
+                change_tracking_enabled=bool(item.get("change_tracking_enabled", True)),
+                requires_human_approval=bool(item.get("requires_human_approval", False)),
+                connector_status=item.get("connector_status", "configured"),
+                source_metadata=json.dumps(source_metadata, separators=(",", ":")),
                 notes=item["notes"],
+            )
+        )
+    existing_platform_names = {platform.name for platform in session.exec(select(ProcurementPlatform))}
+    for item in procurement_platform_catalogue():
+        if item["name"] in existing_platform_names:
+            continue
+        session.add(
+            ProcurementPlatform(
+                name=item["name"],
+                platform_type=item.get("platform_type", "buyer_portal"),
+                login_model=item.get("login_model", "supplier_account"),
+                supported_actions="; ".join(item.get("supported_actions") or []),
+                requires_credentials=bool(item.get("requires_credentials", True)),
+                human_approval_required=bool(item.get("human_approval_required", True)),
+                active=bool(item.get("active", True)),
+                connector_status=item.get("connector_status", "manual_assisted"),
+                platform_domains=item.get("platform_domains", ""),
+                notes=item.get("notes", ""),
             )
         )
     session.commit()
@@ -164,15 +201,25 @@ def framework_intelligence_metrics(session: Session) -> dict:
     opportunities = list(session.exec(select(FrameworkOpportunity)))
     requirements = list(session.exec(select(ExtractedRequirement)))
     signals = list(session.exec(select(RDECOpportunitySignal)))
+    platforms = list(session.exec(select(ProcurementPlatform)))
+    snapshots = list(session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(100)))
+    documents = list(session.exec(select(OpportunityDocument)))
+    quality_questions = list(session.exec(select(ExtractedQualityQuestion)))
     runs = list(session.exec(select(FrameworkAgentRun).order_by(col(FrameworkAgentRun.started_at).desc()).limit(5)))
     return {
         "active_profiles": sum(1 for profile in profiles if profile.active),
         "active_sources": len(list(session.exec(select(FrameworkSource).where(FrameworkSource.active == True)))),  # noqa: E712
+        "platform_count": len(platforms),
+        "active_platforms": sum(1 for platform in platforms if platform.active),
         "opportunity_count": len(opportunities),
         "new_opportunities": sum(1 for opportunity in opportunities if opportunity.status == "new"),
         "pending_requirements": sum(1 for requirement in requirements if requirement.human_review_status == "pending"),
         "rdec_signals": len(signals),
         "pending_signals": sum(1 for signal in signals if signal.human_review_status == "pending"),
+        "document_count": len(documents),
+        "quality_questions": len(quality_questions),
+        "source_changes": sum(1 for snapshot in snapshots if snapshot.change_type == "changed"),
+        "source_warnings": sum(1 for snapshot in snapshots if snapshot.change_type == "failed"),
         "latest_runs": runs,
     }
 
@@ -252,6 +299,103 @@ def fetch_source_url(url: str) -> FetchResult:
         )
     except httpx.HTTPError as exc:
         return FetchResult(ok=False, status_code=0, url=url, text="", error=f"Network source check failed: {exc}")
+
+
+def content_hash_for_text(text: str) -> str:
+    return sha256((text or "").encode("utf-8", errors="ignore")).hexdigest()
+
+
+def detect_source_schema(text: str, content_type: str = "") -> str:
+    sample = (text or "")[:5000]
+    lowered = sample.lower()
+    rules = source_change_rules().get("schema_detection") or {}
+    if "json" in content_type.lower() or any(str(marker).lower() in lowered for marker in rules.get("ocds_markers") or []):
+        return "ocds_json"
+    if "xml" in content_type.lower() or any(str(marker).lower() in lowered for marker in rules.get("eforms_markers") or []):
+        return "eforms_or_xml"
+    if "<html" in lowered or "<a " in lowered:
+        return "html"
+    return "unknown"
+
+
+def record_source_check_snapshot(
+    session: Session,
+    source: FrameworkSource,
+    fetch: FetchResult,
+    query_url: str,
+) -> SourceCheckSnapshot:
+    latest = session.exec(
+        select(SourceCheckSnapshot)
+        .where(SourceCheckSnapshot.source_id == source.id)
+        .order_by(col(SourceCheckSnapshot.checked_at).desc())
+    ).first()
+    current_hash = content_hash_for_text(fetch.text) if fetch.ok else ""
+    previous_hash = latest.content_hash if latest else ""
+    if not fetch.ok:
+        change_type = "failed"
+    elif not latest:
+        change_type = "first_seen"
+    elif previous_hash != current_hash:
+        change_type = "changed"
+    else:
+        change_type = "unchanged"
+    snapshot = SourceCheckSnapshot(
+        source_id=source.id,
+        query_url=query_url,
+        status_code=fetch.status_code,
+        ok=fetch.ok,
+        content_hash=current_hash,
+        previous_hash=previous_hash,
+        change_type=change_type,
+        detected_schema=detect_source_schema(fetch.text, fetch.content_type),
+        connector_status=source.connector_status,
+        notes=fetch.error or source.last_status,
+    )
+    session.add(snapshot)
+    session.flush()
+    log_event(
+        session,
+        entity_type="SourceCheckSnapshot",
+        entity_id=snapshot.id,
+        action="create",
+        summary=f"Recorded {change_type} source snapshot for {source.name}",
+        after=snapshot,
+    )
+    return snapshot
+
+
+def run_single_source_check(
+    session: Session,
+    source_id: int,
+    fetcher=fetch_source_url,
+    today: date | None = None,
+) -> SourceCheckSnapshot:
+    source = session.get(FrameworkSource, source_id)
+    if not source:
+        raise ValueError(f"Framework source {source_id} not found")
+    url = source_query_url(source, ["transport", "technology", "framework"], today=today)
+    if not official_framework_source_allowed(url):
+        fetch = FetchResult(ok=False, status_code=0, url=url, text="", error="Blocked by approved-source allow-list.")
+    else:
+        fetch = fetcher(url)
+    before_snapshot = compact_snapshot(source)
+    source.last_checked_at = datetime.now(UTC)
+    source.last_status = f"HTTP {fetch.status_code}" if fetch.ok else (fetch.error or "failed")
+    source.connector_status = "checked" if fetch.ok else "warning"
+    session.add(source)
+    snapshot = record_source_check_snapshot(session, source, fetch, url)
+    log_event(
+        session,
+        entity_type="FrameworkSource",
+        entity_id=source.id,
+        action="update",
+        summary=f"Checked framework source {source.name}",
+        before=before_snapshot,
+        after=source,
+    )
+    session.commit()
+    session.refresh(snapshot)
+    return snapshot
 
 
 def parse_dateish(value: object) -> date | None:
@@ -610,6 +754,124 @@ def extract_requirements_for_opportunity(session: Session, opportunity: Framewor
     return requirement_count, signal_count
 
 
+def extract_quality_questions_from_text(text: str) -> list[tuple[str, str]]:
+    questions: list[tuple[str, str]] = []
+    for raw_line in re.split(r"[\n\r]+", text or ""):
+        line = textish(raw_line)
+        if len(line) < 12:
+            continue
+        lower = line.lower()
+        looks_like_question = "?" in line or "quality question" in lower or lower.startswith(("q.", "q1", "q2", "q3"))
+        has_weighting = "weight" in lower or "%" in line or "marks" in lower or "score" in lower
+        if not (looks_like_question or has_weighting):
+            continue
+        weighting = ""
+        weight_match = re.search(r"(\d{1,3}\s?%|\d{1,3}\s?marks?)", line, flags=re.I)
+        if weight_match:
+            weighting = weight_match.group(1)
+        questions.append((line[:1200], weighting))
+    return questions[:20]
+
+
+def create_portal_retrieval_run(
+    session: Session,
+    opportunity_id: int,
+    portal_instance_id: int | None = None,
+    notes: str = "",
+) -> PortalRetrievalRun:
+    run = PortalRetrievalRun(
+        opportunity_id=opportunity_id,
+        portal_instance_id=portal_instance_id,
+        run_type="manual",
+        status="requested",
+        guardrail_summary=(
+            "Manual/on-demand retrieval task only. No credentials are stored; no portal action, expression of "
+            "interest, submission, or client communication is automated by the MVP."
+        ),
+        notes=notes,
+    )
+    session.add(run)
+    session.flush()
+    log_event(
+        session,
+        entity_type="PortalRetrievalRun",
+        entity_id=run.id,
+        action="create",
+        summary=f"Created portal retrieval task for opportunity {opportunity_id}",
+        after=run,
+    )
+    session.commit()
+    session.refresh(run)
+    return run
+
+
+def extract_document_intelligence(
+    session: Session,
+    opportunity: FrameworkOpportunity,
+    document: OpportunityDocument,
+    text: str,
+) -> tuple[int, int, int]:
+    source_text = textish(f"{document.title}. {document.content_summary}. {document.notes}. {text}")
+    requirement_count = 0
+    signal_count = 0
+    for theme in requirement_themes_for_text(source_text):
+        requirement_created, signal_created = create_requirement_and_signal(session, opportunity, theme, source_text)
+        if requirement_created:
+            requirement_count += 1
+        if signal_created:
+            signal_count += 1
+    question_count = 0
+    for question_text, weighting in extract_quality_questions_from_text(source_text):
+        existing = session.exec(
+            select(ExtractedQualityQuestion).where(
+                ExtractedQualityQuestion.opportunity_id == opportunity.id,
+                ExtractedQualityQuestion.question_text == question_text,
+            )
+        ).first()
+        if existing:
+            continue
+        themes = requirement_themes_for_text(question_text)
+        question = ExtractedQualityQuestion(
+            opportunity_id=opportunity.id or 0,
+            document_id=document.id,
+            section_reference=document.document_type,
+            question_text=question_text,
+            weighting=weighting,
+            requirement_theme=themes[0] if themes else "bid quality response",
+            confidence="medium" if weighting else "low",
+            rdec_relevance_note=(
+                "Use this bid requirement as an early signal only. RDEC relevance depends on later technical "
+                "advance, uncertainty, evidence and entitlement review."
+            ),
+        )
+        session.add(question)
+        session.flush()
+        question_count += 1
+        log_event(
+            session,
+            entity_type="ExtractedQualityQuestion",
+            entity_id=question.id,
+            action="create",
+            summary=f"Extracted quality question for opportunity {opportunity.id}",
+            after=question,
+        )
+    if question_count or requirement_count or signal_count:
+        before_snapshot = compact_snapshot(document)
+        document.retrieval_status = "review_required"
+        document.human_review_status = "pending"
+        session.add(document)
+        log_event(
+            session,
+            entity_type="OpportunityDocument",
+            entity_id=document.id,
+            action="update",
+            summary=f"Extracted document intelligence for opportunity {opportunity.id}",
+            before=before_snapshot,
+            after=document,
+        )
+    return requirement_count, signal_count, question_count
+
+
 def candidates_from_fetch(fetch: FetchResult, source: FrameworkSource, terms: list[str]) -> list[CandidateOpportunity]:
     if not fetch.ok:
         return []
@@ -664,12 +926,19 @@ def run_framework_agent_for_profile(
         url = source_query_url(source, terms, today=today)
         if not official_framework_source_allowed(url):
             source.last_status = "blocked by official-source allow-list"
+            record_source_check_snapshot(
+                session,
+                source,
+                FetchResult(ok=False, status_code=0, url=url, text="", error=source.last_status),
+                url,
+            )
             errors.append(f"{source.name}: blocked by official-source allow-list")
             continue
         fetch = fetcher(url)
         source.last_checked_at = datetime.now(UTC)
         source.last_status = f"HTTP {fetch.status_code}" if fetch.ok else (fetch.error or "failed")
         session.add(source)
+        record_source_check_snapshot(session, source, fetch, url)
         if not fetch.ok:
             errors.append(f"{source.name}: {source.last_status}")
             continue
@@ -725,19 +994,45 @@ def generate_framework_intelligence_report_markdown(
     opportunities = list(session.exec(opportunity_query.limit(50)))
     profiles = list(session.exec(profile_query))
     sources = list(session.exec(select(FrameworkSource).order_by(col(FrameworkSource.name))))
+    platforms = list(session.exec(select(ProcurementPlatform).order_by(col(ProcurementPlatform.name))))
+    snapshots = list(session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(10)))
     opportunity_ids = [opportunity.id for opportunity in opportunities if opportunity.id]
     requirements: list[ExtractedRequirement] = []
     signals: list[RDECOpportunitySignal] = []
+    documents: list[OpportunityDocument] = []
+    quality_questions: list[ExtractedQualityQuestion] = []
     if opportunity_ids:
         requirements = list(
             session.exec(select(ExtractedRequirement).where(ExtractedRequirement.opportunity_id.in_(opportunity_ids)))
         )
         signals = list(session.exec(select(RDECOpportunitySignal).where(RDECOpportunitySignal.opportunity_id.in_(opportunity_ids))))
+        documents = list(session.exec(select(OpportunityDocument).where(OpportunityDocument.opportunity_id.in_(opportunity_ids))))
+        quality_questions = list(
+            session.exec(select(ExtractedQualityQuestion).where(ExtractedQualityQuestion.opportunity_id.in_(opportunity_ids)))
+        )
 
     source_lines = [
-        f"- {source.name}: {'active' if source.active else 'inactive'}; last status {source.last_status or 'not checked'}"
+        (
+            f"- {source.name}: {'active' if source.active else 'inactive'}; family {source.source_family}; "
+            f"format {source.data_format or source.source_type}; coverage {source.coverage or 'not recorded'}; "
+            f"last status {source.last_status or 'not checked'}"
+        )
         for source in sources
     ] or ["- No sources configured."]
+    platform_lines = [
+        (
+            f"- {platform.name}: {platform.connector_status}; actions {platform.supported_actions or 'not recorded'}; "
+            f"human approval {'required' if platform.human_approval_required else 'not marked'}"
+        )
+        for platform in platforms
+    ] or ["- No portal platforms configured."]
+    source_change_lines = [
+        (
+            f"- {snapshot.checked_at.date()} source {snapshot.source_id}: {snapshot.change_type}; "
+            f"schema {snapshot.detected_schema}; status {snapshot.status_code or snapshot.notes or 'not recorded'}"
+        )
+        for snapshot in snapshots
+    ] or ["- No source-change snapshots captured yet."]
     profile_lines = [
         f"- {profile.profile_name}: keywords '{profile.keywords or 'not recorded'}', aliases '{profile.buyer_aliases or 'not recorded'}'"
         for profile in profiles
@@ -754,16 +1049,34 @@ def generate_framework_intelligence_report_markdown(
         f"- {requirement.requirement_theme}: {requirement.requirement_text[:220]} ({requirement.human_review_status})"
         for requirement in requirements
     ] or ["- No requirements extracted yet."]
+    document_lines = [
+        (
+            f"- {document.title}: {document.document_type}; {document.retrieval_status}; "
+            f"{document.url_or_path or 'no link'}"
+        )
+        for document in documents
+    ] or ["- No opportunity documents captured yet."]
+    quality_question_lines = [
+        (
+            f"- {question.requirement_theme}: {question.question_text[:220]} "
+            f"weighting {question.weighting or 'not detected'} ({question.human_review_status})"
+        )
+        for question in quality_questions
+    ] or ["- No ITT quality questions extracted yet."]
     signal_lines = [
         f"- {signal.signal_strength}: {signal.signal_text} Action: {signal.recommended_action}"
         for signal in signals
     ] or ["- No RDEC candidate indicators extracted yet."]
 
     generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    source_config_version = framework_source_rules().get("version", "unknown")
+    platform_config_version = procurement_platform_rules().get("version", "unknown")
     return f"""# {report_name}
 
 **Generated at:** {generated_at}
 **Decision-support caveat:** {FRAMEWORK_AGENT_CAVEAT}
+**Source config version:** {source_config_version}
+**Portal platform config version:** {platform_config_version}
 
 ## Purpose
 This report consolidates public-sector framework and bid-opportunity intelligence for Telent / M Group. It is intended to help sales, engineering, Finance, and Ayming discuss likely customer requirements, early evidence-capture needs, and possible R&D candidate signals before and during delivery.
@@ -781,11 +1094,23 @@ This report consolidates public-sector framework and bid-opportunity intelligenc
 ## Sources
 {chr(10).join(source_lines)}
 
+## Source Change Tracking
+{chr(10).join(source_change_lines)}
+
+## Buyer Portal Platforms
+{chr(10).join(platform_lines)}
+
 ## Captured Opportunities
 {chr(10).join(opportunity_lines)}
 
+## Opportunity Documents
+{chr(10).join(document_lines)}
+
 ## Consolidated Requirement Themes
 {chr(10).join(requirement_lines)}
+
+## ITT Quality Questions And Weightings
+{chr(10).join(quality_question_lines)}
 
 ## RDEC Candidate Intelligence
 {chr(10).join(signal_lines)}

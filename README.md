@@ -155,14 +155,22 @@ It uses customer and business-unit data to create watch profiles for public-sect
 The agent records:
 
 - source configuration and last check status
+- configurable five-source public procurement pipeline metadata
+- source-change snapshots and connector health
+- buyer portal platform families and customer portal instances
 - customer watch profiles, aliases, keywords, CPV codes, and domains
 - captured framework or bid opportunities
+- opportunity document links, retrieval tasks, quality-question extracts, and weighting signals
 - extracted requirement themes
 - RDEC candidate indicators for human review
 - agent run history and audit events
 - exportable Markdown framework intelligence reports
 
 The agent is deliberately bounded. It only checks approved HTTPS official/public procurement domains, and runs are explicit and logged. It does not auto-bid, contact customers, alter claim rules, or decide RDEC eligibility. Outputs are prompts for bid, engineering, Finance, and Ayming discussion and retain: "Requires competent professional and tax review."
+
+The source and portal intelligence extension is documented in:
+
+- [`docs/framework_source_portal_intelligence_extension.md`](docs/framework_source_portal_intelligence_extension.md)
 
 ## Operating Procedure
 
@@ -202,6 +210,9 @@ Rules are loaded from YAML at startup:
 - `aif_rules.yml`
 - `entitlement_rules.yml`
 - `knowledge_sources.yml`
+- `framework_sources.yml`
+- `procurement_platforms.yml`
+- `source_change_tracking.yml`
 
 Each file includes a version and source metadata. The app validates required rule keys at startup and uses these files at runtime, not just as documentation. Update the YAML first when HMRC guidance changes, then adjust tests if the decision model intentionally changes.
 
@@ -212,9 +223,13 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 - `/`
 - `/knowledge-agent`
 - `/framework-intelligence`
+- `/framework-intelligence/source-catalogue`
+- `/framework-intelligence/source-changes`
+- `/framework-intelligence/portal-platforms`
 - `/framework-intelligence/sources`
 - `/framework-intelligence/watch-profiles`
 - `/framework-intelligence/opportunities`
+- `/framework-intelligence/opportunities/{id}/documents`
 - `/framework-intelligence/requirements`
 - `/framework-intelligence/agent-runs`
 - `/framework-intelligence/reports`

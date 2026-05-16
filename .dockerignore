@@ -8,3 +8,4 @@ venv
 .env
 htmlcov
 .coverage
+.tmp_*

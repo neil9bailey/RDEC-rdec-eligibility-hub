@@ -8,6 +8,8 @@
   </div>
   <div class="actions">
     <a class="button" href="/framework-intelligence/watch-profiles">Watch profiles</a>
+    <a class="button secondary" href="/framework-intelligence/source-catalogue">Source catalogue</a>
+    <a class="button secondary" href="/framework-intelligence/portal-platforms">Portal platforms</a>
     <a class="button secondary" href="/framework-intelligence/reports">Reports</a>
   </div>
 </div>
@@ -32,6 +34,18 @@
   <div class="metric">
     <span class="value">{{ metrics.pending_signals }}</span>
     <span class="label">RDEC signals pending review</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.platform_count }}</span>
+    <span class="label">Portal platforms</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.document_count }}</span>
+    <span class="label">Opportunity documents</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ metrics.source_changes }}</span>
+    <span class="label">Source changes</span>
   </div>
 </section>
 
@@ -128,6 +142,9 @@
 <section class="panel" style="margin-top: 18px;">
   <h2>Knowledge Base Shortcuts</h2>
   <p>
+    <a href="/framework-intelligence/source-catalogue">Source catalogue</a> |
+    <a href="/framework-intelligence/source-changes">Source changes</a> |
+    <a href="/framework-intelligence/portal-platforms">Portal platforms</a> |
     <a href="/framework-intelligence/sources">Sources</a> |
     <a href="/framework-intelligence/watch-profiles">Watch profiles</a> |
     <a href="/framework-intelligence/opportunities">Opportunity catalogue</a> |

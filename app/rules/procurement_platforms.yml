@@ -1,0 +1,75 @@
+version: 2026.05.16
+last_reviewed: 2026-05-16
+purpose: >
+  Runtime configuration for buyer-side portal platform families where ITT documents, quality questions,
+  weightings, clarifications and attachments may sit behind supplier logins.
+guardrails:
+  no_credentials_in_mvp: true
+  human_approval_required_before_portal_action: true
+  portal_automation_default: manual_assisted
+  nothing_reaches_client_unchecked: true
+platforms:
+  - key: procontract
+    name: ProContract
+    platform_type: buyer_portal
+    login_model: supplier_account
+    supported_actions:
+      - portal registration status
+      - opportunity document checklist
+      - express interest prompt
+      - manual document capture
+      - requirement extraction after human-provided document text
+    requires_credentials: true
+    human_approval_required: true
+    active: true
+    connector_status: manual_assisted
+    platform_domains: procontract.due-north.com; supplierlive.proactisp2p.com
+    notes: Common UK public-sector procurement portal family. MVP stores portal facts and manual retrieval tasks only.
+  - key: intend
+    name: In-Tend
+    platform_type: buyer_portal
+    login_model: supplier_account
+    supported_actions:
+      - portal registration status
+      - opportunity document checklist
+      - express interest prompt
+      - manual document capture
+      - requirement extraction after human-provided document text
+    requires_credentials: true
+    human_approval_required: true
+    active: true
+    connector_status: manual_assisted
+    platform_domains: in-tendhost.co.uk; in-tend.co.uk; in-tend.com
+    notes: Platform family used by many buyer portals. MVP does not automate login or submission.
+  - key: jaggaer
+    name: Jaggaer
+    platform_type: buyer_portal
+    login_model: supplier_account
+    supported_actions:
+      - portal registration status
+      - opportunity document checklist
+      - express interest prompt
+      - manual document capture
+      - requirement extraction after human-provided document text
+    requires_credentials: true
+    human_approval_required: true
+    active: true
+    connector_status: manual_assisted
+    platform_domains: jaggaer.com; bravosolution.co.uk
+    notes: Public-sector and central-government portal family. MVP records tasks and documents, not credentials.
+  - key: delta_esourcing
+    name: Delta eSourcing
+    platform_type: buyer_portal
+    login_model: supplier_account
+    supported_actions:
+      - portal registration status
+      - opportunity document checklist
+      - express interest prompt
+      - manual document capture
+      - requirement extraction after human-provided document text
+    requires_credentials: true
+    human_approval_required: true
+    active: true
+    connector_status: manual_assisted
+    platform_domains: delta-esourcing.com; delta-esourcing.co.uk
+    notes: UK public-sector eSourcing portal family. MVP keeps retrieval on-demand and human-controlled.

@@ -19,6 +19,7 @@
         <th>Deadline</th>
         <th>Value</th>
         <th>Signals</th>
+        <th>Docs</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -38,6 +39,7 @@
           <td>{{ opportunity.deadline_date or "Not detected" }}</td>
           <td>GBP {{ "%.2f"|format(opportunity.value_high or 0) }}</td>
           <td><span class="badge weak">{{ signal_counts.get(opportunity.id, 0) }}</span></td>
+          <td><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">{{ document_counts.get(opportunity.id, 0) }} docs</a></td>
           <td>
             <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/update">
               <select name="status">
@@ -51,7 +53,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="7">No opportunities captured yet. Create a watch profile and run a guarded source check.</td></tr>
+        <tr><td colspan="8">No opportunities captured yet. Create a watch profile and run a guarded source check.</td></tr>
       {% endfor %}
     </tbody>
   </table>

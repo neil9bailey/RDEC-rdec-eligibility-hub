@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Portal Platforms - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Portal Platforms</h1>
+    <p>Buyer-side portal families for ITT documents, quality questions, weightings, clarifications and attachments.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="warning-panel">
+  MVP portal capability is manual-assisted only: no credentials are stored, no login is automated, and no expression of interest or submission is performed by the agent.
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Configured Platform Families</h2>
+    <div class="stack">
+      {% for platform in platforms %}
+        <article class="list-item">
+          <h3>{{ platform.name }}</h3>
+          <p>
+            <span class="badge {{ 'green' if platform.active else 'amber' }}">{{ 'active' if platform.active else 'inactive' }}</span>
+            <span class="badge weak">{{ platform.connector_status }}</span>
+            {% if platform.human_approval_required %}<span class="badge amber">human approval required</span>{% endif %}
+          </p>
+          <p class="muted">{{ platform.platform_domains }}</p>
+          <p>{{ platform.supported_actions }}</p>
+          <p>{{ platform.notes }}</p>
+        </article>
+      {% else %}
+        <p>No portal platforms configured.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Buyer Portal Instances</h2>
+    <div class="stack">
+      {% for portal in portal_instances %}
+        <article class="list-item">
+          {% set platform = platform_map.get(portal.platform_id) %}
+          <h3>{{ portal.portal_name }}</h3>
+          <p>
+            <span class="badge weak">{{ platform.name if platform else 'Platform not set' }}</span>
+            <span class="badge {{ 'green' if portal.access_status == 'registered' else 'amber' }}">{{ portal.access_status }}</span>
+          </p>
+          <p class="hint">{% if portal.portal_url %}<a href="{{ portal.portal_url }}">{{ portal.portal_url }}</a>{% else %}No portal URL recorded{% endif %}</p>
+          <p>{{ portal.notes }}</p>
+          <details>
+            <summary>Edit / delete</summary>
+            <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/update">
+              <div class="field"><label>Portal name</label><input name="portal_name" value="{{ portal.portal_name }}" required></div>
+              <div class="form-grid">
+                <div class="field"><label>Platform</label><select name="platform_id">{% for item in platforms %}<option value="{{ item.id }}" {% if portal.platform_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
+                <div class="field"><label>Access status</label><select name="access_status">{% for item in portal_access_statuses %}<option {% if portal.access_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+              </div>
+              <div class="form-grid">
+                <div class="field"><label>Customer</label><select name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if portal.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select></div>
+                <div class="field"><label>Business unit</label><select name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}" {% if portal.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}</select></div>
+              </div>
+              <div class="field"><label>Portal URL</label><input name="portal_url" value="{{ portal.portal_url }}"></div>
+              <div class="field"><label>Account reference</label><input name="account_reference" value="{{ portal.account_reference }}"></div>
+              <div class="field"><label>Retrieval mode</label><input name="document_retrieval_mode" value="{{ portal.document_retrieval_mode }}"></div>
+              <div class="field"><label>Notes</label><textarea name="notes">{{ portal.notes }}</textarea></div>
+              <button type="submit">Update portal</button>
+            </form>
+            <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/delete">
+              <button type="submit" class="secondary">Delete</button>
+            </form>
+          </details>
+        </article>
+      {% else %}
+        <p>No buyer portal instances recorded yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Add Buyer Portal Instance</h2>
+  <form method="post" action="/framework-intelligence/portal-instances">
+    <div class="form-grid">
+      <div class="field"><label>Portal name</label><input name="portal_name" placeholder="National Highways procurement portal" required></div>
+      <div class="field"><label>Platform</label><select name="platform_id">{% for platform in platforms %}<option value="{{ platform.id }}">{{ platform.name }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Customer</label><select name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Business unit</label><select name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label>Access status</label><select name="access_status">{% for item in portal_access_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
+    </div>
+    <div class="field"><label>Portal URL</label><input name="portal_url" placeholder="https://..."></div>
+    <div class="form-grid">
+      <div class="field"><label>Account reference</label><input name="account_reference" placeholder="Do not enter passwords or secrets"></div>
+      <div class="field"><label>Retrieval mode</label><input name="document_retrieval_mode" value="manual"></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+    <button type="submit">Save portal instance</button>
+  </form>
+</section>
+{% endblock %}

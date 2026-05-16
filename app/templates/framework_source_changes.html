@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Source Changes - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Source Changes</h1>
+    <p>Hash-based change tracking for configured procurement notice sources and connector health.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/framework-intelligence/source-catalogue">Source catalogue</a>
+    <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Checked</th>
+          <th>Source</th>
+          <th>Change</th>
+          <th>Schema</th>
+          <th>Status</th>
+          <th>Hash</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snapshot in snapshots %}
+          {% set source = source_map.get(snapshot.source_id) %}
+          <tr>
+            <td>{{ snapshot.checked_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+              <strong>{{ source.name if source else 'Source ' ~ snapshot.source_id }}</strong>
+              <p class="hint">{{ snapshot.query_url }}</p>
+            </td>
+            <td><span class="badge {{ 'green' if snapshot.change_type in ['unchanged', 'first_seen'] else 'amber' if snapshot.change_type == 'changed' else 'red' }}">{{ snapshot.change_type }}</span></td>
+            <td>{{ snapshot.detected_schema or "unknown" }}</td>
+            <td>{{ snapshot.status_code or snapshot.notes or "not recorded" }}</td>
+            <td><code>{{ snapshot.content_hash[:16] if snapshot.content_hash else 'none' }}</code></td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">No source checks captured yet. Open the source catalogue and run a guarded check.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

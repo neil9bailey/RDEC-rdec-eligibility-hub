@@ -22,3 +22,4 @@ Thumbs.db
 # Local document exports generated during review/demo prep.
 docs/*.docx
 docs/*.pdf
+.tmp_*/

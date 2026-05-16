@@ -262,11 +262,20 @@ class FrameworkSource(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     source_type: str = "ocds_api"
+    source_family: str = "official_notice"
     base_url: str
     query_url: str
     official: bool = True
     active: bool = True
     review_frequency: str = "manual"
+    coverage: str = ""
+    auth_model: str = "none"
+    data_format: str = ""
+    dedupe_strategy: str = "ocid_or_reference"
+    change_tracking_enabled: bool = True
+    requires_human_approval: bool = False
+    connector_status: str = "configured"
+    source_metadata: str = ""
     last_checked_at: Optional[datetime] = None
     last_status: str = ""
     notes: str = ""
@@ -325,6 +334,10 @@ class OpportunityDocument(SQLModel, table=True):
     document_type: str = "notice"
     url_or_path: str = ""
     source_hash: str = ""
+    retrieval_status: str = "linked"
+    human_review_status: str = "pending"
+    platform_name: str = ""
+    content_summary: str = ""
     extracted_at: datetime = Field(default_factory=utc_now)
     notes: str = ""
 
@@ -367,6 +380,79 @@ class FrameworkAgentRun(SQLModel, table=True):
     signals_created: int = 0
     guardrail_summary: str = ""
     error_summary: str = ""
+
+
+class SourceCheckSnapshot(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: Optional[int] = Field(default=None, foreign_key="frameworksource.id", index=True)
+    checked_at: datetime = Field(default_factory=utc_now, index=True)
+    query_url: str = ""
+    status_code: int = 0
+    ok: bool = False
+    content_hash: str = Field(default="", index=True)
+    previous_hash: str = ""
+    change_type: str = "unknown"
+    detected_schema: str = ""
+    connector_status: str = ""
+    notes: str = ""
+
+
+class ProcurementPlatform(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    platform_type: str = "buyer_portal"
+    login_model: str = "supplier_account"
+    supported_actions: str = ""
+    requires_credentials: bool = True
+    human_approval_required: bool = True
+    active: bool = True
+    connector_status: str = "manual"
+    platform_domains: str = ""
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class BuyerPortalInstance(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    portal_name: str = Field(index=True)
+    platform_id: Optional[int] = Field(default=None, foreign_key="procurementplatform.id")
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    business_unit_id: Optional[int] = Field(default=None, foreign_key="businessunit.id")
+    portal_url: str = ""
+    account_reference: str = ""
+    access_status: str = "unknown"
+    document_retrieval_mode: str = "manual"
+    notes: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class PortalRetrievalRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    opportunity_id: Optional[int] = Field(default=None, foreign_key="frameworkopportunity.id", index=True)
+    portal_instance_id: Optional[int] = Field(default=None, foreign_key="buyerportalinstance.id")
+    run_type: str = "manual"
+    status: str = "requested"
+    requested_by: str = "local-user"
+    started_at: datetime = Field(default_factory=utc_now)
+    finished_at: Optional[datetime] = None
+    documents_found: int = 0
+    guardrail_summary: str = ""
+    error_summary: str = ""
+    notes: str = ""
+
+
+class ExtractedQualityQuestion(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    opportunity_id: int = Field(foreign_key="frameworkopportunity.id", index=True)
+    document_id: Optional[int] = Field(default=None, foreign_key="opportunitydocument.id")
+    section_reference: str = ""
+    question_text: str
+    weighting: str = ""
+    requirement_theme: str = ""
+    confidence: str = "medium"
+    human_review_status: str = "pending"
+    rdec_relevance_note: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
 
 
 class IntelligenceReport(SQLModel, table=True):

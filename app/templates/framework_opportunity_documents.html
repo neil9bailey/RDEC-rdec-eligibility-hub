@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Documents - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Opportunity Documents</h1>
+    <p>{{ opportunity.title }}</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/framework-intelligence/opportunities">Opportunity catalogue</a>
+    <a class="button secondary" href="/framework-intelligence/portal-platforms">Portal platforms</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  Add only permitted document links, paths, summaries or text excerpts. Do not store portal passwords, restricted personal data, or unchecked AI conclusions. {{ framework_agent_caveat }}
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Documents</h2>
+    <div class="stack">
+      {% for document in documents %}
+        <article class="list-item">
+          <h3>{{ document.title }}</h3>
+          <p>
+            <span class="badge weak">{{ document.document_type }}</span>
+            <span class="badge {{ 'green' if document.retrieval_status == 'retrieved' else 'amber' }}">{{ document.retrieval_status }}</span>
+            <span class="badge weak">{{ document.platform_name or 'platform not recorded' }}</span>
+          </p>
+          <p class="hint">{% if document.url_or_path %}<a href="{{ document.url_or_path }}">{{ document.url_or_path }}</a>{% else %}No link or path captured{% endif %}</p>
+          <p>{{ document.content_summary or document.notes }}</p>
+        </article>
+      {% else %}
+        <p>No documents captured for this opportunity yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Quality Questions And Weightings</h2>
+    <div class="stack">
+      {% for question in quality_questions %}
+        <article class="list-item">
+          <h3>{{ question.requirement_theme }}</h3>
+          <p>
+            <span class="badge weak">{{ question.confidence }}</span>
+            <span class="badge amber">{{ question.human_review_status }}</span>
+            {% if question.weighting %}<span class="badge green">{{ question.weighting }}</span>{% endif %}
+          </p>
+          <p>{{ question.question_text }}</p>
+          <p class="hint">{{ question.rdec_relevance_note }}</p>
+        </article>
+      {% else %}
+        <p>No quality questions extracted yet. Add document summary/text to create reviewable entries.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Add Document Or Extract</h2>
+    <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">
+      <div class="field"><label>Title</label><input name="title" placeholder="ITT quality questions pack" required></div>
+      <div class="form-grid">
+        <div class="field"><label>Document type</label><input name="document_type" value="itt_document"></div>
+        <div class="field"><label>Retrieval status</label><select name="retrieval_status">{% for item in document_retrieval_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
+      </div>
+      <div class="field"><label>URL or file path</label><input name="url_or_path"></div>
+      <div class="field"><label>Platform name</label><input name="platform_name" placeholder="ProContract, In-Tend, Jaggaer, Delta eSourcing"></div>
+      <div class="field"><label>Content summary</label><textarea name="content_summary" placeholder="Summarise document purpose, sections, evidence relevance and any bid requirement themes."></textarea></div>
+      <div class="field"><label>Document text for extraction</label><textarea name="document_text" placeholder="Optional: paste permitted ITT quality question text or weighting excerpts for local extraction."></textarea></div>
+      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <button type="submit">Save and extract</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Retrieval Tasks</h2>
+    <div class="stack">
+      {% for run in retrieval_runs %}
+        <article class="list-item">
+          <h3>{{ run.status }}</h3>
+          <p class="hint">{{ run.started_at.strftime('%Y-%m-%d %H:%M') }} | documents found {{ run.documents_found }}</p>
+          <p>{{ run.guardrail_summary }}</p>
+          <p>{{ run.notes }}</p>
+        </article>
+      {% else %}
+        <p>No retrieval tasks recorded yet.</p>
+      {% endfor %}
+    </div>
+    <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/retrieval-runs" style="margin-top: 16px;">
+      <div class="field">
+        <label>Portal instance</label>
+        <select name="portal_instance_id">
+          <option value="">Not linked</option>
+          {% for portal in portal_instances %}<option value="{{ portal.id }}">{{ portal.portal_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field"><label>Task notes</label><textarea name="notes" placeholder="What should a human retrieve or verify?"></textarea></div>
+      <button type="submit">Create manual retrieval task</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

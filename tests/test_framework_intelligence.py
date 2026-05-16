@@ -6,10 +6,14 @@ from sqlmodel import select
 from app.database import get_session
 from app.framework_intelligence import (
     FetchResult,
+    configured_framework_source_types,
+    create_portal_retrieval_run,
     create_intelligence_report,
+    extract_document_intelligence,
     generate_framework_intelligence_report_markdown,
     official_framework_source_allowed,
     run_framework_agent_for_profile,
+    run_single_source_check,
     seed_framework_sources,
 )
 from app.main import app
@@ -18,11 +22,16 @@ from app.models import (
     BusinessUnit,
     Customer,
     CustomerWatchProfile,
+    ExtractedQualityQuestion,
     ExtractedRequirement,
     FrameworkOpportunity,
     FrameworkSource,
     IntelligenceReport,
+    OpportunityDocument,
+    PortalRetrievalRun,
+    ProcurementPlatform,
     RDECOpportunitySignal,
+    SourceCheckSnapshot,
 )
 
 
@@ -46,10 +55,46 @@ def test_seed_framework_sources_are_official_public_sources(session):
     seed_framework_sources(session)
 
     sources = list(session.exec(select(FrameworkSource)))
+    platforms = list(session.exec(select(ProcurementPlatform)))
 
-    assert len(sources) >= 4
+    assert len(sources) >= 6
     assert all(official_framework_source_allowed(source.query_url) for source in sources)
     assert any(source.active and source.source_type == "ocds_api" for source in sources)
+    assert any(source.name == "Public Contracts Scotland OCDS API" for source in sources)
+    assert any(source.name == "TED eForms notice data" for source in sources)
+    assert "eforms_api" in configured_framework_source_types()
+    assert {platform.name for platform in platforms} >= {"ProContract", "In-Tend", "Jaggaer", "Delta eSourcing"}
+
+
+def test_source_change_snapshot_tracks_first_seen_unchanged_and_changed(session):
+    source = FrameworkSource(
+        name="Find a Tender snapshot source",
+        source_type="ocds_api",
+        base_url="https://www.find-tender.service.gov.uk",
+        query_url="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=1",
+        active=True,
+    )
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+
+    payloads = iter([
+        '{"releases":[]}',
+        '{"releases":[]}',
+        '{"releases":[{"id":"changed"}]}',
+    ])
+
+    def fake_fetcher(url):
+        return FetchResult(ok=True, status_code=200, url=url, text=next(payloads), content_type="application/json")
+
+    first = run_single_source_check(session, source.id, fetcher=fake_fetcher)
+    second = run_single_source_check(session, source.id, fetcher=fake_fetcher)
+    third = run_single_source_check(session, source.id, fetcher=fake_fetcher)
+
+    snapshots = list(session.exec(select(SourceCheckSnapshot)))
+    assert [first.change_type, second.change_type, third.change_type] == ["first_seen", "unchanged", "changed"]
+    assert len(snapshots) == 3
+    assert third.detected_schema == "ocds_json"
 
 
 def test_framework_agent_run_extracts_opportunity_requirements_signals_and_audit(session):
@@ -179,6 +224,43 @@ def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_us
     assert session.exec(select(IntelligenceReport)).first() is not None
 
 
+def test_opportunity_document_extraction_creates_quality_questions_and_retrieval_task(session):
+    opportunity = FrameworkOpportunity(
+        title="Real-time roadside technology platform",
+        buyer_name="National Highways",
+        summary="Operational technology and real-time resilience requirements.",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+    document = OpportunityDocument(
+        opportunity_id=opportunity.id,
+        title="ITT quality questions",
+        document_type="itt_document",
+        content_summary="Quality response pack for real-time operational technology.",
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+
+    req_count, signal_count, question_count = extract_document_intelligence(
+        session,
+        opportunity,
+        document,
+        "Quality question 1: Describe how you will deliver low latency real-time resilience. Weighting 20%",
+    )
+    session.commit()
+    run = create_portal_retrieval_run(session, opportunity.id, notes="Human to retrieve ProContract ITT documents.")
+
+    questions = list(session.exec(select(ExtractedQualityQuestion)))
+    retrieval_runs = list(session.exec(select(PortalRetrievalRun)))
+    assert req_count >= 1
+    assert signal_count >= 1
+    assert question_count == 1
+    assert questions[0].weighting == "20%"
+    assert retrieval_runs[0].id == run.id
+
+
 def test_framework_intelligence_report_routes(session):
     report = create_intelligence_report(session, "Route report")
     client = client_for(session)
@@ -193,3 +275,41 @@ def test_framework_intelligence_report_routes(session):
     assert detail_response.status_code == 200
     assert markdown_response.status_code == 200
     assert "text/markdown" in markdown_response.headers["content-type"]
+
+
+def test_framework_source_portal_and_document_routes(session):
+    seed_framework_sources(session)
+    opportunity = FrameworkOpportunity(
+        title="Portal document test opportunity",
+        buyer_name="Transport Authority",
+        summary="Real-time data and cyber security requirements.",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+
+    client = client_for(session)
+    try:
+        responses = [
+            client.get("/framework-intelligence/source-catalogue"),
+            client.get("/framework-intelligence/source-changes"),
+            client.get("/framework-intelligence/portal-platforms"),
+            client.get(f"/framework-intelligence/opportunities/{opportunity.id}/documents"),
+        ]
+        doc_response = client.post(
+            f"/framework-intelligence/opportunities/{opportunity.id}/documents",
+            data={
+                "title": "ITT extract",
+                "document_type": "itt_document",
+                "retrieval_status": "retrieved",
+                "platform_name": "ProContract",
+                "document_text": "Quality question: Explain real-time data resilience. Weighting 25%",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert all(response.status_code == 200 for response in responses)
+    assert doc_response.status_code == 303
+    assert session.exec(select(ExtractedQualityQuestion)).first() is not None
