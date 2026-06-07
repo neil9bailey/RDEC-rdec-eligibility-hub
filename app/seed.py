@@ -76,6 +76,49 @@ BUSINESS_UNIT_TREE = [
 ]
 
 
+REFERENCE_CUSTOMERS = [
+    {
+        "business_unit": "TfL",
+        "customer_name": "Transport for London (TfL)",
+        "sector": "Public sector transport",
+        "transport_domain": "local transport authority",
+        "customer_type": "transport authority",
+        "corporation_tax_status": "no",
+        "notes": (
+            "Reference customer for TfL / Transport for London work. Exact contracting entity, "
+            "contract chain, entitlement and cost treatment require Finance/Ayming review. "
+            "Requires competent professional and tax review."
+        ),
+    },
+    {
+        "business_unit": "Rail",
+        "customer_name": "National Rail",
+        "sector": "Public sector rail",
+        "transport_domain": "rail",
+        "customer_type": "public corporation",
+        "corporation_tax_status": "unknown",
+        "notes": (
+            "Reference customer label for rail work. Confirm exact legal contracting entity, such as "
+            "Network Rail, DfT, train operating company, or another rail body, before relying on entitlement facts. "
+            "Requires competent professional and tax review."
+        ),
+    },
+    {
+        "business_unit": "SCADA",
+        "customer_name": "National Rail",
+        "sector": "Public sector rail / operational technology",
+        "transport_domain": "rail",
+        "customer_type": "public corporation",
+        "corporation_tax_status": "unknown",
+        "notes": (
+            "Reference customer label for SCADA and rail operational technology work. Confirm exact legal "
+            "contracting entity and technical scope before treating any project as an R&D candidate. "
+            "Requires competent professional and tax review."
+        ),
+    },
+]
+
+
 def seed_business_units(session: Session) -> None:
     for old_name, new_name in BUSINESS_UNIT_RENAMES.items():
         old_unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == old_name)).first()
@@ -100,6 +143,35 @@ def seed_business_units(session: Session) -> None:
         session.commit()
         session.refresh(unit)
         existing[unit.name] = unit
+    seed_reference_customers(session)
+
+
+def seed_reference_customers(session: Session) -> None:
+    units = {unit.name: unit for unit in session.exec(select(BusinessUnit))}
+    for item in REFERENCE_CUSTOMERS:
+        unit = units.get(item["business_unit"])
+        if not unit or not unit.id:
+            continue
+        existing_customer = session.exec(
+            select(Customer).where(
+                Customer.customer_name == item["customer_name"],
+                Customer.business_unit_id == unit.id,
+            )
+        ).first()
+        if existing_customer:
+            continue
+        session.add(
+            Customer(
+                business_unit_id=unit.id,
+                customer_name=item["customer_name"],
+                sector=item["sector"],
+                transport_domain=item["transport_domain"],
+                customer_type=item["customer_type"],
+                corporation_tax_status=item["corporation_tax_status"],
+                notes=item["notes"],
+            )
+        )
+    session.commit()
 
 
 def business_unit_by_name(session: Session, name: str) -> BusinessUnit | None:
