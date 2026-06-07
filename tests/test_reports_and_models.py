@@ -72,9 +72,18 @@ def test_report_generation_smoke(seeded_session):
     assert "Requires competent professional and tax review." in memo
     assert "Rule versions used" in memo
     assert "Generated at" in memo
+    assert "Executive review summary" in memo
+    assert "Evidence matrix" in memo
+    assert "Reviewer checklist" in memo
+    assert "Cost warnings for Finance review" in memo
+    assert "| Relevance | Type | Source | Reference | Strength | Review note |" in memo
     assert "Qualifying expenditure captured for review" in memo
     assert "Contracted-out and irrelievable-client treatment requires tax review." in memo
     assert "Claim Period Pack" in pack
+    assert "Project readiness matrix" in pack
+    assert "Reviewer checklist" in pack
+    assert "Cost warnings for Finance review" in pack
     assert "Total qualifying spend by category" in pack
     assert "Selection method" in pack
     assert "AIF project-selection notes" in pack
+    assert "Requires competent professional and tax review." in pack

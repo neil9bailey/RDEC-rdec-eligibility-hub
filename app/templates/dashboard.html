@@ -19,9 +19,9 @@
   <section class="dashboard-content">
     <section class="command-hero">
       <div>
-        <span class="badge purple">RDEC evidence command view</span>
-        <h1>Critical infrastructure innovation, ready for review.</h1>
-        <p>Capture solution facts, public-sector framework signals, competent professional opinions, evidence and people-costs in one enterprise workspace for Finance and Ayming handover.</p>
+        <span class="badge purple">RDEC review cockpit</span>
+        <h1>Claim evidence, blockers and review actions in one view.</h1>
+        <p>Prioritise R&D candidates, evidence gaps, cost review points, AIF readiness and framework intelligence signals for Finance, competent professional and Ayming review.</p>
         <div class="hero-actions">
           <a href="/framework-intelligence/watch-profiles">Add opportunity</a>
           <a class="secondary" href="/framework-intelligence">Run framework watch</a>
@@ -50,6 +50,25 @@
             <span class="badge amber">review</span>
           {% endif %}
         </div>
+      </div>
+    </section>
+
+    <section class="review-strip" aria-label="Review cockpit summary">
+      <div>
+        <span class="label">AIF periods ready</span>
+        <strong>{{ metrics.aif_ready_periods }} / {{ metrics.aif_total_periods }}</strong>
+      </div>
+      <div>
+        <span class="label">Competent professional gaps</span>
+        <strong>{{ metrics.missing_competent_professional }}</strong>
+      </div>
+      <div>
+        <span class="label">Framework signals pending</span>
+        <strong>{{ framework_metrics.pending_signals }}</strong>
+      </div>
+      <div>
+        <span class="label">Source warnings</span>
+        <strong>{{ framework_metrics.source_warnings }}</strong>
       </div>
     </section>
 
@@ -141,41 +160,43 @@
       </div>
     </section>
 
-    <section class="table-shell">
+    <section class="table-shell claim-workbench">
       <div class="table-head">
         <h2>Claim Period Workbench</h2>
         <span class="badge amber">{{ caveat }}</span>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Project</th>
-            <th>Rating</th>
-            <th>Score</th>
-            <th>Blockers</th>
-            <th>Next step</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for project in projects %}
-            {% set score = metrics.scores.get(project.id) %}
+      <div class="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td>
-                <strong><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></strong>
-                <p class="hint">{{ score.rating_label }}</p>
-              </td>
-              <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
-              <td>{{ score.score }}</td>
-              <td>{{ score.blockers|length }}</td>
-              <td><a href="/projects/{{ project.id }}/assessment">Review assessment</a></td>
+              <th>Project</th>
+              <th>Rating</th>
+              <th>Score</th>
+              <th>Blockers</th>
+              <th>Next step</th>
             </tr>
-          {% else %}
-            <tr>
-              <td colspan="5">No projects captured yet. Add customers, contracts, solutions and R&D projects to populate the workbench.</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+              {% set score = metrics.scores.get(project.id) %}
+              <tr>
+                <td data-label="Project">
+                  <strong><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></strong>
+                  <p class="hint">{{ score.rating_label }}</p>
+                </td>
+                <td data-label="Rating"><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
+                <td data-label="Score">{{ score.score }}</td>
+                <td data-label="Blockers">{{ score.blockers|length }}</td>
+                <td data-label="Next step"><a href="/projects/{{ project.id }}/assessment">Review assessment</a></td>
+              </tr>
+            {% else %}
+              <tr>
+                <td colspan="5">No projects captured yet. Add customers, contracts, solutions and R&D projects to populate the workbench.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <p class="dashboard-footnote">Decision support only. Every R&D candidate, entitlement position, cost value and report remains subject to competent professional and tax review.</p>

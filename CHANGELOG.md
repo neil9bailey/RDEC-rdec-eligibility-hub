@@ -1,5 +1,16 @@
 # Changelog
 
+## intelligence-effectiveness 0.1 - 2026-06-07
+
+Improvement wave for the approved RDEC review cockpit, structured outputs, and traceable intelligence epic.
+
+- Added governance ADR approval for the bounded architecture change.
+- Planned review-cockpit UI refinements, stronger Markdown review packs, and traceable intelligence enhancements.
+- Keeps the local Docker Desktop MVP stack, GOV.UK/HMRC rule guardrails, and decision-support wording.
+- No cloud services, secrets, authenticated portal automation, HMRC submission automation, or final claim decisions are added.
+
+Requires competent professional and tax review.
+
 ## live-demo-version 1.0 - 2026-05-08
 
 Baseline for the local Telent / M Group live demo.

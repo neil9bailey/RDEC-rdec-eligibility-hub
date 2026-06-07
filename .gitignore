@@ -23,3 +23,6 @@ Thumbs.db
 docs/*.docx
 docs/*.pdf
 .tmp_*/
+
+# Local browser inspection artifacts.
+.playwright-mcp/

@@ -202,6 +202,7 @@ def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_us
         active=True,
     )
     opportunity = FrameworkOpportunity(
+        source_id=source.id,
         title="Transport real-time data platform opportunity",
         buyer_name="Transport Authority",
         summary="Real-time data, resilience, cyber security and legacy integration requirements.",
@@ -212,12 +213,53 @@ def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_us
     session.add(source)
     session.add(opportunity)
     session.commit()
+    session.refresh(source)
+    session.refresh(opportunity)
+    opportunity.source_id = source.id
+    requirement = ExtractedRequirement(
+        opportunity_id=opportunity.id,
+        requirement_theme="real-time operation",
+        requirement_text="Low-latency real-time transport operations with resilience requirements.",
+        confidence="high",
+        human_review_status="pending",
+    )
+    session.add(requirement)
+    session.commit()
+    session.refresh(requirement)
+    session.add(
+        RDECOpportunitySignal(
+            opportunity_id=opportunity.id,
+            requirement_id=requirement.id,
+            signal_strength="strong indicators",
+            signal_text="Real-time operation requirement may indicate an R&D candidate area where uncertainty is evidenced.",
+            recommended_action="Ask engineering to capture tests, failed approaches, people time and competent professional notes.",
+            human_review_status="pending",
+        )
+    )
+    session.add(
+        SourceCheckSnapshot(
+            source_id=source.id,
+            query_url=source.query_url,
+            status_code=200,
+            ok=True,
+            content_hash="abc",
+            change_type="first_seen",
+            detected_schema="ocds",
+            connector_status="checked",
+        )
+    )
+    session.commit()
 
     markdown = generate_framework_intelligence_report_markdown(session, "Test framework summary")
     report = create_intelligence_report(session, "Stored framework summary")
 
     assert "Test framework summary" in markdown
     assert "Finance And Ayming Use" in markdown
+    assert "Source Currency And Review Status" in markdown
+    assert "Suggested Evidence Capture Prompts" in markdown
+    assert "evidence prompt" in markdown
+    assert "review pending" in markdown
+    assert "strength strong indicators" in markdown
     assert "not bid, legal, tax, accounting, procurement, or HMRC submission advice" in markdown
     assert "Requires competent professional and tax review." in markdown
     assert report.id is not None

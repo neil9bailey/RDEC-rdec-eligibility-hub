@@ -78,6 +78,19 @@ RDEC_SIGNAL_THEMES = {
     "transport operations",
 }
 
+EVIDENCE_CAPTURE_PROMPTS: dict[str, str] = {
+    "asset management": "Capture lifecycle assumptions, degradation data, asset-condition evidence, and decision records for any non-routine technical uncertainty.",
+    "cyber security": "Capture threat-model changes, security test results, failed mitigations, and competent professional rationale for uncertainty beyond routine hardening.",
+    "data and analytics": "Capture model assumptions, data-quality constraints, validation results, and why known analytics patterns were insufficient.",
+    "high availability and resilience": "Capture resilience targets, failure-mode experiments, recovery tests, and evidence of uncertainty beyond standard HA design.",
+    "legacy integration": "Capture interface constraints, failed integration approaches, protocol evidence, and why known adapters or patterns were insufficient.",
+    "operational technology / SCADA": "Capture OT constraints, telemetry behaviour, test-rig evidence, safety limitations, and competent professional review notes.",
+    "real-time operation": "Capture latency targets, live-data constraints, load tests, timing failures, and boundary evidence for experimental work.",
+    "software development": "Capture prototypes, design alternatives, test results, and evidence separating R&D candidate work from routine build activity.",
+    "telecommunications and networks": "Capture network constraints, lab/test evidence, failed routing or capacity approaches, and field-trial boundaries.",
+    "transport operations": "Capture operational constraints, scenario testing, disruption evidence, and human review of whether uncertainty is technological.",
+}
+
 
 @dataclass
 class FetchResult:
@@ -119,6 +132,22 @@ def procurement_platform_rules() -> dict:
 
 def source_change_rules() -> dict:
     return load_rule_file("source_change_tracking.yml")
+
+
+def evidence_capture_prompt(theme: str) -> str:
+    normalized = (theme or "").strip().lower()
+    return EVIDENCE_CAPTURE_PROMPTS.get(
+        normalized,
+        "Capture source documents, technical assumptions, failed approaches, review notes, and cost/evidence links before treating this as an R&D candidate.",
+    )
+
+
+def latest_snapshot_by_source(snapshots: list[SourceCheckSnapshot]) -> dict[int, SourceCheckSnapshot]:
+    latest: dict[int, SourceCheckSnapshot] = {}
+    for snapshot in snapshots:
+        if snapshot.source_id and snapshot.source_id not in latest:
+            latest[snapshot.source_id] = snapshot
+    return latest
 
 
 def framework_source_catalogue() -> list[dict]:
@@ -996,6 +1025,7 @@ def generate_framework_intelligence_report_markdown(
     sources = list(session.exec(select(FrameworkSource).order_by(col(FrameworkSource.name))))
     platforms = list(session.exec(select(ProcurementPlatform).order_by(col(ProcurementPlatform.name))))
     snapshots = list(session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(10)))
+    latest_source_snapshots = latest_snapshot_by_source(snapshots)
     opportunity_ids = [opportunity.id for opportunity in opportunities if opportunity.id]
     requirements: list[ExtractedRequirement] = []
     signals: list[RDECOpportunitySignal] = []
@@ -1010,6 +1040,8 @@ def generate_framework_intelligence_report_markdown(
         quality_questions = list(
             session.exec(select(ExtractedQualityQuestion).where(ExtractedQualityQuestion.opportunity_id.in_(opportunity_ids)))
         )
+    opportunity_by_id = {opportunity.id: opportunity for opportunity in opportunities if opportunity.id}
+    requirement_by_id = {requirement.id: requirement for requirement in requirements if requirement.id}
 
     source_lines = [
         (
@@ -1019,6 +1051,21 @@ def generate_framework_intelligence_report_markdown(
         )
         for source in sources
     ] or ["- No sources configured."]
+    source_currency_lines = []
+    for source in sources:
+        snapshot = latest_source_snapshots.get(source.id or 0)
+        if snapshot:
+            source_currency_lines.append(
+                f"- {source.name}: last checked {snapshot.checked_at.date().isoformat()}; "
+                f"change {snapshot.change_type}; schema {snapshot.detected_schema or 'not detected'}; "
+                f"connector {snapshot.connector_status or source.connector_status or 'not recorded'}."
+            )
+        else:
+            source_currency_lines.append(
+                f"- {source.name}: no source snapshot captured yet; manual review required before relying on currency."
+            )
+    if not source_currency_lines:
+        source_currency_lines = ["- No source currency evidence captured yet."]
     platform_lines = [
         (
             f"- {platform.name}: {platform.connector_status}; actions {platform.supported_actions or 'not recorded'}; "
@@ -1046,7 +1093,11 @@ def generate_framework_intelligence_report_markdown(
         for opportunity in opportunities
     ] or ["- No matching opportunities captured yet."]
     requirement_lines = [
-        f"- {requirement.requirement_theme}: {requirement.requirement_text[:220]} ({requirement.human_review_status})"
+        (
+            f"- {requirement.requirement_theme}: {requirement.requirement_text[:220]} "
+            f"(confidence {requirement.confidence}; review {requirement.human_review_status}; "
+            f"evidence prompt: {evidence_capture_prompt(requirement.requirement_theme)})"
+        )
         for requirement in requirements
     ] or ["- No requirements extracted yet."]
     document_lines = [
@@ -1059,14 +1110,25 @@ def generate_framework_intelligence_report_markdown(
     quality_question_lines = [
         (
             f"- {question.requirement_theme}: {question.question_text[:220]} "
-            f"weighting {question.weighting or 'not detected'} ({question.human_review_status})"
+            f"weighting {question.weighting or 'not detected'} "
+            f"(confidence {question.confidence}; review {question.human_review_status}; "
+            f"evidence prompt: {evidence_capture_prompt(question.requirement_theme)})"
         )
         for question in quality_questions
     ] or ["- No ITT quality questions extracted yet."]
-    signal_lines = [
-        f"- {signal.signal_strength}: {signal.signal_text} Action: {signal.recommended_action}"
-        for signal in signals
-    ] or ["- No RDEC candidate indicators extracted yet."]
+    signal_lines = []
+    for signal in signals:
+        opportunity = opportunity_by_id.get(signal.opportunity_id)
+        requirement = requirement_by_id.get(signal.requirement_id) if signal.requirement_id else None
+        theme = requirement.requirement_theme if requirement else signal.signal_type
+        signal_lines.append(
+            f"- {signal.signal_type}: opportunity '{opportunity.title if opportunity else 'not linked'}'; "
+            f"theme '{theme}'; strength {signal.signal_strength}; review {signal.human_review_status}; "
+            f"rationale: {signal.signal_text}; evidence prompt: {evidence_capture_prompt(theme)} "
+            f"Action: {signal.recommended_action} {signal.caveat}"
+        )
+    if not signal_lines:
+        signal_lines = ["- No RDEC candidate indicators extracted yet."]
 
     generated_at = datetime.now(UTC).isoformat(timespec="seconds")
     source_config_version = framework_source_rules().get("version", "unknown")
@@ -1097,6 +1159,9 @@ This report consolidates public-sector framework and bid-opportunity intelligenc
 ## Source Change Tracking
 {chr(10).join(source_change_lines)}
 
+## Source Currency And Review Status
+{chr(10).join(source_currency_lines)}
+
 ## Buyer Portal Platforms
 {chr(10).join(platform_lines)}
 
@@ -1114,6 +1179,11 @@ This report consolidates public-sector framework and bid-opportunity intelligenc
 
 ## RDEC Candidate Intelligence
 {chr(10).join(signal_lines)}
+
+## Suggested Evidence Capture Prompts
+- Capture source documents, SOW/contract facts, quality-question extracts, technical assumptions, failed approaches, people-time records, cost evidence, and competent professional review notes for each R&D candidate indicator.
+- Treat every signal as pending competent professional and tax review until project-specific evidence, entitlement facts, and cost apportionment are reviewed.
+- Use accepted human-review signals to seed R&D candidate projects only after delivery teams identify a specific scientific or technological uncertainty.
 
 ## Finance And Ayming Use
 - Use the captured opportunity and requirement themes to plan project codes, people-time capture, evidence ownership, and contract/SOW fact capture early.
