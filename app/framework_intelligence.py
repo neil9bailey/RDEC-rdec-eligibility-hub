@@ -253,6 +253,124 @@ def framework_intelligence_metrics(session: Session) -> dict:
     }
 
 
+def opportunity_rdec_review_summary(
+    opportunity: FrameworkOpportunity,
+    signals: list[RDECOpportunitySignal],
+    requirements: list[ExtractedRequirement],
+    documents: list[OpportunityDocument],
+) -> dict:
+    pending_signals = [signal for signal in signals if signal.human_review_status == "pending"]
+    accepted_signals = [signal for signal in signals if signal.human_review_status == "accepted"]
+    strong_signals = [
+        signal for signal in signals if "strong" in (signal.signal_strength or "").lower()
+    ]
+    rdec_theme_requirements = [
+        requirement for requirement in requirements if requirement.requirement_theme in RDEC_SIGNAL_THEMES
+    ]
+    score = float(opportunity.relevance_score or 0)
+
+    if accepted_signals or strong_signals or (score >= 70 and pending_signals):
+        classification = "strong indicators"
+        badge_class = "green"
+        priority = 3
+        review_action = (
+            "Prioritise competent professional triage, source-document capture, entitlement facts, "
+            "and Finance/Ayming evidence planning."
+        )
+    elif pending_signals or rdec_theme_requirements or score >= 45:
+        classification = "review required"
+        badge_class = "amber"
+        priority = 2
+        review_action = (
+            "Review the extracted requirement themes, confirm whether technical uncertainty exists, "
+            "and capture evidence ownership before treating this as an R&D candidate."
+        )
+    else:
+        classification = "triage only"
+        badge_class = "weak"
+        priority = 1
+        review_action = (
+            "Keep in the opportunity catalogue. No current R&D candidate signal has been extracted; "
+            "reassess if source documents introduce non-routine technical uncertainty."
+        )
+
+    if not documents:
+        evidence_gap = "No opportunity documents linked yet."
+    elif pending_signals:
+        evidence_gap = "RDEC candidate signal review is pending."
+    elif any(document.human_review_status == "pending" for document in documents):
+        evidence_gap = "Document review is pending."
+    else:
+        evidence_gap = "Initial document links captured."
+
+    first_signal = pending_signals[0] if pending_signals else signals[0] if signals else None
+    themes = sorted({requirement.requirement_theme for requirement in requirements if requirement.requirement_theme})
+    return {
+        "opportunity": opportunity,
+        "classification": classification,
+        "badge_class": badge_class,
+        "priority": priority,
+        "pending_signal_count": len(pending_signals),
+        "accepted_signal_count": len(accepted_signals),
+        "signal_count": len(signals),
+        "requirement_count": len(requirements),
+        "document_count": len(documents),
+        "themes": themes,
+        "review_action": review_action,
+        "evidence_gap": evidence_gap,
+        "signal_review_url": (
+            f"/framework-intelligence/requirements#signal-{first_signal.id}" if first_signal and first_signal.id else
+            "/framework-intelligence/requirements#rdec-signal-queue"
+        ),
+        "document_url": f"/framework-intelligence/opportunities/{opportunity.id}/documents" if opportunity.id else "",
+        "requires_review": "Requires competent professional and tax review.",
+    }
+
+
+def framework_opportunity_review_context(session: Session, limit: int = 8) -> dict:
+    opportunities = list(
+        session.exec(select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc()).limit(200))
+    )
+    signals_by_opportunity: dict[int, list[RDECOpportunitySignal]] = {}
+    for signal in session.exec(select(RDECOpportunitySignal)):
+        signals_by_opportunity.setdefault(signal.opportunity_id, []).append(signal)
+    requirements_by_opportunity: dict[int, list[ExtractedRequirement]] = {}
+    for requirement in session.exec(select(ExtractedRequirement)):
+        requirements_by_opportunity.setdefault(requirement.opportunity_id, []).append(requirement)
+    documents_by_opportunity: dict[int, list[OpportunityDocument]] = {}
+    for document in session.exec(select(OpportunityDocument)):
+        documents_by_opportunity.setdefault(document.opportunity_id, []).append(document)
+
+    summaries = []
+    for opportunity in opportunities:
+        if not opportunity.id:
+            continue
+        summary = opportunity_rdec_review_summary(
+            opportunity,
+            signals_by_opportunity.get(opportunity.id, []),
+            requirements_by_opportunity.get(opportunity.id, []),
+            documents_by_opportunity.get(opportunity.id, []),
+        )
+        summaries.append(summary)
+
+    summaries.sort(
+        key=lambda item: (
+            item["priority"],
+            item["pending_signal_count"],
+            float(item["opportunity"].relevance_score or 0),
+            item["opportunity"].updated_at,
+        ),
+        reverse=True,
+    )
+    action_queue = [item for item in summaries if item["priority"] >= 2]
+    return {
+        "items": action_queue[:limit],
+        "total": len(action_queue),
+        "triaged_out": sum(1 for item in summaries if item["priority"] == 1),
+        "by_opportunity_id": {item["opportunity"].id: item for item in summaries if item["opportunity"].id},
+    }
+
+
 def split_terms(value: str) -> list[str]:
     raw_terms = re.split(r"[,;\n]+", value or "")
     terms = []

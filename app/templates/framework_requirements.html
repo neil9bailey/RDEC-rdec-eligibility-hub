@@ -18,7 +18,7 @@
     <h2>Extracted Requirements</h2>
     <div class="stack">
       {% for requirement in requirements %}
-        <article class="list-item">
+        <article class="list-item" id="requirement-{{ requirement.id }}">
           <h3>{{ requirement.requirement_theme }}</h3>
           <p><span class="badge {{ 'green' if requirement.human_review_status == 'accepted' else 'amber' }}">{{ requirement.human_review_status }}</span></p>
           <p>{{ requirement.requirement_text }}</p>
@@ -41,11 +41,11 @@
       {% endfor %}
     </div>
   </div>
-  <div class="panel">
+  <div class="panel" id="rdec-signal-queue">
     <h2>RDEC Candidate Signals</h2>
     <div class="stack">
       {% for signal in signals %}
-        <article class="list-item">
+        <article class="list-item" id="signal-{{ signal.id }}">
           <h3>{{ signal.signal_type }}</h3>
           <p>
             <span class="badge weak">{{ signal.signal_strength }}</span>

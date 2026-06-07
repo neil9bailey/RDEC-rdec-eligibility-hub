@@ -617,6 +617,27 @@ a:hover {
   text-transform: uppercase;
 }
 
+.metric-link {
+  display: block;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.metric-link:hover,
+.metric-link:focus-visible {
+  border-color: rgba(80, 35, 110, 0.42);
+  transform: translateY(-1px);
+}
+
+.metric-action {
+  display: inline-flex;
+  margin-top: 12px;
+  color: var(--telent-purple);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .panel {
   padding: 18px;
 }
@@ -645,6 +666,18 @@ a:hover {
   gap: 14px;
 }
 
+.section-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.section-head h2 {
+  margin-bottom: 6px;
+}
+
 .list-item {
   padding: 14px;
   background: linear-gradient(180deg, #fff, #fbfaff);
@@ -653,6 +686,73 @@ a:hover {
 .list-item h3 {
   margin: 0 0 6px;
   font-size: 17px;
+}
+
+.list-item,
+.review-card,
+td,
+th {
+  overflow-wrap: anywhere;
+}
+
+.review-queue {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.review-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f7fbfa);
+}
+
+.review-card h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.review-badges,
+.action-row,
+.shortcut-grid,
+.theme-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-row a,
+.shortcut-grid a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--telent-purple);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.action-row a:hover,
+.shortcut-grid a:hover {
+  border-color: rgba(80, 35, 110, 0.35);
+  background: #f8f4fb;
+}
+
+.theme-strip span {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #eef8f5;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .muted,
@@ -751,6 +851,10 @@ table {
 
 .table-wrap table {
   min-width: 680px;
+}
+
+.compact-table table {
+  min-width: 620px;
 }
 
 th,
@@ -997,9 +1101,14 @@ pre {
   }
 
   .grid.two,
+  .review-queue,
   .form-grid,
   .form-grid.three {
     grid-template-columns: 1fr;
+  }
+
+  .section-head {
+    display: grid;
   }
 }
 

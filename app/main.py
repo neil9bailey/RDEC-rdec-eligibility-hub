@@ -27,6 +27,7 @@ from app.framework_intelligence import (
     create_portal_retrieval_run,
     extract_document_intelligence,
     framework_intelligence_metrics,
+    framework_opportunity_review_context,
     official_framework_source_allowed,
     run_framework_agent_for_profile,
     run_single_source_check,
@@ -435,6 +436,7 @@ def framework_intelligence(request: Request, session: Session = Depends(get_sess
     )
     reports = list(session.exec(select(IntelligenceReport).order_by(col(IntelligenceReport.generated_at).desc()).limit(5)))
     context = framework_reference_context(session)
+    review_context = framework_opportunity_review_context(session, limit=6)
     return templates.TemplateResponse(
         request,
         "framework_intelligence.html",
@@ -443,6 +445,8 @@ def framework_intelligence(request: Request, session: Session = Depends(get_sess
             metrics=framework_intelligence_metrics(session),
             opportunities=opportunities,
             requirements=requirements,
+            rdec_review_queue=review_context,
+            opportunity_review_map=review_context["by_opportunity_id"],
             reports=reports,
             **context,
         ),
@@ -760,12 +764,15 @@ def run_watch_profile(profile_id: int, session: Session = Depends(get_session)):
 
 
 @app.get("/framework-intelligence/opportunities", response_class=HTMLResponse)
-def framework_opportunities(request: Request, session: Session = Depends(get_session)):
-    opportunities = list(
-        session.exec(select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc()).limit(200))
-    )
+def framework_opportunities(request: Request, status: str | None = None, session: Session = Depends(get_session)):
+    opportunity_query = select(FrameworkOpportunity).order_by(col(FrameworkOpportunity.updated_at).desc())
+    status_filter = status if status in FRAMEWORK_OPPORTUNITY_STATUSES else None
+    if status_filter:
+        opportunity_query = opportunity_query.where(FrameworkOpportunity.status == status_filter)
+    opportunities = list(session.exec(opportunity_query.limit(200)))
     signals = list(session.exec(select(RDECOpportunitySignal)))
     documents = list(session.exec(select(OpportunityDocument)))
+    review_context = framework_opportunity_review_context(session, limit=200)
     signal_counts: dict[int, int] = {}
     for signal in signals:
         signal_counts[signal.opportunity_id] = signal_counts.get(signal.opportunity_id, 0) + 1
@@ -780,6 +787,8 @@ def framework_opportunities(request: Request, session: Session = Depends(get_ses
             opportunities=opportunities,
             signal_counts=signal_counts,
             document_counts=document_counts,
+            opportunity_review_map=review_context["by_opportunity_id"],
+            status_filter=status_filter,
             **framework_reference_context(session),
         ),
     )

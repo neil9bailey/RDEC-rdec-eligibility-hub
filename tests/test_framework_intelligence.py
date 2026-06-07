@@ -266,6 +266,71 @@ def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_us
     assert session.exec(select(IntelligenceReport)).first() is not None
 
 
+def test_framework_intelligence_hub_links_metrics_to_review_queues(session):
+    opportunity = FrameworkOpportunity(
+        title="TfL real-time signalling resilience platform",
+        buyer_name="Transport for London",
+        summary=(
+            "Long source summary: requires low latency telemetry, cyber security, legacy integration, "
+            "and resilience evidence that should remain available through an expandable summary."
+        ),
+        source_url="https://www.find-tender.service.gov.uk/Notice/456",
+        relevance_score=88,
+        status="new",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+    requirement = ExtractedRequirement(
+        opportunity_id=opportunity.id,
+        requirement_theme="real-time operation",
+        requirement_text="Low-latency transport operations with resilience and legacy integration constraints.",
+        human_review_status="pending",
+    )
+    document = OpportunityDocument(
+        opportunity_id=opportunity.id,
+        title="Notice source",
+        document_type="notice",
+        url_or_path=opportunity.source_url,
+    )
+    session.add(requirement)
+    session.add(document)
+    session.commit()
+    session.refresh(requirement)
+    signal = RDECOpportunitySignal(
+        opportunity_id=opportunity.id,
+        requirement_id=requirement.id,
+        signal_strength="strong indicators",
+        signal_text="Real-time operation may indicate an R&D candidate area if technical uncertainty is evidenced.",
+        recommended_action="Capture source documents, failed approaches, people time and review notes.",
+        human_review_status="pending",
+    )
+    session.add(signal)
+    session.commit()
+    session.refresh(signal)
+
+    client = client_for(session)
+    try:
+        response = client.get("/framework-intelligence")
+        filtered_response = client.get("/framework-intelligence/opportunities?status=new")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    html = response.text
+    assert "RDEC Candidate Review Queue" in html
+    assert "Actionable RDEC review items" in html
+    assert "/framework-intelligence/requirements#rdec-signal-queue" in html
+    assert f"/framework-intelligence/requirements#signal-{signal.id}" in html
+    assert "strong indicators" in html
+    assert "Read source summary" in html
+    assert "requires low latency telemetry" in html
+    assert "Requires competent professional and tax review." in html
+    assert filtered_response.status_code == 200
+    assert "Filtered by status" in filtered_response.text
+    assert "Open review" in filtered_response.text
+
+
 def test_opportunity_document_extraction_creates_quality_questions_and_retrieval_task(session):
     opportunity = FrameworkOpportunity(
         title="Real-time roadside technology platform",
