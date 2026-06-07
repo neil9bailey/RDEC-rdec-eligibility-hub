@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Public Sector Framework Intelligence Agent</h1>
-    <p>Tracks official/public procurement sources against customer and business-unit watch profiles, then builds a human-review knowledge base of opportunities, requirements, and RDEC candidate signals for Telent / M Group.</p>
+    <p>A human-review workspace for public procurement opportunities, requirement themes, source health, and possible R&D candidate signals for Telent / M Group.</p>
   </div>
   <div class="actions">
     <a class="button" href="/framework-intelligence/watch-profiles">Watch profiles</a>
@@ -16,6 +16,19 @@
 
 <section class="warning-panel">
   {{ framework_agent_caveat }}
+</section>
+
+<section class="panel start-here" style="margin-top: 18px;">
+  <div>
+    <h2>Start Here</h2>
+    <p>Use this page to decide what needs human review next. The agent does not decide whether work qualifies for RDEC; it points reviewers to opportunities, source documents, requirement themes, and evidence gaps.</p>
+  </div>
+  <ol class="plain-steps">
+    <li><a href="#rdec-review-queue">Review the RDEC candidate queue</a><span>Check why each item is flagged and open the workbench.</span></li>
+    <li><a href="/framework-intelligence/opportunities?status=new">Triage new opportunities</a><span>Move useful items to watching or reject noise.</span></li>
+    <li><a href="/framework-intelligence/source-catalogue">Check source readiness</a><span>Keep inactive/reference sources separate from live feeds.</span></li>
+    <li><a href="/framework-intelligence/reports">Generate an action report</a><span>Export current findings for Finance, engineering, and Ayming review.</span></li>
+  </ol>
 </section>
 
 <section class="metric-grid action-metrics" style="margin-top: 18px;" aria-label="Framework intelligence action metrics">
@@ -77,7 +90,7 @@
       {% set opportunity = item.opportunity %}
       <article class="review-card">
         <div>
-          <h3><a href="{{ item.document_url }}">{{ opportunity.title }}</a></h3>
+          <h3><a href="{{ item.workbench_url }}">{{ opportunity.title }}</a></h3>
           <p class="muted">{{ opportunity.buyer_name or "Buyer not detected" }} | {{ opportunity.deadline_date or "No deadline detected" }}</p>
         </div>
         <div class="review-badges">
@@ -94,6 +107,7 @@
         <p>{{ item.review_action }}</p>
         <p class="hint">{{ item.evidence_gap }} {{ item.requires_review }}</p>
         <div class="action-row">
+          <a href="{{ item.workbench_url }}">Open opportunity workbench</a>
           <a href="{{ item.signal_review_url }}">Open pending signal review</a>
           <a href="{{ item.document_url }}">Open documents and retrieval tasks</a>
           {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">Open official source</a>{% endif %}
@@ -176,7 +190,7 @@
       {% for opportunity in opportunities %}
         {% set review = opportunity_review_map.get(opportunity.id) %}
         <article class="list-item">
-          <h3><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">{{ opportunity.title }}</a></h3>
+          <h3><a href="/framework-intelligence/opportunities/{{ opportunity.id }}">{{ opportunity.title }}</a></h3>
           <p>
             <span class="badge {{ 'green' if opportunity.status in ['watching', 'bid_review'] else 'amber' }}">{{ opportunity.status }}</span>
             <span class="badge weak">relevance {{ opportunity.relevance_score|round(0) }}</span>
@@ -192,6 +206,7 @@
             <p class="hint">No source summary captured yet.</p>
           {% endif %}
           <div class="action-row">
+            <a href="/framework-intelligence/opportunities/{{ opportunity.id }}">Review workbench</a>
             <a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">Documents</a>
             <a href="/framework-intelligence/requirements#rdec-signal-queue">Requirement and signal review</a>
             {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">Official source</a>{% endif %}

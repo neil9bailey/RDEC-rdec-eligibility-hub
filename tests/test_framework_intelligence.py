@@ -257,6 +257,7 @@ def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_us
     assert "Finance And Ayming Use" in markdown
     assert "Source Currency And Review Status" in markdown
     assert "Suggested Evidence Capture Prompts" in markdown
+    assert "Review Queue - What To Do Next" in markdown
     assert "evidence prompt" in markdown
     assert "review pending" in markdown
     assert "strength strong indicators" in markdown
@@ -328,7 +329,102 @@ def test_framework_intelligence_hub_links_metrics_to_review_queues(session):
     assert "Requires competent professional and tax review." in html
     assert filtered_response.status_code == 200
     assert "Filtered by status" in filtered_response.text
-    assert "Open review" in filtered_response.text
+    assert "Open workbench" in filtered_response.text
+
+
+def test_framework_opportunity_workbench_and_return_to_reviews(session):
+    source = FrameworkSource(
+        name="Workbench Find a Tender source",
+        source_type="ocds_api",
+        base_url="https://www.find-tender.service.gov.uk",
+        query_url="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=1",
+        active=True,
+        connector_status="live_mvp",
+    )
+    session.add(source)
+    session.commit()
+    session.refresh(source)
+    opportunity = FrameworkOpportunity(
+        source_id=source.id,
+        title="Rail SCADA telemetry resilience workbench opportunity",
+        buyer_name="National Rail",
+        summary="SCADA telemetry, resilience, cyber security and real-time operation requirements.",
+        source_url="https://www.find-tender.service.gov.uk/Notice/789",
+        relevance_score=91,
+        status="new",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+    requirement = ExtractedRequirement(
+        opportunity_id=opportunity.id,
+        requirement_theme="operational technology / SCADA",
+        requirement_text="Telemetry and SCADA resilience requirement.",
+        human_review_status="pending",
+    )
+    session.add(requirement)
+    session.commit()
+    session.refresh(requirement)
+    signal = RDECOpportunitySignal(
+        opportunity_id=opportunity.id,
+        requirement_id=requirement.id,
+        signal_strength="strong indicators",
+        signal_text="SCADA resilience may indicate an R&D candidate area if uncertainty is evidenced.",
+        recommended_action="Capture test evidence and competent professional review notes.",
+        human_review_status="pending",
+    )
+    document = OpportunityDocument(
+        opportunity_id=opportunity.id,
+        title="Notice source",
+        document_type="notice",
+        url_or_path=opportunity.source_url,
+    )
+    session.add(signal)
+    session.add(document)
+    session.commit()
+    session.refresh(signal)
+
+    client = client_for(session)
+    try:
+        response = client.get(f"/framework-intelligence/opportunities/{opportunity.id}")
+        signal_review = client.post(
+            f"/framework-intelligence/signals/{signal.id}/review",
+            data={
+                "human_review_status": "accepted",
+                "recommended_action": "Create an evidence capture task for engineering review.",
+                "return_to": f"/framework-intelligence/opportunities/{opportunity.id}#signal-{signal.id}",
+            },
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Opportunity Review Workbench" in response.text
+    assert "What To Review Next" in response.text
+    assert "Source Health" in response.text
+    assert "Save signal review" in response.text
+    assert "Requires competent professional and tax review." in response.text
+    assert signal_review.status_code == 303
+    assert signal_review.headers["location"] == f"/framework-intelligence/opportunities/{opportunity.id}#signal-{signal.id}"
+
+
+def test_source_catalogue_and_watch_profiles_are_human_readable(session):
+    seed_framework_sources(session)
+    client = client_for(session)
+    try:
+        source_response = client.get("/framework-intelligence/source-catalogue")
+        profile_response = client.get("/framework-intelligence/watch-profiles")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert source_response.status_code == 200
+    assert "parked - validate first" in source_response.text
+    assert "live source" in source_response.text
+    assert "Not part of live guarded checks" in source_response.text
+    assert profile_response.status_code == 200
+    assert "Suggested Watch Terms" in profile_response.text
+    assert "TfL / London transport" in profile_response.text
 
 
 def test_opportunity_document_extraction_creates_quality_questions_and_retrieval_task(session):

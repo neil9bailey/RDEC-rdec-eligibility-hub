@@ -28,10 +28,13 @@ from app.framework_intelligence import (
     extract_document_intelligence,
     framework_intelligence_metrics,
     framework_opportunity_review_context,
+    latest_snapshot_by_source,
     official_framework_source_allowed,
     run_framework_agent_for_profile,
     run_single_source_check,
     seed_framework_sources,
+    source_readiness_for_source,
+    watch_profile_suggestion_cards,
 )
 from app.models import (
     AccountingPeriod,
@@ -167,6 +170,13 @@ def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
 
 
+def safe_framework_return_path(value: object, default: str) -> str:
+    path = str(value or "").strip()
+    if path.startswith("/framework-intelligence"):
+        return path
+    return default
+
+
 def wants_partial(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
@@ -207,6 +217,9 @@ def framework_reference_context(session: Session) -> dict:
     customers = list(session.exec(select(Customer).order_by(col(Customer.customer_name))))
     business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
     sources = list(session.exec(select(FrameworkSource).order_by(col(FrameworkSource.name))))
+    latest_snapshots = latest_snapshot_by_source(
+        list(session.exec(select(SourceCheckSnapshot).order_by(col(SourceCheckSnapshot.checked_at).desc()).limit(200)))
+    )
     profiles = list(session.exec(select(CustomerWatchProfile).order_by(col(CustomerWatchProfile.profile_name))))
     platforms = list(session.exec(select(ProcurementPlatform).order_by(col(ProcurementPlatform.name))))
     portal_instances = list(session.exec(select(BuyerPortalInstance).order_by(col(BuyerPortalInstance.portal_name))))
@@ -220,9 +233,13 @@ def framework_reference_context(session: Session) -> dict:
         "customer_map": {customer.id: customer for customer in customers},
         "business_unit_map": {unit.id: unit for unit in business_units},
         "source_map": {source.id: source for source in sources},
+        "source_readiness_map": {
+            source.id: source_readiness_for_source(source, latest_snapshots.get(source.id or 0)) for source in sources
+        },
         "profile_map": {profile.id: profile for profile in profiles},
         "platform_map": {platform.id: platform for platform in platforms},
         "portal_instance_map": {portal.id: portal for portal in portal_instances},
+        "watch_profile_suggestions": watch_profile_suggestion_cards(),
         "framework_source_types": FRAMEWORK_SOURCE_TYPES,
         "framework_opportunity_statuses": FRAMEWORK_OPPORTUNITY_STATUSES,
         "framework_review_statuses": FRAMEWORK_REVIEW_STATUSES,
@@ -794,6 +811,64 @@ def framework_opportunities(request: Request, status: str | None = None, session
     )
 
 
+@app.get("/framework-intelligence/opportunities/{opportunity_id}", response_class=HTMLResponse)
+def framework_opportunity_workbench(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
+    opportunity = session.get(FrameworkOpportunity, opportunity_id)
+    if not opportunity:
+        return redirect("/framework-intelligence/opportunities")
+    requirements = list(
+        session.exec(
+            select(ExtractedRequirement)
+            .where(ExtractedRequirement.opportunity_id == opportunity_id)
+            .order_by(col(ExtractedRequirement.created_at).desc())
+        )
+    )
+    signals = list(
+        session.exec(
+            select(RDECOpportunitySignal)
+            .where(RDECOpportunitySignal.opportunity_id == opportunity_id)
+            .order_by(col(RDECOpportunitySignal.created_at).desc())
+        )
+    )
+    documents = list(
+        session.exec(
+            select(OpportunityDocument)
+            .where(OpportunityDocument.opportunity_id == opportunity_id)
+            .order_by(col(OpportunityDocument.extracted_at).desc())
+        )
+    )
+    quality_questions = list(
+        session.exec(
+            select(ExtractedQualityQuestion)
+            .where(ExtractedQualityQuestion.opportunity_id == opportunity_id)
+            .order_by(col(ExtractedQualityQuestion.created_at).desc())
+        )
+    )
+    retrieval_runs = list(
+        session.exec(
+            select(PortalRetrievalRun)
+            .where(PortalRetrievalRun.opportunity_id == opportunity_id)
+            .order_by(col(PortalRetrievalRun.started_at).desc())
+        )
+    )
+    review_context = framework_opportunity_review_context(session, limit=200)
+    return templates.TemplateResponse(
+        request,
+        "framework_opportunity_workbench.html",
+        template_context(
+            request,
+            opportunity=opportunity,
+            review=review_context["by_opportunity_id"].get(opportunity.id),
+            requirements=requirements,
+            signals=signals,
+            documents=documents,
+            quality_questions=quality_questions,
+            retrieval_runs=retrieval_runs,
+            **framework_reference_context(session),
+        ),
+    )
+
+
 @app.post("/framework-intelligence/opportunities/{opportunity_id}/update")
 async def update_framework_opportunity(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
@@ -820,7 +895,7 @@ async def update_framework_opportunity(opportunity_id: int, request: Request, se
         f"Updated framework opportunity {opportunity.title}",
         before_snapshot,
     )
-    return redirect("/framework-intelligence/opportunities")
+    return redirect(safe_framework_return_path(form.get("return_to"), "/framework-intelligence/opportunities"))
 
 
 @app.post("/framework-intelligence/opportunities/{opportunity_id}/delete")
@@ -976,7 +1051,7 @@ async def review_framework_requirement(requirement_id: int, request: Request, se
         f"Updated extracted requirement {requirement.id}",
         before_snapshot,
     )
-    return redirect("/framework-intelligence/requirements")
+    return redirect(safe_framework_return_path(form.get("return_to"), "/framework-intelligence/requirements"))
 
 
 @app.post("/framework-intelligence/signals/{signal_id}/review")
@@ -999,7 +1074,7 @@ async def review_framework_signal(signal_id: int, request: Request, session: Ses
     signal.human_review_status = status
     signal.recommended_action = str(form.get("recommended_action") or signal.recommended_action)
     save_with_audit(session, signal, "update", f"Updated RDEC opportunity signal {signal.id}", before_snapshot)
-    return redirect("/framework-intelligence/requirements")
+    return redirect(safe_framework_return_path(form.get("return_to"), "/framework-intelligence/requirements"))
 
 
 @app.get("/framework-intelligence/agent-runs", response_class=HTMLResponse)

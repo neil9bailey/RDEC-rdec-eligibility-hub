@@ -678,6 +678,60 @@ a:hover {
   margin-bottom: 6px;
 }
 
+.start-here {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.85fr) minmax(320px, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.plain-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.plain-steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.plain-steps li::before {
+  content: counter(step);
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--telent-purple);
+  font-weight: 900;
+}
+
+.plain-steps a,
+.plain-steps span {
+  grid-column: 2;
+}
+
+.plain-steps a {
+  font-weight: 900;
+}
+
+.plain-steps span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .list-item {
   padding: 14px;
   background: linear-gradient(180deg, #fff, #fbfaff);
@@ -698,6 +752,41 @@ th {
 .review-queue {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workbench-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 18px;
+}
+
+.next-step-panel {
+  border-color: rgba(0, 120, 90, 0.25);
+  background: #f8fffb;
+}
+
+.fact-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.fact-list dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fact-list dd {
+  margin: 0 0 8px;
+  font-weight: 750;
+}
+
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -1081,6 +1170,7 @@ pre {
 
   .metric-grid,
   .review-strip,
+  .suggestion-grid,
   .grid.three {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1102,6 +1192,8 @@ pre {
 
   .grid.two,
   .review-queue,
+  .workbench-summary,
+  .start-here,
   .form-grid,
   .form-grid.three {
     grid-template-columns: 1fr;
@@ -1142,6 +1234,10 @@ pre {
   .metric,
   .page-head {
     min-width: 0;
+  }
+
+  .suggestion-grid {
+    grid-template-columns: 1fr;
   }
 
   .table-wrap {

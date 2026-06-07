@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Source Catalogue</h1>
-    <p>Five-source notice pipeline plus commercial backup configuration, normalised into the Framework Intelligence Opportunity Catalogue.</p>
+    <p>Shows which procurement sources are live, parked for validation, reference-only, or blocked pending licence/human approval.</p>
   </div>
   <div class="actions">
     <a class="button secondary" href="/framework-intelligence/source-changes">Source changes</a>
@@ -26,12 +26,13 @@
           <th>Format</th>
           <th>Auth</th>
           <th>Tracking</th>
-          <th>Status</th>
+          <th>Readiness</th>
           <th>Check</th>
         </tr>
       </thead>
       <tbody>
         {% for source in sources %}
+          {% set readiness = source_readiness_map.get(source.id) %}
           <tr>
             <td>
               <strong>{{ source.name }}</strong>
@@ -47,12 +48,22 @@
             </td>
             <td>
               <span class="badge {{ 'green' if source.active else 'amber' }}">{{ 'active' if source.active else 'inactive' }}</span>
-              <p class="hint">{{ source.connector_status }} | {{ source.last_status or "not checked" }}</p>
+              {% if readiness %}
+                <span class="badge {{ readiness.badge_class }}">{{ readiness.label }}</span>
+                <p>{{ readiness.action }}</p>
+                <p class="hint">{{ readiness.health_note }}</p>
+              {% else %}
+                <p class="hint">{{ source.connector_status }} | {{ source.last_status or "not checked" }}</p>
+              {% endif %}
             </td>
             <td>
-              <form method="post" action="/framework-intelligence/sources/{{ source.id }}/check">
-                <button type="submit">Check source</button>
-              </form>
+              {% if source.active and not source.requires_human_approval %}
+                <form method="post" action="/framework-intelligence/sources/{{ source.id }}/check">
+                  <button type="submit">Check source</button>
+                </form>
+              {% else %}
+                <p class="hint">Not part of live guarded checks.</p>
+              {% endif %}
             </td>
           </tr>
         {% else %}

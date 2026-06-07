@@ -111,4 +111,21 @@
     </form>
   </div>
 </section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Suggested Watch Terms</h2>
+  <p class="hint">Use these as starting points when creating or editing profiles. They are not exhaustive and should be adjusted for the actual customer, contract route, and business unit.</p>
+  <div class="suggestion-grid">
+    {% for suggestion in watch_profile_suggestions %}
+      <article class="list-item">
+        <h3>{{ suggestion.title }}</h3>
+        <p><strong>Buyer aliases:</strong> {{ suggestion.buyer_aliases }}</p>
+        <p><strong>Keywords:</strong> {{ suggestion.keywords }}</p>
+        <p><strong>Domains:</strong> {{ suggestion.domains }}</p>
+      </article>
+    {% else %}
+      <p>No watch-profile suggestions configured.</p>
+    {% endfor %}
+  </div>
+</section>
 {% endblock %}

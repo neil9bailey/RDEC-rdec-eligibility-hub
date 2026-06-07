@@ -134,6 +134,10 @@ def source_change_rules() -> dict:
     return load_rule_file("source_change_tracking.yml")
 
 
+def framework_review_rules() -> dict:
+    return load_rule_file("framework_intelligence_review.yml")
+
+
 def evidence_capture_prompt(theme: str) -> str:
     normalized = (theme or "").strip().lower()
     return EVIDENCE_CAPTURE_PROMPTS.get(
@@ -253,6 +257,15 @@ def framework_intelligence_metrics(session: Session) -> dict:
     }
 
 
+def review_classification_rules() -> dict:
+    rules = framework_review_rules().get("classification") or {}
+    return {
+        "strong_indicators": rules.get("strong_indicators") or {},
+        "review_required": rules.get("review_required") or {},
+        "triage_only": rules.get("triage_only") or {},
+    }
+
+
 def opportunity_rdec_review_summary(
     opportunity: FrameworkOpportunity,
     signals: list[RDECOpportunitySignal],
@@ -268,31 +281,26 @@ def opportunity_rdec_review_summary(
         requirement for requirement in requirements if requirement.requirement_theme in RDEC_SIGNAL_THEMES
     ]
     score = float(opportunity.relevance_score or 0)
+    rules = review_classification_rules()
+    strong_rule = rules["strong_indicators"]
+    review_rule = rules["review_required"]
+    triage_rule = rules["triage_only"]
+    strong_score_threshold = numberish(strong_rule.get("minimum_score_with_pending_signal") or 70)
+    review_score_threshold = numberish(review_rule.get("minimum_score") or 45)
 
-    if accepted_signals or strong_signals or (score >= 70 and pending_signals):
-        classification = "strong indicators"
-        badge_class = "green"
-        priority = 3
-        review_action = (
-            "Prioritise competent professional triage, source-document capture, entitlement facts, "
-            "and Finance/Ayming evidence planning."
-        )
-    elif pending_signals or rdec_theme_requirements or score >= 45:
-        classification = "review required"
-        badge_class = "amber"
-        priority = 2
-        review_action = (
-            "Review the extracted requirement themes, confirm whether technical uncertainty exists, "
-            "and capture evidence ownership before treating this as an R&D candidate."
-        )
+    if accepted_signals or strong_signals or (score >= strong_score_threshold and pending_signals):
+        rule = strong_rule
+    elif pending_signals or rdec_theme_requirements or score >= review_score_threshold:
+        rule = review_rule
     else:
-        classification = "triage only"
-        badge_class = "weak"
-        priority = 1
-        review_action = (
-            "Keep in the opportunity catalogue. No current R&D candidate signal has been extracted; "
-            "reassess if source documents introduce non-routine technical uncertainty."
-        )
+        rule = triage_rule
+
+    classification = str(rule.get("label") or "review required")
+    badge_class = str(rule.get("badge_class") or "amber")
+    priority = int(numberish(rule.get("priority") or 2))
+    review_action = textish(rule.get("action")) or (
+        "Review the opportunity and capture evidence before treating this as an R&D candidate."
+    )
 
     if not documents:
         evidence_gap = "No opportunity documents linked yet."
@@ -322,9 +330,37 @@ def opportunity_rdec_review_summary(
             f"/framework-intelligence/requirements#signal-{first_signal.id}" if first_signal and first_signal.id else
             "/framework-intelligence/requirements#rdec-signal-queue"
         ),
+        "workbench_url": f"/framework-intelligence/opportunities/{opportunity.id}" if opportunity.id else "",
         "document_url": f"/framework-intelligence/opportunities/{opportunity.id}/documents" if opportunity.id else "",
         "requires_review": "Requires competent professional and tax review.",
     }
+
+
+def source_readiness_for_source(source: FrameworkSource, snapshot: SourceCheckSnapshot | None = None) -> dict:
+    rules = framework_review_rules().get("source_readiness") or {}
+    if source.requires_human_approval or source.auth_model == "subscription" or "licence" in source.connector_status:
+        key = "licence_required"
+    elif source.active:
+        key = "live"
+    elif source.source_type == "web_page" or source.source_family.endswith("guidance"):
+        key = "reference_only"
+    else:
+        key = "inactive_validation"
+    rule = rules.get(key) or {}
+    health_note = source.last_status or source.connector_status or "not checked"
+    if snapshot and snapshot.change_type == "failed":
+        health_note = snapshot.notes or health_note
+    return {
+        "key": key,
+        "label": str(rule.get("label") or key.replace("_", " ")),
+        "badge_class": str(rule.get("badge_class") or "weak"),
+        "action": str(rule.get("action") or "Review source configuration."),
+        "health_note": health_note,
+    }
+
+
+def watch_profile_suggestion_cards() -> list[dict]:
+    return list(framework_review_rules().get("watch_profile_suggestions") or [])
 
 
 def framework_opportunity_review_context(session: Session, limit: int = 8) -> dict:
@@ -1160,11 +1196,21 @@ def generate_framework_intelligence_report_markdown(
         )
     opportunity_by_id = {opportunity.id: opportunity for opportunity in opportunities if opportunity.id}
     requirement_by_id = {requirement.id: requirement for requirement in requirements if requirement.id}
+    signals_by_opportunity: dict[int, list[RDECOpportunitySignal]] = {}
+    for signal in signals:
+        signals_by_opportunity.setdefault(signal.opportunity_id, []).append(signal)
+    requirements_by_opportunity: dict[int, list[ExtractedRequirement]] = {}
+    for requirement in requirements:
+        requirements_by_opportunity.setdefault(requirement.opportunity_id, []).append(requirement)
+    documents_by_opportunity: dict[int, list[OpportunityDocument]] = {}
+    for document in documents:
+        documents_by_opportunity.setdefault(document.opportunity_id, []).append(document)
 
     source_lines = [
         (
             f"- {source.name}: {'active' if source.active else 'inactive'}; family {source.source_family}; "
             f"format {source.data_format or source.source_type}; coverage {source.coverage or 'not recorded'}; "
+            f"readiness {source_readiness_for_source(source, latest_source_snapshots.get(source.id or 0))['label']}; "
             f"last status {source.last_status or 'not checked'}"
         )
         for source in sources
@@ -1202,6 +1248,25 @@ def generate_framework_intelligence_report_markdown(
         f"- {profile.profile_name}: keywords '{profile.keywords or 'not recorded'}', aliases '{profile.buyer_aliases or 'not recorded'}'"
         for profile in profiles
     ] or ["- No watch profiles configured."]
+    review_summary_lines = []
+    for opportunity in opportunities:
+        if not opportunity.id:
+            continue
+        summary = opportunity_rdec_review_summary(
+            opportunity,
+            signals_by_opportunity.get(opportunity.id, []),
+            requirements_by_opportunity.get(opportunity.id, []),
+            documents_by_opportunity.get(opportunity.id, []),
+        )
+        if summary["priority"] < 2:
+            continue
+        review_summary_lines.append(
+            f"- {summary['classification']}: {opportunity.title} | buyer {opportunity.buyer_name or 'not detected'} | "
+            f"pending signals {summary['pending_signal_count']} | documents {summary['document_count']} | "
+            f"next action: {summary['review_action']} Evidence gap: {summary['evidence_gap']} {summary['requires_review']}"
+        )
+    if not review_summary_lines:
+        review_summary_lines = ["- No actionable R&D candidate review items identified yet."]
     opportunity_lines = [
         (
             f"- {opportunity.title} | buyer {opportunity.buyer_name or 'not detected'} | "
@@ -1267,6 +1332,9 @@ This report consolidates public-sector framework and bid-opportunity intelligenc
 - Does not make RDEC, legal, tax, accounting, procurement, or HMRC submission conclusions.
 - Human review is required before relying on extracted requirements or R&D candidate indicators.
 - {CAVEAT}
+
+## Review Queue - What To Do Next
+{chr(10).join(review_summary_lines)}
 
 ## Watch Profiles
 {chr(10).join(profile_lines)}

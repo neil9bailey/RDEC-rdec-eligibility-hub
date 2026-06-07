@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Review - {{ app_name }}{% endblock %}
+{% block content %}
+{% set source = source_map.get(opportunity.source_id) %}
+{% set source_ready = source_readiness_map.get(opportunity.source_id) %}
+{% set customer = customer_map.get(opportunity.customer_id) %}
+{% set unit = business_unit_map.get(opportunity.business_unit_id) %}
+{% set return_to = "/framework-intelligence/opportunities/" ~ opportunity.id %}
+<div class="page-head">
+  <div>
+    <h1>Opportunity Review Workbench</h1>
+    <p>{{ opportunity.title }}</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/framework-intelligence/requirements#rdec-signal-queue">Signal queue</a>
+    <a class="button secondary" href="/framework-intelligence/opportunities">Opportunity catalogue</a>
+    <a class="button secondary" href="/framework-intelligence">Back to hub</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  This workbench is for procurement and R&D candidate triage only. It is not bid, legal, tax, accounting, procurement, or HMRC submission advice. Requires competent professional and tax review.
+</section>
+
+<section class="workbench-summary" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Why This Is Here</h2>
+    <p>
+      {% if review %}
+        <span class="badge {{ review.badge_class }}">{{ review.classification }}</span>
+        <span class="badge weak">procurement relevance {{ opportunity.relevance_score|round(0) }}</span>
+      {% else %}
+        <span class="badge weak">triage only</span>
+      {% endif %}
+    </p>
+    <p>{{ opportunity.relevance_rationale or "No relevance rationale captured yet." }}</p>
+    {% if opportunity.summary %}
+      <details open>
+        <summary>Source summary</summary>
+        <p>{{ opportunity.summary }}</p>
+      </details>
+    {% else %}
+      <p class="hint">No source summary captured yet.</p>
+    {% endif %}
+  </div>
+  <div class="panel next-step-panel">
+    <h2>What To Review Next</h2>
+    {% if review %}
+      <p>{{ review.review_action }}</p>
+      <p class="hint">{{ review.evidence_gap }} {{ review.requires_review }}</p>
+    {% else %}
+      <p>Keep this in triage until source documents or requirement themes create a reviewable R&D candidate signal.</p>
+      <p class="hint">Requires competent professional and tax review.</p>
+    {% endif %}
+    <div class="action-row">
+      <a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">Open documents and retrieval tasks</a>
+      {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">Open official source</a>{% endif %}
+      <a href="/framework-intelligence/reports">Generate report</a>
+    </div>
+  </div>
+</section>
+
+<section class="grid three" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Opportunity Facts</h2>
+    <dl class="fact-list">
+      <dt>Buyer</dt><dd>{{ opportunity.buyer_name or "Not detected" }}</dd>
+      <dt>Customer</dt><dd>{{ customer.customer_name if customer else "Not linked" }}</dd>
+      <dt>Business unit</dt><dd>{{ unit.name if unit else "Not linked" }}</dd>
+      <dt>Stage</dt><dd>{{ opportunity.procurement_stage or opportunity.notice_type or "Not detected" }}</dd>
+      <dt>Deadline</dt><dd>{{ opportunity.deadline_date or "Not detected" }}</dd>
+      <dt>Value</dt><dd>{{ opportunity.currency or "GBP" }} {{ "%.2f"|format(opportunity.value_high or 0) }}</dd>
+    </dl>
+  </div>
+  <div class="panel">
+    <h2>Review Status</h2>
+    <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/update">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <input type="hidden" name="relevance_rationale" value="{{ opportunity.relevance_rationale }}">
+      <div class="field">
+        <label>Opportunity status</label>
+        <select name="status">
+          {% for item in framework_opportunity_statuses %}
+            <option {% if opportunity.status == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit">Save status</button>
+    </form>
+    <p class="hint">Use status to manage review flow; it is not a claim or bid decision.</p>
+  </div>
+  <div class="panel">
+    <h2>Source Health</h2>
+    {% if source %}
+      <p><strong>{{ source.name }}</strong></p>
+      {% if source_ready %}
+        <p><span class="badge {{ source_ready.badge_class }}">{{ source_ready.label }}</span></p>
+        <p>{{ source_ready.action }}</p>
+        <p class="hint">{{ source_ready.health_note }}</p>
+      {% endif %}
+      <p class="hint"><a href="{{ source.query_url }}">Configured source URL</a></p>
+    {% else %}
+      <p>No source is linked to this opportunity.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Requirement Themes</h2>
+    <div class="stack">
+      {% for requirement in requirements %}
+        <article class="list-item" id="requirement-{{ requirement.id }}">
+          <h3>{{ requirement.requirement_theme }}</h3>
+          <p>
+            <span class="badge {{ 'green' if requirement.human_review_status == 'accepted' else 'amber' }}">{{ requirement.human_review_status }}</span>
+            <span class="badge weak">{{ requirement.confidence }}</span>
+          </p>
+          <details>
+            <summary>Read extracted text</summary>
+            <p>{{ requirement.requirement_text }}</p>
+          </details>
+          <p class="hint">{{ requirement.rdec_relevance_note }}</p>
+          <form method="post" action="/framework-intelligence/requirements/{{ requirement.id }}/review">
+            <input type="hidden" name="return_to" value="{{ return_to }}#requirement-{{ requirement.id }}">
+            <div class="field">
+              <label>Human review status</label>
+              <select name="human_review_status">
+                {% for item in framework_review_statuses %}<option {% if requirement.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field"><label>RDEC relevance note</label><input name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
+            <button type="submit">Save requirement review</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No requirements extracted yet. Add permitted source-document text or summaries from the documents page.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>RDEC Candidate Signals</h2>
+    <div class="stack">
+      {% for signal in signals %}
+        <article class="list-item" id="signal-{{ signal.id }}">
+          <h3>{{ signal.signal_type }}</h3>
+          <p>
+            <span class="badge weak">{{ signal.signal_strength }}</span>
+            <span class="badge {{ 'green' if signal.human_review_status == 'accepted' else 'amber' }}">{{ signal.human_review_status }}</span>
+          </p>
+          <p>{{ signal.signal_text }}</p>
+          <p class="hint">{{ signal.recommended_action }}</p>
+          <div class="warning-panel">{{ signal.caveat }}</div>
+          <form method="post" action="/framework-intelligence/signals/{{ signal.id }}/review" style="margin-top: 10px;">
+            <input type="hidden" name="return_to" value="{{ return_to }}#signal-{{ signal.id }}">
+            <div class="field">
+              <label>Human review status</label>
+              <select name="human_review_status">
+                {% for item in framework_review_statuses %}<option {% if signal.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field"><label>Recommended action</label><textarea name="recommended_action">{{ signal.recommended_action }}</textarea></div>
+            <button type="submit">Save signal review</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No RDEC candidate signals extracted yet. This opportunity should stay in triage until a reviewable signal exists.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Documents And Retrieval</h2>
+    <div class="stack">
+      {% for document in documents %}
+        <article class="list-item">
+          <h3>{{ document.title }}</h3>
+          <p>
+            <span class="badge weak">{{ document.document_type }}</span>
+            <span class="badge {{ 'green' if document.retrieval_status == 'retrieved' else 'amber' }}">{{ document.retrieval_status }}</span>
+            <span class="badge {{ 'green' if document.human_review_status == 'accepted' else 'amber' }}">{{ document.human_review_status }}</span>
+          </p>
+          <p class="hint">{% if document.url_or_path %}<a href="{{ document.url_or_path }}">{{ document.url_or_path }}</a>{% else %}No link or path captured{% endif %}</p>
+          <p>{{ document.content_summary or document.notes or "No summary captured." }}</p>
+        </article>
+      {% else %}
+        <p>No documents linked yet.</p>
+      {% endfor %}
+    </div>
+    <p><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">Add documents or create retrieval task</a></p>
+  </div>
+
+  <div class="panel">
+    <h2>Quality Questions</h2>
+    <div class="stack">
+      {% for question in quality_questions %}
+        <article class="list-item">
+          <h3>{{ question.requirement_theme or "Quality question" }}</h3>
+          <p>
+            <span class="badge weak">{{ question.confidence }}</span>
+            {% if question.weighting %}<span class="badge green">{{ question.weighting }}</span>{% endif %}
+            <span class="badge {{ 'green' if question.human_review_status == 'accepted' else 'amber' }}">{{ question.human_review_status }}</span>
+          </p>
+          <p>{{ question.question_text }}</p>
+          <p class="hint">{{ question.rdec_relevance_note }}</p>
+        </article>
+      {% else %}
+        <p>No quality questions extracted yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

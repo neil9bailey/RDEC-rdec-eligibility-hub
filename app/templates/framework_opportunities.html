@@ -30,7 +30,7 @@
           {% set review = opportunity_review_map.get(opportunity.id) %}
           <tr>
             <td>
-              <strong><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">{{ opportunity.title }}</a></strong>
+              <strong><a href="/framework-intelligence/opportunities/{{ opportunity.id }}">{{ opportunity.title }}</a></strong>
               <p class="hint">
                 {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">official source</a>{% else %}source not captured{% endif %}
                 | {{ opportunity.relevance_rationale }}
@@ -52,7 +52,7 @@
               {% if review %}
                 <span class="badge {{ review.badge_class }}">{{ review.classification }}</span>
                 <p class="hint">{{ review.pending_signal_count }} pending signal(s), {{ review.requirement_count }} requirement(s)</p>
-                <a href="{{ review.signal_review_url }}">Open review</a>
+                <a href="/framework-intelligence/opportunities/{{ opportunity.id }}">Open workbench</a>
               {% else %}
                 <span class="badge weak">triage only</span>
               {% endif %}
