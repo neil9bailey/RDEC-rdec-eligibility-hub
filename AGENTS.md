@@ -98,6 +98,21 @@ Use this workflow whenever implementation changes may have left README files, se
 
 Stop on outcome verified, required approval, missing evidence, or progress stalls.
 
+## MCP/LLM Intelligence Automation Review
+
+Use this workflow when the repository already contains MCP agents, local LLM-style intelligence, agent runners, or automation helpers, and the task is to find where more machine-based work can be safely automated.
+
+1. Capture the human intent, target repo or product area, desired outcome, available evidence, and missing context.
+2. Inventory existing agent or intelligence surfaces, including MCP tools, agent runners, generated reports, source checks, evidence packs, review queues, and manual machine-like steps.
+3. Reuse existing loops first: UI/UX Score Loop for browser flows, Docs Sweep for documentation drift, and agentTeam Governance for multi-step MCP delivery.
+4. Identify improvement candidates where humans are doing repeatable machine work, such as copying structured data, comparing snapshots, summarising logs, generating reports, classifying queues, validating configs, or preparing evidence.
+5. Apply authority boundaries before recommending automation. Do not authorize external writes, customer communication, submissions, portal automation, live infrastructure changes, legal/tax/procurement decisions, or irreversible actions without explicit approval.
+6. Rank candidates by evidence, safety, reversibility, user value, and verification cost.
+7. Propose the smallest safe automation or intelligence enhancement, including inputs, outputs, human approval gates, rollback path, and tests.
+8. Stop before implementation if evidence is missing, approval is required, the proposal changes architecture, or no useful safe adaptation remains.
+
+Return the inventory, reused loops, candidate improvements, rejected unsafe ideas, recommended next step, verification plan, and stop reason.
+
 ## agentTeam Governance
 
 When the `agentTeam` MCP is available and the work is more than a trivial edit, use its gates as lightweight delivery guardrails:
