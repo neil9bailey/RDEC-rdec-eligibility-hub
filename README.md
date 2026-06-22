@@ -17,6 +17,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
 - Generates exportable Markdown framework intelligence summaries for bid, engineering, Finance, and Ayming review discussions.
+- Generates a local Source Health triage pack that combines Knowledge Agent freshness and Framework Intelligence source-change evidence for human review.
 - Seeds reference business units and a small set of non-demo reference customers by default, ready for live project entry after exact customer/legal-entity review.
 
 ## What It Does Not Do
@@ -154,6 +155,12 @@ Normal app operation does not require internet access. When internet access is a
 
 The agent is intentionally conservative: it never changes scoring, blockers, entitlement, AIF logic, or cost rules automatically. A user must review official changes, update the relevant YAML rule file, and keep the output caveat: "Requires competent professional and tax review."
 
+## Source Health Triage Pack
+
+The Source Health triage pack is available at `/source-health`.
+
+It combines already-recorded Knowledge Agent source checks and Framework Intelligence source snapshots into a local Markdown review pack. It does not run live checks, poll sources, update YAML rules, change source configuration, or authorise external action. Use it to see stale official guidance sources, failing checks, unchecked procurement sources, approval-gated sources, and the next human review actions in one place.
+
 ## Framework Intelligence Agent
 
 The Framework Intelligence Agent is available at `/framework-intelligence`.
@@ -232,6 +239,7 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 
 - `/`
 - `/knowledge-agent`
+- `/source-health`
 - `/framework-intelligence`
 - `/framework-intelligence/source-catalogue`
 - `/framework-intelligence/source-changes`

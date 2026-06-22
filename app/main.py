@@ -84,6 +84,7 @@ from app.services import (
     sync_entitlement_for_project,
 )
 from app.settings import BASE_DIR, get_settings
+from app.source_health import generate_source_health_triage_markdown, source_health_triage_context
 
 
 DEPENDENCY_RULES = {
@@ -440,6 +441,23 @@ def knowledge_agent_check(request: Request, session: Session = Depends(get_sessi
         request,
         "knowledge_agent.html",
         template_context(request, summary=summary, actions=actions, live_checks=live_checks),
+    )
+
+
+@app.get("/source-health", response_class=HTMLResponse)
+def source_health(request: Request, format: str | None = None, session: Session = Depends(get_session)):
+    health_context = source_health_triage_context(session)
+    markdown = generate_source_health_triage_markdown(session, health_context)
+    if format == "md":
+        return Response(
+            markdown,
+            media_type="text/markdown",
+            headers={"Content-Disposition": 'attachment; filename="source-health-triage-pack.md"'},
+        )
+    return templates.TemplateResponse(
+        request,
+        "source_health.html",
+        template_context(request, source_health=health_context, markdown=markdown),
     )
 
 
