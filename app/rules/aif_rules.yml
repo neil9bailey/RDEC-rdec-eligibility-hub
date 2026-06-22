@@ -20,6 +20,7 @@ project_selection:
     minimum_qualifying_expenditure_percentage: 50
     max_described_if_threshold_requires_more: 10
     selection_method: "largest qualifying expenditure first"
+    top_10_fallback_note: "Top 10 fallback applied because reaching 50% qualifying expenditure would require more than 10 project descriptions."
 project_fields:
   - "main field of science or technology"
   - "baseline level of knowledge or capability"

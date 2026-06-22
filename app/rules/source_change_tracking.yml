@@ -1,0 +1,19 @@
+version: 2026.05.16
+last_reviewed: 2026-05-16
+purpose: Runtime rules for source and portal change tracking in the Framework Intelligence Agent.
+hash_algorithm: sha256
+change_types:
+  first_seen: First successful snapshot for this source.
+  changed: Content hash changed since the previous snapshot.
+  unchanged: Content hash matches the previous snapshot.
+  failed: Source check failed or was blocked by guardrails.
+schema_detection:
+  ocds_markers:
+    - releases
+    - records
+    - compiledRelease
+  eforms_markers:
+    - eForms
+    - notice
+    - publication-number
+warning_days_before_deadline: 21

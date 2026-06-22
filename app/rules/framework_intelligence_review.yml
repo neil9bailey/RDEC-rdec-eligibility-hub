@@ -1,0 +1,66 @@
+version: 2026.06.07
+last_reviewed: 2026-06-07
+purpose: >
+  Human-review wording and thresholds for public-sector framework intelligence.
+  These labels are decision-support prompts only and are not RDEC, bid, tax,
+  accounting, procurement, legal, or HMRC submission conclusions.
+classification:
+  strong_indicators:
+    label: strong indicators
+    badge_class: green
+    priority: 3
+    minimum_score_with_pending_signal: 70
+    action: >
+      Prioritise competent professional triage, source-document capture,
+      entitlement facts, and Finance/Ayming evidence planning.
+  review_required:
+    label: review required
+    badge_class: amber
+    priority: 2
+    minimum_score: 45
+    action: >
+      Review the extracted requirement themes, confirm whether technical
+      uncertainty exists, and capture evidence ownership before treating this
+      as an R&D candidate.
+  triage_only:
+    label: triage only
+    badge_class: weak
+    priority: 1
+    action: >
+      Keep in the opportunity catalogue. No current R&D candidate signal has
+      been extracted; reassess if source documents introduce non-routine
+      technical uncertainty.
+source_readiness:
+  live:
+    label: live source
+    badge_class: green
+    action: Run guarded checks and review changes.
+  inactive_validation:
+    label: parked - validate first
+    badge_class: amber
+    action: Keep out of active runs until endpoint behaviour is validated.
+  licence_required:
+    label: licence required
+    badge_class: red
+    action: Do not activate without human approval and licence confirmation.
+  reference_only:
+    label: reference only
+    badge_class: weak
+    action: Use as guidance/reference, not as an opportunity feed.
+watch_profile_suggestions:
+  - title: TfL / London transport
+    buyer_aliases: Transport for London; TfL; London Underground; TfL Surface Transport
+    keywords: signalling, ticketing, passenger information, traffic control, real-time data, cyber security, resilience
+    domains: local transport authority, London, passenger systems, operational technology
+  - title: Rail / National Rail
+    buyer_aliases: National Rail; Network Rail; Department for Transport; train operating company
+    keywords: rail, signalling, telemetry, asset monitoring, safety-critical systems, real-time operation, resilience
+    domains: rail, operational technology, control systems, transport operations
+  - title: SCADA / Operational technology
+    buyer_aliases: National Rail; Network Rail; National Highways; transport authority
+    keywords: SCADA, telemetry, remote monitoring, operational technology, cyber security, low latency, failover
+    domains: operational technology, control rooms, field devices, resilient networks
+  - title: National Highways
+    buyer_aliases: National Highways; Highways England
+    keywords: roadside technology, NRTS, traffic systems, asset management, cyber security, real-time, network resilience
+    domains: highways, roadside systems, operational technology, transport networks

@@ -14,6 +14,10 @@ def load_rule_file(name: str) -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
+def clear_rule_file_cache() -> None:
+    load_rule_file.cache_clear()
+
+
 def rules_version_summary() -> dict[str, str]:
     summary: dict[str, str] = {}
     for path in sorted(Path(RULES_DIR).glob("*.yml")):

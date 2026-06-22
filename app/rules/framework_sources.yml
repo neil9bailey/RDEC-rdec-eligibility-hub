@@ -1,0 +1,151 @@
+version: 2026.05.16
+last_reviewed: 2026-05-16
+purpose: >
+  Runtime configuration for the Framework Intelligence source catalogue. Sources are used to
+  normalise public-sector notices into one opportunity pipeline and to track source/schema changes.
+source_metadata:
+  official_sources_checked:
+    - https://www.gov.uk/government/publications/open-contracting/
+    - https://www.gov.uk/contracts-finder
+    - https://www.find-tender.service.gov.uk/Developer/Documentation
+    - https://www.contractsfinder.service.gov.uk/apidocumentation
+    - https://api.publiccontractsscotland.gov.uk/
+  design_reference:
+    - COF Design Draft.pdf, pages 4-5, Five sources one pipeline and 800 portals one platform sections.
+guardrails:
+  approved_domains:
+    - www.gov.uk
+    - gov.uk
+    - assets.publishing.service.gov.uk
+    - www.find-tender.service.gov.uk
+    - find-tender.service.gov.uk
+    - www.contractsfinder.service.gov.uk
+    - contractsfinder.service.gov.uk
+    - www.crowncommercial.gov.uk
+    - crowncommercial.gov.uk
+    - api.publiccontractsscotland.gov.uk
+    - www.publiccontractsscotland.gov.uk
+    - publiccontractsscotland.gov.uk
+    - www.sell2wales.gov.wales
+    - sell2wales.gov.wales
+    - www.sell2wales.gov.uk
+    - sell2wales.gov.uk
+    - ted.europa.eu
+    - docs.ted.europa.eu
+    - op.europa.eu
+    - www.etenders.gov.ie
+    - etenders.gov.ie
+    - www.tendersdirect.co.uk
+    - tendersdirect.co.uk
+  live_checks_require_https: true
+  portal_login_automation_default: disabled
+  no_autonomous_bid_or_claim_decisions: true
+source_types:
+  - ocds_api
+  - eforms_api
+  - bulk_ocds
+  - web_page
+  - commercial_aggregator
+sources:
+  - key: find_a_tender
+    name: Find a Tender OCDS release package API
+    source_family: official_notice
+    source_type: ocds_api
+    base_url: https://www.find-tender.service.gov.uk
+    query_url: https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50
+    official: true
+    active: true
+    review_frequency: manual
+    coverage: UK above-threshold public and utilities procurement notices
+    auth_model: none
+    data_format: REST OCDS JSON
+    dedupe_strategy: ocid_release_or_notice_reference
+    change_tracking_enabled: true
+    requires_human_approval: false
+    connector_status: live_mvp
+    notes: Official UK high-value public procurement notice source. Normalised into the opportunity catalogue.
+  - key: contracts_finder
+    name: Contracts Finder OCDS search API
+    source_family: official_notice
+    source_type: ocds_api
+    base_url: https://www.contractsfinder.service.gov.uk
+    query_url: https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit=50
+    official: true
+    active: true
+    review_frequency: manual
+    coverage: UK below-threshold, future, live, early engagement and award notices
+    auth_model: Sid4Gov token for some publisher workflows; public reads for configured search
+    data_format: REST OCDS JSON
+    dedupe_strategy: ocid_or_notice_id
+    change_tracking_enabled: true
+    requires_human_approval: false
+    connector_status: live_mvp
+    notes: Official Contracts Finder opportunity source.
+  - key: public_contracts_scotland
+    name: Public Contracts Scotland OCDS API
+    source_family: official_notice
+    source_type: ocds_api
+    base_url: https://api.publiccontractsscotland.gov.uk
+    query_url: https://api.publiccontractsscotland.gov.uk/v1/Notices
+    official: true
+    active: false
+    review_frequency: manual
+    coverage: Scotland public-sector procurement notices
+    auth_model: none
+    data_format: REST OCDS JSON
+    dedupe_strategy: ocid_or_notice_reference
+    change_tracking_enabled: true
+    requires_human_approval: false
+    connector_status: configured_pending_live_validation
+    notes: Configured in the source catalogue; activate after validating query parameters for the required watch profile.
+  - key: sell2wales
+    name: Sell2Wales public procurement source
+    source_family: official_notice
+    source_type: bulk_ocds
+    base_url: https://www.sell2wales.gov.wales
+    query_url: https://www.sell2wales.gov.wales/search/search_mainpage.aspx
+    official: true
+    active: false
+    review_frequency: manual
+    coverage: Wales public-sector procurement notices
+    auth_model: none for browsing; connector validation required for bulk/OCDS retrieval
+    data_format: Bulk/OCDS or web source to confirm
+    dedupe_strategy: notice_reference_or_content_hash
+    change_tracking_enabled: true
+    requires_human_approval: false
+    connector_status: configuration_review_required
+    notes: Included as a configurable source from the five-source model; leave inactive until endpoint behaviour is confirmed.
+  - key: ted_eforms
+    name: TED eForms notice data
+    source_family: official_notice
+    source_type: eforms_api
+    base_url: https://ted.europa.eu
+    query_url: https://ted.europa.eu/api/v3/notices/search
+    official: true
+    active: false
+    review_frequency: manual
+    coverage: EU and Ireland procurement notices where relevant
+    auth_model: none for public search/download; API behaviour to validate per endpoint
+    data_format: REST v3 / eForms XML
+    dedupe_strategy: notice_id_or_publication_reference
+    change_tracking_enabled: true
+    requires_human_approval: false
+    connector_status: configured_pending_eforms_normaliser
+    notes: Included for EU/Ireland horizon scanning. Requires eForms normalisation before activation.
+  - key: tenders_direct
+    name: Tenders Direct aggregator backup
+    source_family: commercial_backup
+    source_type: commercial_aggregator
+    base_url: https://www.tendersdirect.co.uk
+    query_url: https://www.tendersdirect.co.uk
+    official: false
+    active: false
+    review_frequency: manual
+    coverage: Paid commercial aggregator backup
+    auth_model: subscription
+    data_format: CRM push/API or export subject to licence
+    dedupe_strategy: supplier_reference_or_content_hash
+    change_tracking_enabled: true
+    requires_human_approval: true
+    connector_status: licence_required
+    notes: Commercial fallback only if Telent / M Group has a licence and approves use.

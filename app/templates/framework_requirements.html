@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Requirement Catalogue - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Requirement And RDEC Signal Catalogue</h1>
+    <p>Human-review queue for extracted customer requirements and possible RDEC candidate indicators.</p>
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="warning-panel">
+  Requirement themes and RDEC signals are prompts for review. They do not mean a bid or project qualifies for RDEC. {{ caveat }}
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Extracted Requirements</h2>
+    <div class="stack">
+      {% for requirement in requirements %}
+        <article class="list-item" id="requirement-{{ requirement.id }}">
+          <h3>{{ requirement.requirement_theme }}</h3>
+          <p><span class="badge {{ 'green' if requirement.human_review_status == 'accepted' else 'amber' }}">{{ requirement.human_review_status }}</span></p>
+          <p>{{ requirement.requirement_text }}</p>
+          <p class="muted">{{ requirement.rdec_relevance_note }}</p>
+          <form method="post" action="/framework-intelligence/requirements/{{ requirement.id }}/review">
+            <div class="form-grid">
+              <div class="field">
+                <label>Human review status</label>
+                <select name="human_review_status">
+                  {% for item in framework_review_statuses %}<option {% if requirement.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+                </select>
+              </div>
+              <div class="field"><label>RDEC relevance note</label><input name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
+            </div>
+            <button type="submit">Update requirement</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No requirements extracted yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel" id="rdec-signal-queue">
+    <h2>RDEC Candidate Signals</h2>
+    <div class="stack">
+      {% for signal in signals %}
+        <article class="list-item" id="signal-{{ signal.id }}">
+          <h3>{{ signal.signal_type }}</h3>
+          <p>
+            <span class="badge weak">{{ signal.signal_strength }}</span>
+            <span class="badge {{ 'green' if signal.human_review_status == 'accepted' else 'amber' }}">{{ signal.human_review_status }}</span>
+          </p>
+          <p>{{ signal.signal_text }}</p>
+          <p class="muted">{{ signal.recommended_action }}</p>
+          <div class="warning-panel">{{ signal.caveat }}</div>
+          <form method="post" action="/framework-intelligence/signals/{{ signal.id }}/review" style="margin-top: 10px;">
+            <div class="field">
+              <label>Human review status</label>
+              <select name="human_review_status">
+                {% for item in framework_review_statuses %}<option {% if signal.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="field"><label>Recommended action</label><textarea name="recommended_action">{{ signal.recommended_action }}</textarea></div>
+            <button type="submit">Update signal</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No RDEC candidate signals extracted yet.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}

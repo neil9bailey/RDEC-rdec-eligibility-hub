@@ -18,3 +18,11 @@ dist/
 build/
 .DS_Store
 Thumbs.db
+
+# Local document exports generated during review/demo prep.
+docs/*.docx
+docs/*.pdf
+.tmp_*/
+
+# Local browser inspection artifacts.
+.playwright-mcp/

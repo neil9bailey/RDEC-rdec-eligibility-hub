@@ -10,8 +10,8 @@
 
 {% include "_project_tabs.html" %}
 
-<section class="grid two">
-  <section class="panel">
+<section class="grid two assessment-layout">
+  <section class="panel assessment-form-panel">
     <h2>Assessment Facts</h2>
     <form method="post" action="/projects/{{ context.project.id }}/assessment">
       <div class="form-grid">
@@ -65,7 +65,7 @@
       <button type="submit">Save assessment</button>
     </form>
   </section>
-  <div class="stack">
+  <div class="stack assessment-status-panel">
     {% include "_score_panel.html" %}
     <section class="panel">
       <h2>Calculated Entitlement</h2>

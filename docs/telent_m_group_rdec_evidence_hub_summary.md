@@ -37,6 +37,7 @@ The application captures and organises:
 - Claim-period pack summaries
 - Project eligibility memos
 - Evidence indexes
+- Framework intelligence source checks, opportunity workbench summaries, requirement themes, quality questions, and RDEC candidate signals for human review
 
 It creates a structured record that can be reviewed internally before being passed to Finance and Ayming.
 
@@ -53,6 +54,8 @@ The current clean instance is configured with the following business-unit refere
 - HPC / Hinkley Point C
 - Nuclear Power
 - Core Central Asset Management
+
+The clean seed also includes reference customer labels for Transport for London (TfL) and National Rail in Rail and SCADA contexts. These are setup aids only; live evidence capture still requires confirmation of the exact customer/legal contracting entity.
 
 Customers can be assigned to these business units as live data is added.
 

@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>R&D Claim Evidence Hub - Telent Enterprise UI Mockup</title>
+    <style>
+      :root {
+        --telent-purple: #4b135f;
+        --telent-plum: #2b0b3d;
+        --telent-magenta: #9b1d7a;
+        --telent-cyan: #00a0b5;
+        --telent-green: #71b340;
+        --ink: #15121b;
+        --muted: #686174;
+        --paper: #f5f6fa;
+        --panel: #ffffff;
+        --line: #ddd8e7;
+        --amber: #b86b00;
+        --red: #b02a37;
+        --shadow: 0 18px 46px rgba(30, 10, 48, 0.13);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(75, 19, 95, 0.06) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(75, 19, 95, 0.05) 1px, transparent 1px),
+          var(--paper);
+        background-size: 44px 44px;
+        font-family: "Aptos", "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .app-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: var(--telent-plum);
+        color: #fff;
+        box-shadow: 0 10px 30px rgba(23, 18, 27, 0.22);
+      }
+
+      .header-main {
+        display: grid;
+        grid-template-columns: minmax(260px, 360px) minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        height: 68px;
+        padding: 0 22px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+      }
+
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 6px;
+        background: #fff;
+        color: var(--telent-purple);
+        font-weight: 900;
+        letter-spacing: 0;
+        text-transform: lowercase;
+      }
+
+      .brand-text {
+        min-width: 0;
+      }
+
+      .brand-text strong,
+      .brand-text span {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .brand-text strong {
+        font-size: 16px;
+      }
+
+      .brand-text span {
+        color: #d7c8df;
+        font-size: 12px;
+      }
+
+      .global-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+        color: #efe7f4;
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--telent-green);
+        box-shadow: 0 0 0 5px rgba(113, 179, 64, 0.18);
+      }
+
+      .header-actions {
+        display: flex;
+        gap: 8px;
+        white-space: nowrap;
+      }
+
+      .icon-button,
+      .primary-action {
+        height: 36px;
+        border: 0;
+        border-radius: 6px;
+        font: inherit;
+        font-weight: 800;
+        cursor: default;
+      }
+
+      .icon-button {
+        width: 36px;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .primary-action {
+        padding: 0 15px;
+        color: var(--telent-plum);
+        background: #fff;
+      }
+
+      .nav-rail {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 46px;
+        padding: 0 22px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+        white-space: nowrap;
+        background: linear-gradient(90deg, var(--telent-purple), #37124c 74%, #142b35);
+      }
+
+      .nav-rail a {
+        display: inline-flex;
+        align-items: center;
+        height: 30px;
+        padding: 0 11px;
+        border-radius: 999px;
+        color: #f9f5fb;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .nav-rail a.active {
+        color: var(--telent-plum);
+        background: #fff;
+      }
+
+      .nav-rail a:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 248px minmax(0, 1fr);
+        gap: 20px;
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 22px;
+      }
+
+      .side-panel {
+        position: sticky;
+        top: 132px;
+        align-self: start;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+      }
+
+      .side-panel h2 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        text-transform: uppercase;
+        color: var(--telent-purple);
+      }
+
+      .side-panel a {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 8px;
+        border-radius: 6px;
+        color: #33243d;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .side-panel a.active,
+      .side-panel a:hover {
+        background: #f0e8f5;
+        color: var(--telent-purple);
+      }
+
+      .side-panel small {
+        color: var(--muted);
+      }
+
+      .content {
+        min-width: 0;
+      }
+
+      .hero-band {
+        display: grid;
+        grid-template-columns: minmax(0, 1.3fr) minmax(330px, 0.7fr);
+        gap: 20px;
+        min-height: 250px;
+        padding: 26px;
+        border-radius: 8px;
+        overflow: hidden;
+        color: #fff;
+        background:
+          linear-gradient(135deg, rgba(43, 11, 61, 0.96), rgba(75, 19, 95, 0.9) 52%, rgba(0, 160, 181, 0.78)),
+          repeating-linear-gradient(45deg, rgba(255,255,255,0.14) 0, rgba(255,255,255,0.14) 1px, transparent 1px, transparent 16px);
+        box-shadow: var(--shadow);
+      }
+
+      .hero-band h1 {
+        margin: 0;
+        max-width: 920px;
+        font-size: clamp(32px, 5vw, 62px);
+        line-height: 0.96;
+        letter-spacing: 0;
+      }
+
+      .hero-band p {
+        max-width: 760px;
+        color: #eee2f5;
+        font-size: 17px;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .hero-actions a {
+        display: inline-flex;
+        align-items: center;
+        height: 40px;
+        padding: 0 14px;
+        border-radius: 6px;
+        background: #fff;
+        color: var(--telent-plum);
+        font-weight: 900;
+      }
+
+      .hero-actions a.secondary {
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+
+      .readiness-panel {
+        align-self: stretch;
+        padding: 18px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .readiness-panel h2 {
+        margin: 0 0 14px;
+        font-size: 16px;
+      }
+
+      .readiness-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        padding: 10px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 25px;
+        padding: 0 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .badge.green {
+        color: #0c4f27;
+        background: #dff2d7;
+      }
+
+      .badge.amber {
+        color: #6b3c00;
+        background: #fff0c7;
+      }
+
+      .badge.red {
+        color: #7b1522;
+        background: #ffd9df;
+      }
+
+      .badge.purple {
+        color: #fff;
+        background: var(--telent-purple);
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .metric,
+      .panel,
+      .table-shell {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: var(--shadow);
+      }
+
+      .metric {
+        position: relative;
+        overflow: hidden;
+        min-height: 132px;
+        padding: 18px;
+      }
+
+      .metric::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 5px;
+        background: var(--accent, var(--telent-purple));
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 35px;
+        line-height: 1;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .metric p {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .grid-two {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      .panel h2,
+      .table-shell h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .signal-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .signal-item {
+        display: grid;
+        grid-template-columns: 10px minmax(0, 1fr) auto;
+        gap: 13px;
+        align-items: start;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfaff;
+      }
+
+      .signal-line {
+        width: 10px;
+        height: 100%;
+        min-height: 58px;
+        border-radius: 999px;
+        background: var(--telent-cyan);
+      }
+
+      .signal-item h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .signal-item p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .table-shell {
+        margin-top: 18px;
+        overflow: hidden;
+      }
+
+      .table-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+      }
+
+      th,
+      td {
+        padding: 13px 16px;
+        border-bottom: 1px solid #ece8f1;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--telent-purple);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      td {
+        font-size: 14px;
+      }
+
+      .footer-note {
+        margin: 20px 0 0;
+        padding: 14px 16px;
+        border-left: 4px solid var(--telent-magenta);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--muted);
+      }
+
+      @media (max-width: 1100px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .side-panel {
+          position: static;
+        }
+
+        .hero-band,
+        .grid-two {
+          grid-template-columns: 1fr;
+        }
+
+        .metric-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .header-main {
+          grid-template-columns: 1fr auto;
+          height: auto;
+          padding: 12px 16px;
+        }
+
+        .global-status {
+          grid-column: 1 / -1;
+          overflow-x: auto;
+        }
+
+        .nav-rail {
+          padding: 0 16px;
+        }
+
+        .workspace {
+          padding: 16px;
+        }
+
+        .metric-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-band h1 {
+          font-size: 38px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-main">
+        <div class="brand-lockup">
+          <div class="brand-mark">tel</div>
+          <div class="brand-text">
+            <strong>R&D Claim Evidence Hub</strong>
+            <span>Telent / M Group | RDEC decision support</span>
+          </div>
+        </div>
+        <div class="global-status">
+          <span class="status-chip"><span class="pulse"></span> Local secure MVP</span>
+          <span class="status-chip">FY2025/26 claim period</span>
+          <span class="status-chip">AIF: review required</span>
+          <span class="status-chip">Not tax advice</span>
+        </div>
+        <div class="header-actions">
+          <button class="icon-button" aria-label="Search">⌕</button>
+          <button class="icon-button" aria-label="Audit">◎</button>
+          <button class="primary-action">New project</button>
+        </div>
+      </div>
+      <nav class="nav-rail" aria-label="Primary navigation">
+        <a class="active" href="#">Dashboard</a>
+        <a href="#">Framework Intelligence</a>
+        <a href="#">Knowledge Agent</a>
+        <a href="#">Business Units</a>
+        <a href="#">Company</a>
+        <a href="#">Customers</a>
+        <a href="#">Contracts</a>
+        <a href="#">Solutions</a>
+        <a href="#">Projects</a>
+        <a href="#">Costs</a>
+        <a href="#">Evidence Index</a>
+        <a href="#">Audit</a>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <aside class="side-panel">
+        <h2>Operational Focus</h2>
+        <a class="active" href="#"><span>Claim dashboard</span><small>Live</small></a>
+        <a href="#"><span>Highways</span><small>4</small></a>
+        <a href="#"><span>Rail</span><small>3</small></a>
+        <a href="#"><span>SCADA</span><small>2</small></a>
+        <a href="#"><span>TfL</span><small>1</small></a>
+        <a href="#"><span>Network Services</span><small>5</small></a>
+        <a href="#"><span>HPC / Nuclear</span><small>2</small></a>
+      </aside>
+
+      <section class="content">
+        <div class="hero-band">
+          <div>
+            <span class="badge purple">RDEC evidence command view</span>
+            <h1>Critical infrastructure innovation, ready for review.</h1>
+            <p>Capture solution facts, public-sector framework signals, competent professional opinions, evidence and people-costs in one enterprise workspace for Finance and Ayming handover.</p>
+            <div class="hero-actions">
+              <a href="#">Add opportunity</a>
+              <a class="secondary" href="#">Run framework watch</a>
+              <a class="secondary" href="#">Generate claim pack</a>
+            </div>
+          </div>
+          <div class="readiness-panel">
+            <h2>Readiness Signals</h2>
+            <div class="readiness-row">
+              <span>Signed competent professional opinions</span>
+              <strong>7 / 11</strong>
+            </div>
+            <div class="readiness-row">
+              <span>Projects with strong evidence</span>
+              <strong>8 / 11</strong>
+            </div>
+            <div class="readiness-row">
+              <span>Costs ready for Finance review</span>
+              <strong>GBP 1.42m</strong>
+            </div>
+            <div class="readiness-row">
+              <span>AIF timing risk</span>
+              <span class="badge amber">review</span>
+            </div>
+          </div>
+        </div>
+
+        <section class="metric-grid">
+          <article class="metric" style="--accent: var(--telent-purple);">
+            <span>Total solutions</span>
+            <strong>28</strong>
+            <p>Across Highways, Rail, SCADA, TfL, Network Services and HPC.</p>
+          </article>
+          <article class="metric" style="--accent: var(--telent-green);">
+            <span>Strong candidates</span>
+            <strong>9</strong>
+            <p>Green only where sign-off, evidence and costs align.</p>
+          </article>
+          <article class="metric" style="--accent: var(--telent-cyan);">
+            <span>Framework opportunities</span>
+            <strong>14</strong>
+            <p>Tracked from official/public procurement sources.</p>
+          </article>
+          <article class="metric" style="--accent: var(--telent-magenta);">
+            <span>Evidence gaps</span>
+            <strong>6</strong>
+            <p>Missing project boundary, cost, or uncertainty proof.</p>
+          </article>
+        </section>
+
+        <section class="grid-two">
+          <div class="panel">
+            <h2>Framework Intelligence Signals</h2>
+            <div class="signal-list">
+              <article class="signal-item">
+                <div class="signal-line"></div>
+                <div>
+                  <h3>National Highways roadside technology framework</h3>
+                  <p>SCADA, cyber security, network resilience and asset management terms detected. Create bid-phase evidence plan.</p>
+                </div>
+                <span class="badge amber">review</span>
+              </article>
+              <article class="signal-item">
+                <div class="signal-line" style="background: var(--telent-green);"></div>
+                <div>
+                  <h3>TfL passenger-facing data services</h3>
+                  <p>Real-time data, service reliability and legacy integration indicators map to possible R&D candidate triage.</p>
+                </div>
+                <span class="badge green">strong</span>
+              </article>
+              <article class="signal-item">
+                <div class="signal-line" style="background: var(--telent-magenta);"></div>
+                <div>
+                  <h3>HPC operational communications support</h3>
+                  <p>Safety criticality and resilient communications should trigger early technical uncertainty capture where applicable.</p>
+                </div>
+                <span class="badge amber">review</span>
+              </article>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>Next Best Actions</h2>
+            <div class="signal-list">
+              <article class="signal-item">
+                <div class="signal-line" style="background: var(--telent-purple);"></div>
+                <div>
+                  <h3>Finance handover</h3>
+                  <p>Link people-time, PSA extracts and supplier invoices for the Rail ticketing candidate.</p>
+                </div>
+                <span class="badge amber">open</span>
+              </article>
+              <article class="signal-item">
+                <div class="signal-line" style="background: var(--telent-cyan);"></div>
+                <div>
+                  <h3>Ayming pack</h3>
+                  <p>Generate claim-period pack after AIF project descriptions are complete.</p>
+                </div>
+                <span class="badge red">blocked</span>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="table-shell">
+          <div class="table-head">
+            <h2>Claim Period Workbench</h2>
+            <span class="badge amber">Requires competent professional and tax review</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>BU</th>
+                <th>Rating</th>
+                <th>Evidence</th>
+                <th>Costs</th>
+                <th>Entitlement</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Real-time passenger prediction platform</strong><br>Inconsistent multi-operator feeds with latency constraints</td>
+                <td>Rail</td>
+                <td><span class="badge green">green</span></td>
+                <td>12 items</td>
+                <td>GBP 412k</td>
+                <td>Supplier likely, review required</td>
+              </tr>
+              <tr>
+                <td><strong>Legacy ticketing event architecture</strong><br>Replay, duplicate handling and cloud event consistency</td>
+                <td>TfL</td>
+                <td><span class="badge amber">amber</span></td>
+                <td>5 items</td>
+                <td>GBP 188k</td>
+                <td>Ambiguous tax review</td>
+              </tr>
+              <tr>
+                <td><strong>SCADA cyber resilience enhancement</strong><br>Operational technology hardening and service continuity</td>
+                <td>SCADA</td>
+                <td><span class="badge amber">review</span></td>
+                <td>7 items</td>
+                <td>GBP 260k</td>
+                <td>Contract facts pending</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <p class="footer-note">Mockup only. This shows the proposed visual direction, sticky no-wrap navigation, and enterprise density before changing the production templates.</p>
+      </section>
+    </main>
+  </body>
+</html>

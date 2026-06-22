@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Opportunity Catalogue - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Opportunity Catalogue</h1>
+    <p>Captured public-sector framework and bid opportunities matched to Telent / M Group customer or business-unit watch profiles.</p>
+    {% if status_filter %}<p class="hint">Filtered by status: <strong>{{ status_filter }}</strong>. <a href="/framework-intelligence/opportunities">Clear filter</a></p>{% endif %}
+  </div>
+  <a class="button secondary" href="/framework-intelligence">Back to intelligence hub</a>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Opportunity</th>
+          <th>Buyer</th>
+          <th>Stage</th>
+          <th>Deadline</th>
+          <th>Value</th>
+          <th>RDEC review</th>
+          <th>Docs</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for opportunity in opportunities %}
+          {% set review = opportunity_review_map.get(opportunity.id) %}
+          <tr>
+            <td>
+              <strong><a href="/framework-intelligence/opportunities/{{ opportunity.id }}">{{ opportunity.title }}</a></strong>
+              <p class="hint">
+                {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">official source</a>{% else %}source not captured{% endif %}
+                | {{ opportunity.relevance_rationale }}
+              </p>
+              {% if opportunity.summary %}
+                <details>
+                  <summary>Read source summary</summary>
+                  <p>{{ opportunity.summary }}</p>
+                </details>
+              {% else %}
+                <p class="hint">No source summary captured yet.</p>
+              {% endif %}
+            </td>
+            <td>{{ opportunity.buyer_name or "Not detected" }}</td>
+            <td>{{ opportunity.procurement_stage or opportunity.notice_type or "Not detected" }}</td>
+            <td>{{ opportunity.deadline_date or "Not detected" }}</td>
+            <td>GBP {{ "%.2f"|format(opportunity.value_high or 0) }}</td>
+            <td>
+              {% if review %}
+                <span class="badge {{ review.badge_class }}">{{ review.classification }}</span>
+                <p class="hint">{{ review.pending_signal_count }} pending signal(s), {{ review.requirement_count }} requirement(s)</p>
+                <a href="/framework-intelligence/opportunities/{{ opportunity.id }}">Open workbench</a>
+              {% else %}
+                <span class="badge weak">triage only</span>
+              {% endif %}
+            </td>
+            <td><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">{{ document_counts.get(opportunity.id, 0) }} docs</a></td>
+            <td>
+              <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/update">
+                <select name="status">
+                  {% for item in framework_opportunity_statuses %}
+                    <option {% if opportunity.status == item %}selected{% endif %}>{{ item }}</option>
+                  {% endfor %}
+                </select>
+                <input type="hidden" name="relevance_rationale" value="{{ opportunity.relevance_rationale }}">
+                <button type="submit">Update</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="8">No opportunities captured yet. Create a watch profile and run a guarded source check.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Framework Intelligence - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Public Sector Framework Intelligence Agent</h1>
+    <p>A human-review workspace for public procurement opportunities, requirement themes, source health, and possible R&D candidate signals for Telent / M Group.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/framework-intelligence/watch-profiles">Watch profiles</a>
+    <a class="button secondary" href="/framework-intelligence/source-catalogue">Source catalogue</a>
+    <a class="button secondary" href="/framework-intelligence/portal-platforms">Portal platforms</a>
+    <a class="button secondary" href="/framework-intelligence/reports">Reports</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  {{ framework_agent_caveat }}
+</section>
+
+<section class="panel start-here" style="margin-top: 18px;">
+  <div>
+    <h2>Start Here</h2>
+    <p>Use this page to decide what needs human review next. The agent does not decide whether work qualifies for RDEC; it points reviewers to opportunities, source documents, requirement themes, and evidence gaps.</p>
+  </div>
+  <ol class="plain-steps">
+    <li><a href="#rdec-review-queue">Review the RDEC candidate queue</a><span>Check why each item is flagged and open the workbench.</span></li>
+    <li><a href="/framework-intelligence/opportunities?status=new">Triage new opportunities</a><span>Move useful items to watching or reject noise.</span></li>
+    <li><a href="/framework-intelligence/source-catalogue">Check source readiness</a><span>Keep inactive/reference sources separate from live feeds.</span></li>
+    <li><a href="/framework-intelligence/reports">Generate an action report</a><span>Export current findings for Finance, engineering, and Ayming review.</span></li>
+  </ol>
+</section>
+
+<section class="metric-grid action-metrics" style="margin-top: 18px;" aria-label="Framework intelligence action metrics">
+  <a class="metric metric-link" href="/framework-intelligence/watch-profiles">
+    <span class="value">{{ metrics.active_profiles }}</span>
+    <span class="label">Active watch profiles</span>
+    <span class="metric-action">maintain watch criteria</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/source-catalogue">
+    <span class="value">{{ metrics.active_sources }}</span>
+    <span class="label">Active official sources</span>
+    <span class="metric-action">check source health</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/opportunities?status=new">
+    <span class="value">{{ metrics.new_opportunities }}</span>
+    <span class="label">New opportunities</span>
+    <span class="metric-action">open filtered queue</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/requirements#rdec-signal-queue">
+    <span class="value">{{ metrics.pending_signals }}</span>
+    <span class="label">RDEC signals pending review</span>
+    <span class="metric-action">review candidate signals</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/portal-platforms">
+    <span class="value">{{ metrics.platform_count }}</span>
+    <span class="label">Portal platforms</span>
+    <span class="metric-action">confirm access path</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/opportunities">
+    <span class="value">{{ metrics.document_count }}</span>
+    <span class="label">Opportunity documents</span>
+    <span class="metric-action">open document links</span>
+  </a>
+  <a class="metric metric-link" href="/framework-intelligence/source-changes">
+    <span class="value">{{ metrics.source_changes }}</span>
+    <span class="label">Source changes</span>
+    <span class="metric-action">inspect source deltas</span>
+  </a>
+  <a class="metric metric-link" href="#rdec-review-queue">
+    <span class="value">{{ rdec_review_queue.total }}</span>
+    <span class="label">Actionable RDEC review items</span>
+    <span class="metric-action">{{ rdec_review_queue.triaged_out }} triaged as low signal</span>
+  </a>
+</section>
+
+<section class="panel action-panel" id="rdec-review-queue" style="margin-top: 18px;">
+  <div class="section-head">
+    <div>
+      <h2>RDEC Candidate Review Queue</h2>
+      <p class="hint">Filtered to opportunities with pending/accepted candidate signals, RDEC-themed requirements, or high procurement relevance. This queue is for human review only.</p>
+    </div>
+    <div class="actions">
+      <a class="button secondary" href="/framework-intelligence/requirements#rdec-signal-queue">Signal catalogue</a>
+      <a class="button secondary" href="/framework-intelligence/opportunities">Opportunity catalogue</a>
+    </div>
+  </div>
+  <div class="review-queue">
+    {% for item in rdec_review_queue["items"] %}
+      {% set opportunity = item.opportunity %}
+      <article class="review-card">
+        <div>
+          <h3><a href="{{ item.workbench_url }}">{{ opportunity.title }}</a></h3>
+          <p class="muted">{{ opportunity.buyer_name or "Buyer not detected" }} | {{ opportunity.deadline_date or "No deadline detected" }}</p>
+        </div>
+        <div class="review-badges">
+          <span class="badge {{ item.badge_class }}">{{ item.classification }}</span>
+          <span class="badge weak">relevance {{ opportunity.relevance_score|round(0) }}</span>
+          <span class="badge amber">{{ item.pending_signal_count }} pending signals</span>
+          <span class="badge weak">{{ item.document_count }} docs</span>
+        </div>
+        {% if item.themes %}
+          <p class="theme-strip">
+            {% for theme in item.themes[:5] %}<span>{{ theme }}</span>{% endfor %}
+          </p>
+        {% endif %}
+        <p>{{ item.review_action }}</p>
+        <p class="hint">{{ item.evidence_gap }} {{ item.requires_review }}</p>
+        <div class="action-row">
+          <a href="{{ item.workbench_url }}">Open opportunity workbench</a>
+          <a href="{{ item.signal_review_url }}">Open pending signal review</a>
+          <a href="{{ item.document_url }}">Open documents and retrieval tasks</a>
+          {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">Open official source</a>{% endif %}
+        </div>
+      </article>
+    {% else %}
+      <p>No actionable RDEC candidate review items yet. Captured opportunities remain in the catalogue until source documents or requirement themes create reviewable signals.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Agent Controls</h2>
+    <p class="hint">Runs are explicit, logged, and restricted to approved official/public sources. The agent creates review prompts, not autonomous claim or bid decisions.</p>
+    <div class="stack">
+      {% for profile in profiles %}
+        <article class="list-item">
+          <h3>{{ profile.profile_name }}</h3>
+          <p>
+            <span class="badge {{ 'green' if profile.active else 'amber' }}">{{ 'active' if profile.active else 'inactive' }}</span>
+            {% if profile.customer_id and customer_map.get(profile.customer_id) %}
+              <span class="badge weak">{{ customer_map.get(profile.customer_id).customer_name }}</span>
+            {% endif %}
+            {% if profile.business_unit_id and business_unit_map.get(profile.business_unit_id) %}
+              <span class="badge amber">{{ business_unit_map.get(profile.business_unit_id).name }}</span>
+            {% endif %}
+          </p>
+          <p class="muted">{{ profile.keywords or "No keywords recorded" }}</p>
+          <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/run">
+            <button type="submit">Run guarded source check</button>
+          </form>
+        </article>
+      {% else %}
+        <p>No watch profiles yet. Create one for National Highways, TfL, Network Services customers, HPC, or another target account.</p>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Latest Runs</h2>
+    <div class="table-wrap compact-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Status</th>
+            <th>Finds</th>
+            <th>Next action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for run in metrics.latest_runs %}
+            {% set profile = profile_map.get(run.watch_profile_id) %}
+            <tr>
+              <td>
+                <strong>{{ run.started_at.strftime('%Y-%m-%d %H:%M') }}</strong>
+                <p class="hint">{{ profile.profile_name if profile else "Profile deleted" }}</p>
+              </td>
+              <td><span class="badge {{ 'green' if run.status == 'completed' else 'amber' }}">{{ run.status }}</span></td>
+              <td>{{ run.opportunities_found }} opps, {{ run.requirements_extracted }} reqs, {{ run.signals_created }} signals</td>
+              <td>
+                <a href="/framework-intelligence/opportunities?status=new">Review new opps</a>
+                <p class="hint">{{ run.error_summary or run.guardrail_summary }}</p>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4">No runs recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p><a href="/framework-intelligence/agent-runs">View all agent runs</a></p>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Recent Opportunities</h2>
+    <div class="stack">
+      {% for opportunity in opportunities %}
+        {% set review = opportunity_review_map.get(opportunity.id) %}
+        <article class="list-item">
+          <h3><a href="/framework-intelligence/opportunities/{{ opportunity.id }}">{{ opportunity.title }}</a></h3>
+          <p>
+            <span class="badge {{ 'green' if opportunity.status in ['watching', 'bid_review'] else 'amber' }}">{{ opportunity.status }}</span>
+            <span class="badge weak">relevance {{ opportunity.relevance_score|round(0) }}</span>
+            {% if review %}<span class="badge {{ review.badge_class }}">{{ review.classification }}</span>{% endif %}
+          </p>
+          <p class="muted">{{ opportunity.buyer_name or "Buyer not detected" }} | {{ opportunity.deadline_date or "No deadline detected" }}</p>
+          {% if opportunity.summary %}
+            <details>
+              <summary>Read source summary</summary>
+              <p>{{ opportunity.summary }}</p>
+            </details>
+          {% else %}
+            <p class="hint">No source summary captured yet.</p>
+          {% endif %}
+          <div class="action-row">
+            <a href="/framework-intelligence/opportunities/{{ opportunity.id }}">Review workbench</a>
+            <a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">Documents</a>
+            <a href="/framework-intelligence/requirements#rdec-signal-queue">Requirement and signal review</a>
+            {% if opportunity.source_url %}<a href="{{ opportunity.source_url }}">Official source</a>{% endif %}
+          </div>
+        </article>
+      {% else %}
+        <p>No matching opportunities captured yet.</p>
+      {% endfor %}
+    </div>
+    <p><a href="/framework-intelligence/opportunities">Open opportunity catalogue</a></p>
+  </div>
+  <div class="panel">
+    <h2>Recent Requirement Themes</h2>
+    <div class="stack">
+      {% for requirement in requirements %}
+        <article class="list-item" id="requirement-preview-{{ requirement.id }}">
+          <h3>{{ requirement.requirement_theme }}</h3>
+          <p><span class="badge {{ 'green' if requirement.human_review_status == 'accepted' else 'amber' }}">{{ requirement.human_review_status }}</span></p>
+          <details>
+            <summary>Read extracted requirement</summary>
+            <p>{{ requirement.requirement_text }}</p>
+          </details>
+          <p class="hint">{{ requirement.rdec_relevance_note }}</p>
+          <p><a href="/framework-intelligence/requirements#requirement-{{ requirement.id }}">Open requirement review</a></p>
+        </article>
+      {% else %}
+        <p>No requirements extracted yet.</p>
+      {% endfor %}
+    </div>
+    <p><a href="/framework-intelligence/requirements">Review requirements and RDEC signals</a></p>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Knowledge Base Shortcuts</h2>
+  <div class="shortcut-grid">
+    <a href="/framework-intelligence/source-catalogue">Source catalogue</a>
+    <a href="/framework-intelligence/source-changes">Source changes</a>
+    <a href="/framework-intelligence/portal-platforms">Portal platforms</a>
+    <a href="/framework-intelligence/sources">Sources</a>
+    <a href="/framework-intelligence/watch-profiles">Watch profiles</a>
+    <a href="/framework-intelligence/opportunities">Opportunity catalogue</a>
+    <a href="/framework-intelligence/requirements">Requirement themes</a>
+    <a href="/framework-intelligence/reports">Summary reports</a>
+  </div>
+  <p class="hint">Use this as a reference catalogue for bid shaping, early engineering involvement, people-time setup, Finance data planning, and Ayming review preparation.</p>
+</section>
+{% endblock %}

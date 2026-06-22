@@ -8,3 +8,5 @@ venv
 .env
 htmlcov
 .coverage
+.tmp_*
+.playwright-mcp

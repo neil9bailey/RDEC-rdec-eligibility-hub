@@ -44,6 +44,23 @@ def apply_sqlite_schema_updates() -> None:
         "customer": {
             "business_unit_id": "business_unit_id INTEGER",
         },
+        "frameworksource": {
+            "source_family": "source_family VARCHAR DEFAULT 'official_notice'",
+            "coverage": "coverage VARCHAR DEFAULT ''",
+            "auth_model": "auth_model VARCHAR DEFAULT 'none'",
+            "data_format": "data_format VARCHAR DEFAULT ''",
+            "dedupe_strategy": "dedupe_strategy VARCHAR DEFAULT 'ocid_or_reference'",
+            "change_tracking_enabled": "change_tracking_enabled BOOLEAN DEFAULT 1",
+            "requires_human_approval": "requires_human_approval BOOLEAN DEFAULT 0",
+            "connector_status": "connector_status VARCHAR DEFAULT 'configured'",
+            "source_metadata": "source_metadata VARCHAR DEFAULT ''",
+        },
+        "opportunitydocument": {
+            "retrieval_status": "retrieval_status VARCHAR DEFAULT 'linked'",
+            "human_review_status": "human_review_status VARCHAR DEFAULT 'pending'",
+            "platform_name": "platform_name VARCHAR DEFAULT ''",
+            "content_summary": "content_summary VARCHAR DEFAULT ''",
+        },
     }
     with engine.begin() as connection:
         for table_name, columns in updates.items():

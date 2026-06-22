@@ -126,7 +126,7 @@ http://localhost:8080
 Run tests:
 
 ```powershell
-docker compose run --rm app pytest
+docker compose run --rm app pytest -q
 ```
 
 Stop:
@@ -143,7 +143,7 @@ Remove-Item -Recurse -Force .\data
 docker compose up --build
 ```
 
-After reset, only reference business units are recreated. Demo customer, contract, project, evidence, and cost data is not seeded by default.
+After reset, reference business units and reference customers are recreated. Demo contract, solution, project, evidence, and cost data is not seeded by default.
 
 ## 7. Page Map
 
@@ -151,6 +151,18 @@ After reset, only reference business units are recreated. Demo customer, contrac
 | --- | --- |
 | `/` | Dashboard showing counts, ratings, missing opinions, missing evidence, AIF readiness, and timing warnings. |
 | `/knowledge-agent` | Check official source register and identify rule review actions. |
+| `/framework-intelligence` | Review framework source status, opportunity signals, RDEC candidate review items, and latest run history. |
+| `/framework-intelligence/source-catalogue` | Review configured official/public procurement source catalogue metadata. |
+| `/framework-intelligence/source-changes` | Review source snapshot changes and connector health. |
+| `/framework-intelligence/portal-platforms` | Maintain portal platform families and buyer portal instances. |
+| `/framework-intelligence/sources` | Configure official/public source references and source status. |
+| `/framework-intelligence/watch-profiles` | Configure customer and business-unit watch profiles. |
+| `/framework-intelligence/opportunities` | Review captured framework and bid opportunities. |
+| `/framework-intelligence/opportunities/{id}` | Review one opportunity's requirements, documents, quality questions, RDEC signals, evidence gaps, and next actions. |
+| `/framework-intelligence/opportunities/{id}/documents` | Add permitted opportunity document links, retrieval tasks, summaries, and pasted excerpts. |
+| `/framework-intelligence/requirements` | Review extracted requirement themes and RDEC candidate signals. |
+| `/framework-intelligence/agent-runs` | Review guarded source-check and watch-profile run history. |
+| `/framework-intelligence/reports` | Generate framework intelligence reports. |
 | `/business-units` | Maintain Telent / M Group business units and child units. |
 | `/companies` | Capture claimant company and accounting period details. |
 | `/customers` | Capture live customer records and business-unit ownership. |
@@ -242,7 +254,9 @@ Important: The scoring blocker "Missing accounting period" clears only when the 
 
 Go to `/customers`.
 
-Each live customer should be assigned to the correct business unit. For transport customers, capture the transport domain and customer type carefully because these facts feed entitlement review.
+Each live customer should be assigned to the correct business unit. The default reset includes reference customer labels for Transport for London (TfL) and National Rail in Rail and SCADA contexts, but these are setup aids only. Confirm the exact customer/legal contracting entity before relying on them for live evidence capture.
+
+For transport customers, capture the transport domain and customer type carefully because these facts feed entitlement review.
 
 Minimum fields:
 
@@ -933,4 +947,3 @@ The R&D Claim Evidence Hub is a disciplined evidence and workflow tool for Telen
 Every output should be treated as:
 
 > Requires competent professional and tax review.
-
