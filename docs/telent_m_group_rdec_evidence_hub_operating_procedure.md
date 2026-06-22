@@ -151,6 +151,7 @@ After reset, reference business units and reference customers are recreated. Dem
 | --- | --- |
 | `/` | Dashboard showing counts, ratings, missing opinions, missing evidence, AIF readiness, and timing warnings. |
 | `/knowledge-agent` | Check official source register and identify rule review actions. |
+| `/source-health` | Generate a local triage pack combining Knowledge Agent freshness and Framework Intelligence source-change evidence. |
 | `/framework-intelligence` | Review framework source status, opportunity signals, RDEC candidate review items, and latest run history. |
 | `/framework-intelligence/source-catalogue` | Review configured official/public procurement source catalogue metadata. |
 | `/framework-intelligence/source-changes` | Review source snapshot changes and connector health. |

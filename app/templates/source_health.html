@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Source Health - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Source Health Triage Pack</h1>
+    <p>Combines Knowledge Agent source freshness and Framework Intelligence source-change evidence into one local review pack.</p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/source-health?format=md">Download Markdown</a>
+    <a class="button secondary" href="/knowledge-agent">Knowledge Agent</a>
+    <a class="button secondary" href="/framework-intelligence/source-catalogue">Framework sources</a>
+  </div>
+</div>
+
+<section class="warning-panel">
+  {{ source_health.caveat }}
+</section>
+
+<section class="grid three" style="margin-top: 18px;">
+  <div class="metric">
+    <span class="value">{{ source_health.knowledge.stale_count }}</span>
+    <span class="label">Knowledge sources due review</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ source_health.knowledge.failing_count }}</span>
+    <span class="label">Knowledge checks failing</span>
+  </div>
+  <div class="metric">
+    <span class="value">{{ source_health.framework.attention_count }}</span>
+    <span class="label">Framework sources needing attention</span>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Priority Actions</h2>
+    <ul>
+      {% for action in source_health.actions %}
+        <li>{{ action }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="panel">
+    <h2>Scope</h2>
+    <p>This page uses already-recorded local source-check evidence. It does not run live checks, poll portals, update YAML rules, or approve external action.</p>
+    <p class="hint">Use the linked Knowledge Agent and Framework source pages when a human decides to run explicit checks.</p>
+  </div>
+</section>
+
+<section class="grid two" style="margin-top: 18px;">
+  <div class="panel">
+    <h2>Knowledge Agent Sources</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Status</th>
+          <th>Review due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in source_health.knowledge.rows %}
+          <tr>
+            <td><a href="{{ row.url }}">{{ row.title }}</a><p class="hint">{{ row.topic }}</p></td>
+            <td><span class="badge {{ 'green' if row.ok else 'amber' }}">{{ row.status_label }}</span><p class="hint">{{ row.checked_at }}</p></td>
+            <td>{{ row.review_due_date }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>Framework Intelligence Sources</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Readiness</th>
+          <th>Latest check</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in source_health.framework.rows %}
+          <tr>
+            <td>{{ row.source.name }}<p class="hint">{{ row.source.coverage or row.source.source_family }}</p></td>
+            <td><span class="badge {{ row.readiness.badge_class }}">{{ row.readiness.label }}</span><p class="hint">{{ row.readiness.action }}</p></td>
+            <td><span class="badge {{ 'green' if not row.needs_attention else 'amber' }}">{{ row.status_label }}</span><p class="hint">{{ row.checked_at }} | {{ row.change_type }}</p></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" style="margin-top: 18px;">
+  <h2>Markdown Preview</h2>
+  <pre class="report-pre">{{ markdown }}</pre>
+</section>
+{% endblock %}
