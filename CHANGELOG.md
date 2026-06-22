@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased - 2026-06-22
+
+Documentation and UX sweep for the current framework-intelligence and assessment-review branch.
+
+- Documented default reference customer seeding alongside the existing business-unit reference seed.
+- Documented Framework Intelligence opportunity workbench, source-change, portal-platform, requirement-review, RDEC signal, and next-action review surfaces.
+- Added repo-local `AGENTS.md` guidance for future coding agents, including UI/UX score-loop and docs-sweep workflows.
+- Improved mobile project-assessment review ordering so the eligibility score, blockers, warnings, and entitlement summary appear before the long assessment form on narrow screens.
+
+Requires competent professional and tax review.
+
 ## intelligence-effectiveness 0.1 - 2026-06-07
 
 Improvement wave for the approved RDEC review cockpit, structured outputs, and traceable intelligence epic.

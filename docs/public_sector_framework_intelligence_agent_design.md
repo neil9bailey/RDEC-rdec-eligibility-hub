@@ -16,14 +16,19 @@ This is a business intelligence, bid-readiness, and evidence-support capability.
 The first MVP implementation adds:
 
 - `/framework-intelligence`
+- `/framework-intelligence/source-catalogue`
+- `/framework-intelligence/source-changes`
+- `/framework-intelligence/portal-platforms`
 - `/framework-intelligence/sources`
 - `/framework-intelligence/watch-profiles`
 - `/framework-intelligence/opportunities`
+- `/framework-intelligence/opportunities/{id}`
+- `/framework-intelligence/opportunities/{id}/documents`
 - `/framework-intelligence/requirements`
 - `/framework-intelligence/agent-runs`
 - `/framework-intelligence/reports`
 
-It stores official/public procurement source configuration, customer watch profiles, captured opportunities, extracted requirement themes, RDEC candidate signals, agent run logs, audit events, and exportable Markdown intelligence reports. It does not implement a continuous background crawler, customer contact automation, auto-bidding, or autonomous RDEC decisioning. Runs are explicit and guarded by an official/public HTTPS source allow-list.
+It stores official/public procurement source configuration, source-change snapshots, buyer portal platform metadata, customer watch profiles, captured opportunities, opportunity documents, extracted requirement themes, quality questions, RDEC candidate signals, agent run logs, audit events, and exportable Markdown intelligence reports. It also surfaces RDEC candidate review queues, opportunity workbench evidence gaps, and next-action prompts. It does not implement a continuous background crawler, customer contact automation, auto-bidding, or autonomous RDEC decisioning. Runs are explicit and guarded by an official/public HTTPS source allow-list.
 
 ## 1. Executive Summary
 
@@ -74,10 +79,15 @@ MVP pages:
 | Page | Purpose |
 | --- | --- |
 | `/framework-intelligence` | Dashboard of tracked customers, sources, new opportunities, deadline risks, and requirement themes. |
+| `/framework-intelligence/source-catalogue` | Review configured official/public procurement source catalogue metadata. |
+| `/framework-intelligence/source-changes` | Review source snapshot changes and connector health. |
+| `/framework-intelligence/portal-platforms` | Maintain portal platform families and buyer portal instances. |
 | `/framework-intelligence/sources` | Configure official/public source references and source status. |
 | `/framework-intelligence/watch-profiles` | Configure customer and business-unit watch rules, keywords, CPV codes, aliases, and domains. |
 | `/framework-intelligence/opportunities` | Catalogue of notices, frameworks, pipeline entries, awards, and related procurement records. |
-| `/framework-intelligence/requirements` | Searchable extracted requirements library grouped by customer, domain, theme, source, and confidence. |
+| `/framework-intelligence/opportunities/{id}` | Opportunity workbench for requirements, documents, quality questions, RDEC signals, evidence gaps, and next actions. |
+| `/framework-intelligence/opportunities/{id}/documents` | Capture permitted document links, retrieval tasks, summaries, and pasted excerpts. |
+| `/framework-intelligence/requirements` | Searchable extracted requirements and RDEC signal review queues grouped by customer, domain, theme, source, and confidence. |
 | `/framework-intelligence/reports` | Generate and view intelligent summary reports. |
 | `/framework-intelligence/agent-runs` | Audit trail of agent runs, source checks, extraction decisions, warnings, and human approvals. |
 
@@ -165,7 +175,7 @@ The catalogue should show:
 - linked customer
 - linked business unit
 - relevance score
-- status: `new`, `watching`, `review_required`, `relevant`, `not_relevant`, `archived`
+- status: `new`, `watching`, `bid_review`, `archived`, `rejected`
 
 ### Journey D - Requirements Knowledge Base
 

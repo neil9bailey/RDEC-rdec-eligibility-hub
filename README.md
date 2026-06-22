@@ -17,7 +17,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
 - Generates exportable Markdown framework intelligence summaries for bid, engineering, Finance, and Ayming review discussions.
-- Seeds only reference business units by default, ready for live customer and project entry.
+- Seeds reference business units and a small set of non-demo reference customers by default, ready for live project entry after exact customer/legal-entity review.
 
 ## What It Does Not Do
 
@@ -45,7 +45,7 @@ This branch hardens the MVP without changing the Docker Desktop workflow or addi
 Current baseline: `live-demo-version 1.0`  
 Release tag: `live-demo-version-1.0`
 
-This baseline is prepared for local Telent / M Group live demonstration and review. It includes the Telent-styled dashboard, clean reference business-unit setup, YAML-backed runtime rules, AIF top-10 fallback logic, local audit logging, Knowledge Agent source checks, Framework Intelligence Agent source tracking, and Markdown exports for Finance / Ayming handover discussions.
+This baseline is prepared for local Telent / M Group live demonstration and review. It includes the Telent-styled dashboard, clean reference business-unit and reference-customer setup, YAML-backed runtime rules, AIF top-10 fallback logic, local audit logging, Knowledge Agent source checks, Framework Intelligence Agent source tracking, and Markdown exports for Finance / Ayming handover discussions.
 
 The full assessment record is in [`docs/live_demo_version_1_0_baseline.md`](docs/live_demo_version_1_0_baseline.md). The version marker is stored in [`VERSION`](VERSION), and release notes are in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -111,7 +111,15 @@ Reference business units are loaded automatically when the SQLite database is em
 - Nuclear Power
 - Core Central Asset Management
 
-Demo customers, contracts, solutions, projects, evidence, and costs are not seeded by default. To opt into the original demo data in a throwaway local instance:
+The default reference seed also creates customer records for common transport review contexts:
+
+- Transport for London (TfL), assigned to the TfL business unit
+- National Rail, assigned to Rail
+- National Rail, assigned to SCADA
+
+These are reference labels for local workflow setup, not final legal contracting-entity determinations. Confirm the exact customer/legal entity before live evidence capture.
+
+Demo contracts, solutions, projects, evidence, and costs are not seeded by default. To opt into the original demo data in a throwaway local instance:
 
 ```powershell
 $env:SEED_DEMO_DATA="true"
@@ -128,7 +136,7 @@ Remove-Item -Recurse -Force .\data
 docker compose up --build
 ```
 
-The reference business units will be recreated on the next startup.
+The reference business units and reference customers will be recreated on the next startup.
 
 ## Knowledge Agent
 
@@ -150,7 +158,7 @@ The agent is intentionally conservative: it never changes scoring, blockers, ent
 
 The Framework Intelligence Agent is available at `/framework-intelligence`.
 
-It uses customer and business-unit data to create watch profiles for public-sector customers and domains such as National Highways, TfL, Network Services customers, SCADA, Highways, Rail, HPC / Hinkley Point C, Nuclear Power, and asset management. A user can run a guarded source check against configured official/public procurement sources. The MVP seeds references for Find a Tender and Contracts Finder public/OCDS sources.
+It uses customer and business-unit data to create watch profiles for public-sector customers and domains such as National Highways, TfL, Network Services customers, SCADA, Highways, Rail, HPC / Hinkley Point C, Nuclear Power, and asset management. A user can run a guarded source check against configured official/public procurement sources. The MVP seeds references for Find a Tender, Contracts Finder, devolved public sources, portal platform families, and source-change tracking.
 
 The agent records:
 
@@ -160,6 +168,7 @@ The agent records:
 - buyer portal platform families and customer portal instances
 - customer watch profiles, aliases, keywords, CPV codes, and domains
 - captured framework or bid opportunities
+- opportunity review classification, evidence gaps, and next-action prompts
 - opportunity document links, retrieval tasks, quality-question extracts, and weighting signals
 - extracted requirement themes
 - RDEC candidate indicators for human review
@@ -190,8 +199,8 @@ It covers business-unit setup, company/accounting period setup, customer and con
 - `app/audit.py` - compact MVP audit-event helpers.
 - `app/reports.py` - Markdown report generation.
 - `app/knowledge_agent.py` - official source registry, optional live checks, and rule coverage monitoring.
-- `app/framework_intelligence.py` - guarded public-sector procurement/source checks, opportunity capture, requirement extraction, RDEC candidate signals, and Markdown intelligence reports.
-- `app/seed.py` - clean reference business units and optional demo transport data.
+- `app/framework_intelligence.py` - guarded public-sector procurement/source checks, opportunity capture, opportunity review summaries, requirement extraction, RDEC candidate signals, and Markdown intelligence reports.
+- `app/seed.py` - clean reference business units, reference transport customers, and optional demo transport data.
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
 - `app/rules/` - versioned YAML rules.
@@ -211,6 +220,7 @@ Rules are loaded from YAML at startup:
 - `entitlement_rules.yml`
 - `knowledge_sources.yml`
 - `framework_sources.yml`
+- `framework_intelligence_review.yml`
 - `procurement_platforms.yml`
 - `source_change_tracking.yml`
 
@@ -229,10 +239,12 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 - `/framework-intelligence/sources`
 - `/framework-intelligence/watch-profiles`
 - `/framework-intelligence/opportunities`
+- `/framework-intelligence/opportunities/{id}`
 - `/framework-intelligence/opportunities/{id}/documents`
 - `/framework-intelligence/requirements`
 - `/framework-intelligence/agent-runs`
 - `/framework-intelligence/reports`
+- `/framework-intelligence/reports/{id}`
 - `/business-units`
 - `/companies`
 - `/customers`

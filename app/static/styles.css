@@ -1202,6 +1202,10 @@ pre {
   .section-head {
     display: grid;
   }
+
+  .assessment-status-panel {
+    order: -1;
+  }
 }
 
 @media (max-width: 680px) {

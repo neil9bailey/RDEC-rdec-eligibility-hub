@@ -25,6 +25,7 @@ Checked on 2026-05-16:
 
 - Runtime YAML configuration for procurement source catalogue:
   - `app/rules/framework_sources.yml`
+  - `app/rules/framework_intelligence_review.yml`
   - `app/rules/procurement_platforms.yml`
   - `app/rules/source_change_tracking.yml`
 - Seeded source catalogue for:
@@ -48,13 +49,15 @@ Checked on 2026-05-16:
 - Manual retrieval tasks for opportunity documents.
 - Opportunity document capture with platform name, retrieval status, summary and permitted document text excerpts.
 - Local extraction of ITT quality questions, weighting signals, requirement themes and RDEC candidate prompts for human review.
-- Markdown framework intelligence reports now include source config versions, portal platform config versions, source changes, documents, and ITT quality question summaries.
+- Opportunity workbench review summaries classify RDEC candidate prompts, evidence gaps, document coverage and next actions.
+- Markdown framework intelligence reports now include source config versions, portal platform config versions, source changes, opportunity review summaries, documents, ITT quality question summaries, and RDEC candidate intelligence.
 
 ## New Pages
 
 - `/framework-intelligence/source-catalogue`
 - `/framework-intelligence/source-changes`
 - `/framework-intelligence/portal-platforms`
+- `/framework-intelligence/opportunities/{id}`
 - `/framework-intelligence/opportunities/{id}/documents`
 
 Existing pages remain available:
@@ -73,7 +76,7 @@ Existing pages remain available:
 - No portal login, expression of interest, submission, or customer communication is automated.
 - Document text extraction is only from permitted summaries, links, paths, or pasted excerpts supplied by a user.
 - Extracted requirements and quality questions default to pending human review.
-- RDEC candidate outputs are prompts only and retain: "Requires competent professional and tax review."
+- RDEC candidate outputs are prompts only, default to human review, and retain: "Requires competent professional and tax review."
 
 ## Operating Pattern
 
@@ -81,9 +84,10 @@ Existing pages remain available:
 2. Run explicit guarded source checks from the catalogue or watch profiles.
 3. Review source changes in `/framework-intelligence/source-changes`.
 4. Manage buyer portal families and customer portal instances in `/framework-intelligence/portal-platforms`.
-5. Open an opportunity and add document links, manual retrieval tasks, or permitted document excerpts.
-6. Review extracted quality questions, weightings, requirement themes and RDEC candidate signals.
-7. Generate a Framework Intelligence Report for bid, engineering, Finance and Ayming discussions.
+5. Open an opportunity workbench and review the evidence gap, document coverage, extracted requirements, quality questions and RDEC candidate prompts.
+6. Add document links, manual retrieval tasks, or permitted document excerpts.
+7. Review extracted quality questions, weightings, requirement themes and RDEC candidate signals from the opportunity workbench or requirements review queues.
+8. Generate a Framework Intelligence Report for bid, engineering, Finance and Ayming discussions.
 
 ## Future Controlled Enhancements
 
