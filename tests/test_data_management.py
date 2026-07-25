@@ -24,7 +24,7 @@ from app.data_management import (
 )
 from app.database import get_session
 from app.main import app
-from app.models import AuditEvent, Company, Contract, Customer, RDProject
+from app.models import AuditEvent, BusinessUnit, Company, Contract, Customer, RDProject
 
 
 def client_for(session):
@@ -285,6 +285,126 @@ def test_an_uploaded_column_name_cannot_inject_html_into_the_preview(session):
     assert response.status_code == 200
     assert "<img src=x onerror=alert(1)>" not in response.text
     assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
+
+
+def orphan_contracts(session):
+    """Contracts whose customer_id has no customer row. The invariant, asserted directly."""
+    customer_ids = {customer.id for customer in session.exec(select(Customer))}
+    return [
+        contract
+        for contract in session.exec(select(Contract))
+        if contract.customer_id not in customer_ids
+    ]
+
+
+@pytest.mark.parametrize("mode", ["add_only", "add_update"])
+def test_an_in_file_identifier_never_satisfies_a_foreign_key_on_its_own(session, mode):
+    """C1a, the proven file: a contract referencing in-file customer 906.
+
+    The customer row matches a live record by natural key, so its declared identifier 906
+    is discarded. Previously the preview reported zero errors and apply created a contract
+    referencing customer 906, which does not exist.
+    """
+    live = Customer(customer_name="Existing Customer")
+    session.add(live)
+    session.commit()
+    session.refresh(live)
+    assert live.id != 906
+
+    datasets = {
+        "customers": [{"id": 906, "customer_name": "Existing Customer", "sector": "Rail"}],
+        "contracts": [{"contract_name": "Dangling Contract", "customer_id": 906}],
+    }
+
+    preview = build_import_plan(session, datasets, mode)
+    assert preview["has_errors"] is False, [row["errors"] for row in preview["rows"]]
+
+    mode_out, approved = decode_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode_out)
+
+    contract = session.exec(select(Contract).where(Contract.contract_name == "Dangling Contract")).first()
+    assert contract is not None
+    assert orphan_contracts(session) == []
+    assert contract.customer_id == live.id
+    assert session.get(Customer, 906) is None
+
+
+@pytest.mark.parametrize("mode", ["add_only", "add_update"])
+def test_a_link_to_an_identifier_in_neither_the_file_nor_the_hub_errors_at_preview(session, mode):
+    """ADR-0004 D2.1 L2: never dangle. The error is raised at preview, in both modes."""
+    preview = build_import_plan(
+        session,
+        {"contracts": [{"contract_name": "Dangling Contract", "customer_id": 906}]},
+        mode,
+    )
+
+    assert preview["has_errors"] is True
+    issue = preview["rows"][0]["issues"][0]
+    assert issue.code == "unknown_link"
+    assert issue.message == "Customer does not match a record in this file or in the Hub."
+    assert encode_import_payload(preview) == ""
+
+
+def test_a_bundle_restores_its_own_parent_child_links(session):
+    """ADR-0004 D2.1 L1: a new parent and its child in one file still link up."""
+    datasets = {
+        "customers": [{"id": 906, "customer_name": "Bundle Customer", "sector": "Rail"}],
+        "contracts": [{"contract_name": "Bundle Contract", "customer_id": 906}],
+    }
+
+    preview = build_import_plan(session, datasets, "add_only")
+    assert preview["has_errors"] is False
+    link = preview["rows"][1]["links"][0]
+    assert link["source"] == "this file"
+    assert link["parent"] == "Bundle Customer"
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode)
+
+    customer = session.exec(select(Customer).where(Customer.customer_name == "Bundle Customer")).first()
+    contract = session.exec(select(Contract).where(Contract.contract_name == "Bundle Contract")).first()
+    assert customer is not None and contract is not None
+    assert contract.customer_id == customer.id
+    assert orphan_contracts(session) == []
+
+
+def test_a_live_parent_reference_is_disclosed_by_name(session):
+    """ADR-0004 D2.1 L3: referencing an existing parent is safe, and is named in the preview."""
+    live = Customer(customer_name="Named Customer")
+    session.add(live)
+    session.commit()
+    session.refresh(live)
+
+    preview = build_import_plan(
+        session,
+        {"contracts": [{"contract_name": "Referencing Contract", "customer_id": live.id}]},
+        "add_only",
+    )
+
+    assert preview["has_errors"] is False
+    assert preview["rows"][0]["links"] == [
+        {"field": "customer_id", "label": "Customer", "source": "the Hub", "parent": "Named Customer"}
+    ]
+
+
+def test_apply_refuses_an_in_file_link_whose_parent_is_not_written_yet(session):
+    """ADR-0004 D2.1 L4: the apply-time re-check, rather than silently using a live row."""
+    datasets = {
+        "business_units": [
+            {"id": 2, "name": "Child Unit", "parent_id": 3},
+            {"id": 3, "name": "Parent Unit"},
+        ]
+    }
+
+    preview = build_import_plan(session, datasets, "add_only")
+    assert preview["has_errors"] is False
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, approved, mode)
+
+    assert "appears later in this file" in str(exc.value)
+    assert list(session.exec(select(BusinessUnit))) == []
 
 
 def test_cleanup_only_removes_selected_unlinked_records(session):

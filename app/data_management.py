@@ -597,28 +597,172 @@ def _find_existing(session: Session, spec: DatasetSpec, values: dict[str, Any]) 
     return session.exec(query).first()
 
 
-def _display_name(spec: DatasetSpec, values: dict[str, Any]) -> str:
-    for name in spec.natural_key:
+def _display_fields(spec: DatasetSpec) -> tuple[str, ...]:
+    """Natural-key parts worth showing a human, preferring names over link identifiers."""
+    named = tuple(name for name in spec.natural_key if not name.endswith("_id"))
+    return named or spec.natural_key
+
+
+def _incoming_display(spec: DatasetSpec, values: dict[str, Any]) -> str:
+    """The natural-key display of an UPLOADED row (ADR-0004 D1.4).
+
+    Deliberately separate from _existing_display. One function taking either an uploaded
+    row or a live record is what let the preview show the uploaded name while a different
+    live record was overwritten.
+    """
+    for name in _display_fields(spec):
         value = values.get(name)
         if value not in (None, ""):
             return str(value)
-    item_id = values.get("id")
-    return f"Record {item_id}" if item_id not in (None, "") else "New record"
+    return "New record"
 
 
-def _known_ids(session: Session, datasets: dict[str, list[dict[str, Any]]]) -> dict[str, set[int]]:
-    ids: dict[str, set[int]] = {}
+def _existing_display(spec: DatasetSpec, record: SQLModel) -> str:
+    """The natural-key display of the LIVE record being changed (ADR-0004 D1.4)."""
+    for name in _display_fields(spec):
+        value = getattr(record, name, None)
+        if value not in (None, ""):
+            return str(value)
+    item_id = getattr(record, "id", None)
+    return f"Record {item_id}" if item_id is not None else "Existing record"
+
+
+def _live_ids(session: Session) -> dict[str, set[int]]:
+    """Identifiers already committed in this database.
+
+    ADR-0004 D2.1 invariant: this may contain only identifiers already committed at the
+    time the plan is built. Identifiers merely declared by the uploaded file used to be
+    added here, which let a child row's foreign key pass validation against an identifier
+    that was then discarded when its parent matched by natural key -- the child dangled.
+    """
+    return {
+        spec.key: {int(item.id) for item in _records(session, spec) if getattr(item, "id", None) is not None}
+        for spec in DATASETS
+    }
+
+
+def _declared_identifier(raw_row: Any) -> int | None:
+    if not isinstance(raw_row, dict):
+        return None
+    value = raw_row.get("id")
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _declared_identifier_index(datasets: dict[str, list[dict[str, Any]]]) -> dict[tuple[str, int], list[str]]:
+    """Identifiers declared by rows in the uploaded file, with each row's display name.
+
+    ADR-0004 D2.1 L1. These are never valid foreign keys in their own right: they belong
+    to the exporting database's namespace. They resolve only through ``id_remap``, to
+    whatever the parent row itself resolves to in this database.
+    """
+    index: dict[tuple[str, int], list[str]] = {}
     for spec in DATASETS:
-        ids[spec.key] = {
-            int(item.id) for item in _records(session, spec) if getattr(item, "id", None) is not None
-        }
-        for row in datasets.get(spec.key, []):
-            try:
-                if row.get("id") not in (None, ""):
-                    ids[spec.key].add(int(row["id"]))
-            except (TypeError, ValueError):
+        if not spec.importable:
+            continue
+        for raw_row in datasets.get(spec.key, []) or []:
+            declared = _declared_identifier(raw_row)
+            if declared is None:
                 continue
-    return ids
+            index.setdefault((spec.key, declared), []).append(_incoming_display(spec, raw_row))
+    return index
+
+
+def _live_link_display(session: Session, target_key: str, target_id: int) -> str:
+    spec = DATASET_BY_KEY[target_key]
+    record = session.get(spec.model, target_id)
+    return _existing_display(spec, record) if record is not None else f"Record {target_id}"
+
+
+def _plan_links(
+    session: Session,
+    spec: DatasetSpec,
+    values: dict[str, Any],
+    declared_index: dict[tuple[str, int], list[str]],
+    live_ids: dict[str, set[int]],
+) -> tuple[list[dict[str, str]], list[ImportIssue]]:
+    """Decide, and disclose, which parent every foreign key points at (ADR-0004 D2.1)."""
+    links: list[dict[str, str]] = []
+    issues: list[ImportIssue] = []
+    for field_name, target_key in spec.foreign_keys:
+        raw_value = values.get(field_name)
+        if raw_value in (None, ""):
+            continue
+        label = _field_label(spec, field_name)
+        unresolved = ImportIssue(
+            field=label,
+            message=f"{label} does not match a record in this file or in the Hub.",
+            code="unknown_link",
+        )
+        try:
+            target_id = int(raw_value)
+        except (TypeError, ValueError):
+            issues.append(unresolved)
+            continue
+        declared_parents = declared_index.get((target_key, target_id), [])
+        if len(declared_parents) == 1:
+            # L1, and L3's precedence rule: an identifier declared in this file wins over a
+            # live record that happens to carry the same number.
+            links.append(
+                {"field": field_name, "label": label, "source": "this file", "parent": declared_parents[0]}
+            )
+        elif len(declared_parents) > 1:
+            issues.append(
+                ImportIssue(
+                    field=label,
+                    message=f"{label} matches more than one record in this file.",
+                    code="ambiguous_link",
+                )
+            )
+        elif target_id in live_ids.get(target_key, set()):
+            # L3: referencing an existing parent is safe, and is disclosed by name.
+            links.append(
+                {
+                    "field": field_name,
+                    "label": label,
+                    "source": "the Hub",
+                    "parent": _live_link_display(session, target_key, target_id),
+                }
+            )
+        else:
+            issues.append(unresolved)  # L2: never dangle.
+    return links, issues
+
+
+def _resolve_links(
+    session: Session,
+    spec: DatasetSpec,
+    values: dict[str, Any],
+    links: list[dict[str, str]],
+    id_remap: dict[tuple[str, int], int],
+) -> None:
+    """ADR-0004 D2.1 L4: re-resolve every foreign key immediately before the write."""
+    sources = {str(link.get("field")): str(link.get("source")) for link in links}
+    for field_name, target_key in spec.foreign_keys:
+        raw_value = values.get(field_name)
+        if raw_value in (None, ""):
+            continue
+        label = _field_label(spec, field_name)
+        try:
+            declared = int(raw_value)
+        except (TypeError, ValueError):
+            raise DataOperationError(f"{label} could not be linked to a record that exists. Preview the file again.")
+        if sources.get(field_name) == "this file":
+            if (target_key, declared) not in id_remap:
+                raise DataOperationError(
+                    f"{label} points at a record that appears later in this file. "
+                    "Put parent records before the records that use them, then preview the file again."
+                )
+            resolved = id_remap[(target_key, declared)]
+        else:
+            resolved = id_remap.get((target_key, declared), declared)
+        if session.get(DATASET_BY_KEY[target_key].model, resolved) is None:
+            raise DataOperationError(f"{label} could not be linked to a record that exists. Preview the file again.")
+        values[field_name] = resolved
 
 
 def _rejected_dataset_issue(key: str) -> ImportIssue | None:
@@ -642,7 +786,8 @@ def _rejected_dataset_issue(key: str) -> ImportIssue | None:
 def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]], mode: str) -> dict[str, Any]:
     if mode not in {"add_only", "add_update"}:
         raise DataOperationError("Choose whether to add only or add and update matching records.")
-    known_ids = _known_ids(session, datasets)
+    live_ids = _live_ids(session)
+    declared_index = _declared_identifier_index(datasets)
     rows: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     for spec in DATASETS:
@@ -679,24 +824,10 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
             elif identity:
                 seen.add(identity)
 
+            links: list[dict[str, str]] = []
             if not issues:
-                for field_name, target_key in spec.foreign_keys:
-                    target_id = values.get(field_name)
-                    if target_id in (None, ""):
-                        continue
-                    try:
-                        valid_link = int(target_id) in known_ids[target_key]
-                    except (TypeError, ValueError):
-                        valid_link = False
-                    if not valid_link:
-                        label = _field_label(spec, field_name)
-                        issues.append(
-                            ImportIssue(
-                                field=label,
-                                message=f"{label} does not match a record in this file or in the Hub.",
-                                code="unknown_link",
-                            )
-                        )
+                links, link_issues = _plan_links(session, spec, values, declared_index, live_ids)
+                issues.extend(link_issues)
 
             if issues:
                 status = "error"
@@ -711,7 +842,9 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                     "dataset_key": spec.key,
                     "dataset_label": spec.label,
                     "row_number": row_number,
-                    "display": _display_name(spec, values),
+                    "display": _incoming_display(spec, values),
+                    "declared_id": _declared_identifier(raw_row),
+                    "links": links,
                     "status": status,
                     "issues": issues,
                     # Transitional mirror of ``issues`` so the preview template keeps rendering
@@ -739,6 +872,8 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                 "dataset_label": spec.label if spec else str(key),
                 "row_number": 0,
                 "display": spec.label if spec else str(key),
+                "declared_id": None,
+                "links": [],
                 "status": "error",
                 "issues": [issue],
                 "errors": [issue.message],
@@ -797,13 +932,24 @@ def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mo
     if plan["has_errors"]:
         raise DataOperationError("The data changed after preview or no longer passes validation. Preview the file again.")
     applied = {"created": 0, "updated": 0, "skipped": plan["summary"]["skip"]}
+    # ADR-0004 D2.1: (dataset key, identifier declared in the file) -> identifier in THIS
+    # database. Built as rows are written, in dependency order, so a child's link resolves
+    # to whatever its parent actually became here.
+    id_remap: dict[tuple[str, int], int] = {}
     try:
         for row in plan["rows"]:
-            if row["status"] == "skip":
-                continue
             spec = DATASET_BY_KEY[row["dataset_key"]]
-            candidate = spec.model.model_validate(row["values"])
-            existing = _find_existing(session, spec, row["values"])
+            declared_id = row.get("declared_id")
+            if row["status"] == "skip":
+                # A skipped parent still resolves: it is the record the file matched.
+                matched = _find_existing(session, spec, row["values"])
+                if declared_id is not None and matched is not None and matched.id is not None:
+                    id_remap[(spec.key, int(declared_id))] = int(matched.id)
+                continue
+            values = dict(row["values"])
+            _resolve_links(session, spec, values, row.get("links") or [], id_remap)
+            candidate = spec.model.model_validate(values)
+            existing = _find_existing(session, spec, values)
             if existing:
                 before = compact_snapshot(existing)
                 for field_name in spec.model.model_fields:
@@ -821,6 +967,7 @@ def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mo
                     after=existing,
                 )
                 applied["updated"] += 1
+                written_id = existing.id
             else:
                 session.add(candidate)
                 session.flush()
@@ -833,6 +980,9 @@ def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mo
                     after=candidate,
                 )
                 applied["created"] += 1
+                written_id = candidate.id
+            if declared_id is not None and written_id is not None:
+                id_remap[(spec.key, int(declared_id))] = int(written_id)
         session.commit()
     except Exception:
         session.rollback()
@@ -867,12 +1017,11 @@ def cleanup_candidates(session: Session) -> list[dict[str, Any]]:
                 continue
             if isinstance(item, BuyerPortalInstance) and item.access_status != "retired":
                 continue
-            values = item.model_dump(mode="json")
             candidates.append(
                 {
                     "token": f"{key}:{item_id}",
                     "dataset_label": spec.label,
-                    "display": _display_name(spec, values),
+                    "display": _existing_display(spec, item),
                 }
             )
     return candidates
