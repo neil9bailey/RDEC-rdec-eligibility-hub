@@ -23,25 +23,25 @@
                 <summary>Edit</summary>
                 <form method="post" action="/evidence/{{ item.id }}/update">
                   <div class="field">
-                    <label>Source system</label>
-                    <select name="source_system">{% for option in domain.SOURCE_SYSTEMS %}<option {% if item.source_system == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                    <label for="source_system-f1-{{ item.id }}">Source system</label>
+                    <select id="source_system-f1-{{ item.id }}" name="source_system">{% for option in domain.SOURCE_SYSTEMS %}<option {% if item.source_system == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
                   </div>
-                  <div class="field"><label>Source reference</label><input name="source_reference" value="{{ item.source_reference }}"></div>
-                  <div class="field"><label>URL or file path</label><input name="url_or_file_path" value="{{ item.url_or_file_path }}"></div>
-                  <div class="field"><label>Date created</label><input name="date_created" type="date" value="{{ item.date_created or '' }}"></div>
+                  <div class="field"><label for="source_reference-f1-{{ item.id }}">Source reference</label><input id="source_reference-f1-{{ item.id }}" name="source_reference" value="{{ item.source_reference }}"></div>
+                  <div class="field"><label for="url_or_file_path-f1-{{ item.id }}">URL or file path</label><input id="url_or_file_path-f1-{{ item.id }}" name="url_or_file_path" value="{{ item.url_or_file_path }}"></div>
+                  <div class="field"><label for="date_created-f1-{{ item.id }}">Date created</label><input id="date_created-f1-{{ item.id }}" name="date_created" type="date" value="{{ item.date_created or '' }}"></div>
                   <div class="field">
-                    <label>Evidence type</label>
-                    <select name="evidence_type">{% for option in domain.EVIDENCE_TYPES %}<option {% if item.evidence_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
-                  </div>
-                  <div class="field">
-                    <label>Relevance tag</label>
-                    <select name="relevance_tag">{% for option in domain.RELEVANCE_TAGS %}<option {% if item.relevance_tag == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                    <label for="evidence_type-f1-{{ item.id }}">Evidence type</label>
+                    <select id="evidence_type-f1-{{ item.id }}" name="evidence_type">{% for option in domain.EVIDENCE_TYPES %}<option {% if item.evidence_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
                   </div>
                   <div class="field">
-                    <label>Strength</label>
-                    <select name="strength">{% for option in domain.EVIDENCE_STRENGTHS %}<option {% if item.strength == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                    <label for="relevance_tag-f1-{{ item.id }}">Relevance tag</label>
+                    <select id="relevance_tag-f1-{{ item.id }}" name="relevance_tag">{% for option in domain.RELEVANCE_TAGS %}<option {% if item.relevance_tag == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
                   </div>
-                  <div class="field"><label>Notes</label><textarea name="notes">{{ item.notes }}</textarea></div>
+                  <div class="field">
+                    <label for="strength-f1-{{ item.id }}">Strength</label>
+                    <select id="strength-f1-{{ item.id }}" name="strength">{% for option in domain.EVIDENCE_STRENGTHS %}<option {% if item.strength == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select>
+                  </div>
+                  <div class="field"><label for="notes-f1-{{ item.id }}">Notes</label><textarea id="notes-f1-{{ item.id }}" name="notes">{{ item.notes }}</textarea></div>
                   <button type="submit">Update evidence</button>
                 </form>
               </details>

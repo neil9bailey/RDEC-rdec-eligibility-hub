@@ -14,21 +14,21 @@
     <h2>Add Opinion</h2>
     <form method="post" action="/projects/{{ context.project.id }}/competent-professional">
       <div class="form-grid">
-        <div class="field"><label>Professional name</label><input name="professional_name" required></div>
-        <div class="field"><label>Role</label><input name="role"></div>
-        <div class="field"><label>Qualifications</label><input name="qualifications"></div>
-        <div class="field"><label>Years of relevant experience</label><input name="years_relevant_experience" type="number" min="0"></div>
+        <div class="field"><label for="professional_name-f1">Professional name</label><input id="professional_name-f1" name="professional_name" required></div>
+        <div class="field"><label for="role-f1">Role</label><input id="role-f1" name="role"></div>
+        <div class="field"><label for="qualifications-f1">Qualifications</label><input id="qualifications-f1" name="qualifications"></div>
+        <div class="field"><label for="years_relevant_experience-f1">Years of relevant experience</label><input id="years_relevant_experience-f1" name="years_relevant_experience" type="number" min="0"></div>
       </div>
-      <div class="field"><label>Relevant field expertise</label><textarea name="relevant_field_expertise"></textarea></div>
-      <div class="field"><label>Opinion text</label><textarea name="opinion_text"></textarea></div>
+      <div class="field"><label for="relevant_field_expertise-f1">Relevant field expertise</label><textarea id="relevant_field_expertise-f1" name="relevant_field_expertise"></textarea></div>
+      <div class="field"><label for="opinion_text-f1">Opinion text</label><textarea id="opinion_text-f1" name="opinion_text"></textarea></div>
       <div class="form-grid">
         <div class="field">
-          <label>Sign-off status</label>
-          <select name="signoff_status">{% for item in domain.SIGNOFF_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="signoff_status-f1">Sign-off status</label>
+          <select id="signoff_status-f1" name="signoff_status">{% for item in domain.SIGNOFF_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Sign-off date</label><input name="signoff_date" type="date"></div>
+        <div class="field"><label for="signoff_date-f1">Sign-off date</label><input id="signoff_date-f1" name="signoff_date" type="date"></div>
       </div>
-      <div class="field"><label>Reviewer comments</label><textarea name="reviewer_comments"></textarea></div>
+      <div class="field"><label for="reviewer_comments-f1">Reviewer comments</label><textarea id="reviewer_comments-f1" name="reviewer_comments"></textarea></div>
       <button type="submit">Save opinion</button>
     </form>
   </section>
@@ -47,21 +47,21 @@
               <summary>Edit</summary>
               <form method="post" action="/competent-professional/{{ opinion.id }}/update">
                 <div class="form-grid">
-                  <div class="field"><label>Professional name</label><input name="professional_name" value="{{ opinion.professional_name }}" required></div>
-                  <div class="field"><label>Role</label><input name="role" value="{{ opinion.role }}"></div>
-                  <div class="field"><label>Qualifications</label><input name="qualifications" value="{{ opinion.qualifications }}"></div>
-                  <div class="field"><label>Years of relevant experience</label><input name="years_relevant_experience" type="number" min="0" value="{{ opinion.years_relevant_experience }}"></div>
+                  <div class="field"><label for="professional_name-f2-{{ opinion.id }}">Professional name</label><input id="professional_name-f2-{{ opinion.id }}" name="professional_name" value="{{ opinion.professional_name }}" required></div>
+                  <div class="field"><label for="role-f2-{{ opinion.id }}">Role</label><input id="role-f2-{{ opinion.id }}" name="role" value="{{ opinion.role }}"></div>
+                  <div class="field"><label for="qualifications-f2-{{ opinion.id }}">Qualifications</label><input id="qualifications-f2-{{ opinion.id }}" name="qualifications" value="{{ opinion.qualifications }}"></div>
+                  <div class="field"><label for="years_relevant_experience-f2-{{ opinion.id }}">Years of relevant experience</label><input id="years_relevant_experience-f2-{{ opinion.id }}" name="years_relevant_experience" type="number" min="0" value="{{ opinion.years_relevant_experience }}"></div>
                 </div>
-                <div class="field"><label>Relevant field expertise</label><textarea name="relevant_field_expertise">{{ opinion.relevant_field_expertise }}</textarea></div>
-                <div class="field"><label>Opinion text</label><textarea name="opinion_text">{{ opinion.opinion_text }}</textarea></div>
+                <div class="field"><label for="relevant_field_expertise-f2-{{ opinion.id }}">Relevant field expertise</label><textarea id="relevant_field_expertise-f2-{{ opinion.id }}" name="relevant_field_expertise">{{ opinion.relevant_field_expertise }}</textarea></div>
+                <div class="field"><label for="opinion_text-f2-{{ opinion.id }}">Opinion text</label><textarea id="opinion_text-f2-{{ opinion.id }}" name="opinion_text">{{ opinion.opinion_text }}</textarea></div>
                 <div class="form-grid">
                   <div class="field">
-                    <label>Sign-off status</label>
-                    <select name="signoff_status">{% for item in domain.SIGNOFF_STATUSES %}<option {% if opinion.signoff_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    <label for="signoff_status-f2-{{ opinion.id }}">Sign-off status</label>
+                    <select id="signoff_status-f2-{{ opinion.id }}" name="signoff_status">{% for item in domain.SIGNOFF_STATUSES %}<option {% if opinion.signoff_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                   </div>
-                  <div class="field"><label>Sign-off date</label><input name="signoff_date" type="date" value="{{ opinion.signoff_date or '' }}"></div>
+                  <div class="field"><label for="signoff_date-f2-{{ opinion.id }}">Sign-off date</label><input id="signoff_date-f2-{{ opinion.id }}" name="signoff_date" type="date" value="{{ opinion.signoff_date or '' }}"></div>
                 </div>
-                <div class="field"><label>Reviewer comments</label><textarea name="reviewer_comments">{{ opinion.reviewer_comments }}</textarea></div>
+                <div class="field"><label for="reviewer_comments-f2-{{ opinion.id }}">Reviewer comments</label><textarea id="reviewer_comments-f2-{{ opinion.id }}" name="reviewer_comments">{{ opinion.reviewer_comments }}</textarea></div>
                 <button type="submit">Update opinion</button>
               </form>
             </details>

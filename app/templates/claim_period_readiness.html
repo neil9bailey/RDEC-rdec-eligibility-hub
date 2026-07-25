@@ -41,10 +41,10 @@
         <label class="checkbox"><input type="checkbox" name="ct600_submitted" {% if submission and submission.ct600_submitted %}checked{% endif %}> CT600 submitted</label>
       </div>
       <div class="form-grid">
-        <div class="field"><label>AIF submission date</label><input name="aif_submission_date" type="date" value="{{ submission.aif_submission_date if submission and submission.aif_submission_date else '' }}"></div>
-        <div class="field"><label>CT600 submission date</label><input name="ct600_submission_date" type="date" value="{{ submission.ct600_submission_date if submission and submission.ct600_submission_date else '' }}"></div>
+        <div class="field"><label for="aif_submission_date-f1">AIF submission date</label><input id="aif_submission_date-f1" name="aif_submission_date" type="date" value="{{ submission.aif_submission_date if submission and submission.aif_submission_date else '' }}"></div>
+        <div class="field"><label for="ct600_submission_date-f1">CT600 submission date</label><input id="ct600_submission_date-f1" name="ct600_submission_date" type="date" value="{{ submission.ct600_submission_date if submission and submission.ct600_submission_date else '' }}"></div>
       </div>
-      <div class="field"><label>Notes</label><textarea name="notes">{{ submission.notes if submission else "" }}</textarea></div>
+      <div class="field"><label for="notes-f1">Notes</label><textarea id="notes-f1" name="notes">{{ submission.notes if submission else "" }}</textarea></div>
       <button type="submit">Save submission status</button>
     </form>
   </section>

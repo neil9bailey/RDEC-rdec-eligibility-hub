@@ -15,26 +15,26 @@
     <form method="post" action="/projects/{{ context.project.id }}/evidence" hx-post="/projects/{{ context.project.id }}/evidence" hx-target="#evidence-items" hx-swap="outerHTML">
       <div class="form-grid">
         <div class="field">
-          <label>Source system</label>
-          <select name="source_system">{% for item in domain.SOURCE_SYSTEMS %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="source_system-f1">Source system</label>
+          <select id="source_system-f1" name="source_system">{% for item in domain.SOURCE_SYSTEMS %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Source reference</label><input name="source_reference"></div>
-        <div class="field"><label>URL or file path</label><input name="url_or_file_path"></div>
-        <div class="field"><label>Date created</label><input name="date_created" type="date"></div>
+        <div class="field"><label for="source_reference-f1">Source reference</label><input id="source_reference-f1" name="source_reference"></div>
+        <div class="field"><label for="url_or_file_path-f1">URL or file path</label><input id="url_or_file_path-f1" name="url_or_file_path"></div>
+        <div class="field"><label for="date_created-f1">Date created</label><input id="date_created-f1" name="date_created" type="date"></div>
         <div class="field">
-          <label>Evidence type</label>
-          <select name="evidence_type">{% for item in domain.EVIDENCE_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
-        </div>
-        <div class="field">
-          <label>Relevance tag</label>
-          <select name="relevance_tag">{% for item in domain.RELEVANCE_TAGS %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="evidence_type-f1">Evidence type</label>
+          <select id="evidence_type-f1" name="evidence_type">{% for item in domain.EVIDENCE_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Strength</label>
-          <select name="strength">{% for item in domain.EVIDENCE_STRENGTHS %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="relevance_tag-f1">Relevance tag</label>
+          <select id="relevance_tag-f1" name="relevance_tag">{% for item in domain.RELEVANCE_TAGS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label for="strength-f1">Strength</label>
+          <select id="strength-f1" name="strength">{% for item in domain.EVIDENCE_STRENGTHS %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
       </div>
-      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <div class="field"><label for="notes-f1">Notes</label><textarea id="notes-f1" name="notes"></textarea></div>
       <button type="submit">Add evidence</button>
     </form>
   </section>

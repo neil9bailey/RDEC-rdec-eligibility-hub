@@ -16,8 +16,8 @@
     <form method="post" action="/projects/{{ context.project.id }}/assessment">
       <div class="form-grid">
         <div class="field">
-          <label>Accounting period</label>
-          <select name="accounting_period_id">
+          <label for="accounting_period_id-f1">Accounting period</label>
+          <select id="accounting_period_id-f1" name="accounting_period_id">
             <option value="">Missing</option>
             {% for period in periods %}
               <option value="{{ period.id }}" {% if context.project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>
@@ -25,28 +25,28 @@
           </select>
         </div>
         <div class="field">
-          <label>Outcome</label>
-          <select name="outcome">
+          <label for="outcome-f1">Outcome</label>
+          <select id="outcome-f1" name="outcome">
             {% for item in domain.PROJECT_OUTCOMES %}
               <option {% if context.project.outcome == item %}selected{% endif %}>{{ item }}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date" value="{{ context.project.rd_start_date or '' }}"></div>
-        <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date" value="{{ context.project.rd_end_date or '' }}"></div>
+        <div class="field"><label for="rd_start_date-f1">R&D start date</label><input id="rd_start_date-f1" name="rd_start_date" type="date" value="{{ context.project.rd_start_date or '' }}"></div>
+        <div class="field"><label for="rd_end_date-f1">R&D end date</label><input id="rd_end_date-f1" name="rd_end_date" type="date" value="{{ context.project.rd_end_date or '' }}"></div>
       </div>
-      <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology">{{ context.project.field_of_science_or_technology }}</textarea></div>
-      <div class="field"><label>Baseline level of knowledge/capability at project start</label><textarea name="baseline_knowledge">{{ context.project.baseline_knowledge }}</textarea></div>
-      <div class="field"><label>Advance sought</label><textarea name="advance_sought">{{ context.project.advance_sought }}</textarea></div>
-      <div class="field"><label>Why the advance is in the wider field</label><textarea name="wider_field_explanation">{{ context.project.wider_field_explanation }}</textarea></div>
-      <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties">{{ context.project.scientific_or_technological_uncertainties }}</textarea></div>
-      <div class="field"><label>Why competent professionals could not readily resolve it</label><textarea name="competent_professionals_could_not_resolve">{{ context.project.competent_professionals_could_not_resolve }}</textarea></div>
-      <div class="field"><label>System uncertainty explanation</label><textarea name="system_uncertainty_explanation">{{ context.project.system_uncertainty_explanation }}</textarea></div>
-      <div class="field"><label>Alternatives considered</label><textarea name="alternatives_considered">{{ context.project.alternatives_considered }}</textarea></div>
-      <div class="field"><label>Experiments, prototypes, models, simulations, tests, iterations</label><textarea name="experiments_prototypes_tests">{{ context.project.experiments_prototypes_tests }}</textarea></div>
-      <div class="field"><label>Failed attempts</label><textarea name="failed_attempts">{{ context.project.failed_attempts }}</textarea></div>
-      <div class="field"><label>Boundary explanation: when R&D started and stopped</label><textarea name="boundary_explanation">{{ context.project.boundary_explanation }}</textarea></div>
-      <div class="field"><label>Non-qualifying delivery activities to exclude</label><textarea name="non_qualifying_delivery_activities">{{ context.project.non_qualifying_delivery_activities }}</textarea></div>
+      <div class="field"><label for="field_of_science_or_technology-f1">Field of science or technology</label><textarea id="field_of_science_or_technology-f1" name="field_of_science_or_technology">{{ context.project.field_of_science_or_technology }}</textarea></div>
+      <div class="field"><label for="baseline_knowledge-f1">Baseline level of knowledge/capability at project start</label><textarea id="baseline_knowledge-f1" name="baseline_knowledge">{{ context.project.baseline_knowledge }}</textarea></div>
+      <div class="field"><label for="advance_sought-f1">Advance sought</label><textarea id="advance_sought-f1" name="advance_sought">{{ context.project.advance_sought }}</textarea></div>
+      <div class="field"><label for="wider_field_explanation-f1">Why the advance is in the wider field</label><textarea id="wider_field_explanation-f1" name="wider_field_explanation">{{ context.project.wider_field_explanation }}</textarea></div>
+      <div class="field"><label for="scientific_or_technological_uncertainties-f1">Scientific or technological uncertainties</label><textarea id="scientific_or_technological_uncertainties-f1" name="scientific_or_technological_uncertainties">{{ context.project.scientific_or_technological_uncertainties }}</textarea></div>
+      <div class="field"><label for="competent_professionals_could_not_resolve-f1">Why competent professionals could not readily resolve it</label><textarea id="competent_professionals_could_not_resolve-f1" name="competent_professionals_could_not_resolve">{{ context.project.competent_professionals_could_not_resolve }}</textarea></div>
+      <div class="field"><label for="system_uncertainty_explanation-f1">System uncertainty explanation</label><textarea id="system_uncertainty_explanation-f1" name="system_uncertainty_explanation">{{ context.project.system_uncertainty_explanation }}</textarea></div>
+      <div class="field"><label for="alternatives_considered-f1">Alternatives considered</label><textarea id="alternatives_considered-f1" name="alternatives_considered">{{ context.project.alternatives_considered }}</textarea></div>
+      <div class="field"><label for="experiments_prototypes_tests-f1">Experiments, prototypes, models, simulations, tests, iterations</label><textarea id="experiments_prototypes_tests-f1" name="experiments_prototypes_tests">{{ context.project.experiments_prototypes_tests }}</textarea></div>
+      <div class="field"><label for="failed_attempts-f1">Failed attempts</label><textarea id="failed_attempts-f1" name="failed_attempts">{{ context.project.failed_attempts }}</textarea></div>
+      <div class="field"><label for="boundary_explanation-f1">Boundary explanation: when R&D started and stopped</label><textarea id="boundary_explanation-f1" name="boundary_explanation">{{ context.project.boundary_explanation }}</textarea></div>
+      <div class="field"><label for="non_qualifying_delivery_activities-f1">Non-qualifying delivery activities to exclude</label><textarea id="non_qualifying_delivery_activities-f1" name="non_qualifying_delivery_activities">{{ context.project.non_qualifying_delivery_activities }}</textarea></div>
       <h3>Entitlement Facts</h3>
       <div class="checkbox-row">
         <label class="checkbox"><input type="checkbox" name="supplier_initiated_rd" {% if context.project.supplier_initiated_rd %}checked{% endif %}> Supplier initiated the R&D</label>
@@ -57,8 +57,8 @@
         <label class="checkbox"><input type="checkbox" name="described_in_aif" {% if context.project.described_in_aif %}checked{% endif %}> Included in AIF project descriptions</label>
       </div>
       <div class="field">
-        <label>Company role</label>
-        <select name="company_role">
+        <label for="company_role-f1">Company role</label>
+        <select id="company_role-f1" name="company_role">
           {% for item in domain.COMPANY_ROLES %}<option {% if context.project.company_role == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
         </select>
       </div>

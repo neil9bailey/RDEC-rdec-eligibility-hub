@@ -36,29 +36,29 @@
               <details class="record-editor">
                 <summary>View or edit project</summary>
                 <form method="post" action="/projects/{{ project.id }}/update">
-                  <div class="field"><label>Project title</label><input name="project_title" value="{{ project.project_title }}" required></div>
+                  <div class="field"><label for="project_title-f1-{{ project.id }}">Project title</label><input id="project_title-f1-{{ project.id }}" name="project_title" value="{{ project.project_title }}" required></div>
                   <div class="form-grid">
                     <div class="field">
-                      <label>Solution</label>
-                      <select name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}" {% if project.solution_id == solution.id %}selected{% endif %}>{{ solution.solution_name }}</option>{% endfor %}</select>
+                      <label for="solution_id-f1-{{ project.id }}">Solution</label>
+                      <select id="solution_id-f1-{{ project.id }}" name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}" {% if project.solution_id == solution.id %}selected{% endif %}>{{ solution.solution_name }}</option>{% endfor %}</select>
                     </div>
                     <div class="field">
-                      <label>Accounting period</label>
-                      <select name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}" {% if project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>{% endfor %}</select>
+                      <label for="accounting_period_id-f1-{{ project.id }}">Accounting period</label>
+                      <select id="accounting_period_id-f1-{{ project.id }}" name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}" {% if project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>{% endfor %}</select>
                     </div>
                   </div>
-                  <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology">{{ project.field_of_science_or_technology }}</textarea></div>
-                  <div class="field"><label>Baseline level of knowledge/capability</label><textarea name="baseline_knowledge">{{ project.baseline_knowledge }}</textarea></div>
-                  <div class="field"><label>Advance sought</label><textarea name="advance_sought">{{ project.advance_sought }}</textarea></div>
-                  <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties">{{ project.scientific_or_technological_uncertainties }}</textarea></div>
+                  <div class="field"><label for="field_of_science_or_technology-f1-{{ project.id }}">Field of science or technology</label><textarea id="field_of_science_or_technology-f1-{{ project.id }}" name="field_of_science_or_technology">{{ project.field_of_science_or_technology }}</textarea></div>
+                  <div class="field"><label for="baseline_knowledge-f1-{{ project.id }}">Baseline level of knowledge/capability</label><textarea id="baseline_knowledge-f1-{{ project.id }}" name="baseline_knowledge">{{ project.baseline_knowledge }}</textarea></div>
+                  <div class="field"><label for="advance_sought-f1-{{ project.id }}">Advance sought</label><textarea id="advance_sought-f1-{{ project.id }}" name="advance_sought">{{ project.advance_sought }}</textarea></div>
+                  <div class="field"><label for="scientific_or_technological_uncertainties-f1-{{ project.id }}">Scientific or technological uncertainties</label><textarea id="scientific_or_technological_uncertainties-f1-{{ project.id }}" name="scientific_or_technological_uncertainties">{{ project.scientific_or_technological_uncertainties }}</textarea></div>
                   <div class="form-grid">
-                    <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date" value="{{ project.rd_start_date or '' }}"></div>
-                    <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date" value="{{ project.rd_end_date or '' }}"></div>
+                    <div class="field"><label for="rd_start_date-f1-{{ project.id }}">R&D start date</label><input id="rd_start_date-f1-{{ project.id }}" name="rd_start_date" type="date" value="{{ project.rd_start_date or '' }}"></div>
+                    <div class="field"><label for="rd_end_date-f1-{{ project.id }}">R&D end date</label><input id="rd_end_date-f1-{{ project.id }}" name="rd_end_date" type="date" value="{{ project.rd_end_date or '' }}"></div>
                   </div>
-                  <div class="field"><label>Boundary explanation</label><textarea name="boundary_explanation">{{ project.boundary_explanation }}</textarea></div>
+                  <div class="field"><label for="boundary_explanation-f1-{{ project.id }}">Boundary explanation</label><textarea id="boundary_explanation-f1-{{ project.id }}" name="boundary_explanation">{{ project.boundary_explanation }}</textarea></div>
                   <div class="field">
-                    <label>Outcome</label>
-                    <select name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option {% if project.outcome == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    <label for="outcome-f1-{{ project.id }}">Outcome</label>
+                    <select id="outcome-f1-{{ project.id }}" name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option {% if project.outcome == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                   </div>
                   <button type="submit">Update project</button>
                 </form>
@@ -76,29 +76,29 @@
   <div class="panel">
     <h2>Add Project</h2>
     <form method="post" action="/projects">
-      <div class="field"><label>Project title</label><input name="project_title" required></div>
+      <div class="field"><label for="project_title-f3">Project title</label><input id="project_title-f3" name="project_title" required></div>
       <div class="form-grid">
         <div class="field">
-          <label>Solution</label>
-          <select name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}">{{ solution.solution_name }}</option>{% endfor %}</select>
+          <label for="solution_id-f3">Solution</label>
+          <select id="solution_id-f3" name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}">{{ solution.solution_name }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Accounting period</label>
-          <select name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}">{{ period.label }}</option>{% endfor %}</select>
+          <label for="accounting_period_id-f3">Accounting period</label>
+          <select id="accounting_period_id-f3" name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}">{{ period.label }}</option>{% endfor %}</select>
         </div>
       </div>
-      <div class="field"><label>Field of science or technology</label><textarea name="field_of_science_or_technology"></textarea></div>
-      <div class="field"><label>Baseline level of knowledge/capability</label><textarea name="baseline_knowledge"></textarea></div>
-      <div class="field"><label>Advance sought</label><textarea name="advance_sought"></textarea></div>
-      <div class="field"><label>Scientific or technological uncertainties</label><textarea name="scientific_or_technological_uncertainties"></textarea></div>
+      <div class="field"><label for="field_of_science_or_technology-f3">Field of science or technology</label><textarea id="field_of_science_or_technology-f3" name="field_of_science_or_technology"></textarea></div>
+      <div class="field"><label for="baseline_knowledge-f3">Baseline level of knowledge/capability</label><textarea id="baseline_knowledge-f3" name="baseline_knowledge"></textarea></div>
+      <div class="field"><label for="advance_sought-f3">Advance sought</label><textarea id="advance_sought-f3" name="advance_sought"></textarea></div>
+      <div class="field"><label for="scientific_or_technological_uncertainties-f3">Scientific or technological uncertainties</label><textarea id="scientific_or_technological_uncertainties-f3" name="scientific_or_technological_uncertainties"></textarea></div>
       <div class="form-grid">
-        <div class="field"><label>R&D start date</label><input name="rd_start_date" type="date"></div>
-        <div class="field"><label>R&D end date</label><input name="rd_end_date" type="date"></div>
+        <div class="field"><label for="rd_start_date-f3">R&D start date</label><input id="rd_start_date-f3" name="rd_start_date" type="date"></div>
+        <div class="field"><label for="rd_end_date-f3">R&D end date</label><input id="rd_end_date-f3" name="rd_end_date" type="date"></div>
       </div>
-      <div class="field"><label>Boundary explanation</label><textarea name="boundary_explanation"></textarea></div>
+      <div class="field"><label for="boundary_explanation-f3">Boundary explanation</label><textarea id="boundary_explanation-f3" name="boundary_explanation"></textarea></div>
       <div class="field">
-        <label>Outcome</label>
-        <select name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option>{{ item }}</option>{% endfor %}</select>
+        <label for="outcome-f3">Outcome</label>
+        <select id="outcome-f3" name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option>{{ item }}</option>{% endfor %}</select>
       </div>
       <button type="submit">Create project</button>
     </form>

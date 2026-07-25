@@ -16,36 +16,36 @@
       <input type="hidden" name="cost_input_type" value="people_time">
       <input type="hidden" name="cost_category" value="staff">
       <div class="form-grid">
-        <div class="field"><label>Person name</label><input name="person_or_supplier_name" placeholder="Employee or worker name"></div>
-        <div class="field"><label>Role</label><input name="person_role" placeholder="Engineer, architect, tester, delivery lead"></div>
+        <div class="field"><label for="person_or_supplier_name-f1">Person name</label><input id="person_or_supplier_name-f1" name="person_or_supplier_name" placeholder="Employee or worker name"></div>
+        <div class="field"><label for="person_role-f1">Role</label><input id="person_role-f1" name="person_role" placeholder="Engineer, architect, tester, delivery lead"></div>
         <div class="field">
-          <label>Activity</label>
-          <input name="activity" placeholder="Prototype, test, spike, or qualifying indirect activity">
+          <label for="activity-f1">Activity</label>
+          <input id="activity-f1" name="activity" placeholder="Prototype, test, spike, or qualifying indirect activity">
         </div>
-        <div class="field"><label>Time period start</label><input name="time_period_start" type="date"></div>
-        <div class="field"><label>Time period end</label><input name="time_period_end" type="date"></div>
-        <div class="field"><label>Hours</label><input name="hours" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>Hourly cost rate</label><input name="hourly_rate" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>Days</label><input name="days" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>Day cost rate</label><input name="day_rate" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>Gross cost override</label><input name="gross_cost" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>R&D apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="time_period_start-f1">Time period start</label><input id="time_period_start-f1" name="time_period_start" type="date"></div>
+        <div class="field"><label for="time_period_end-f1">Time period end</label><input id="time_period_end-f1" name="time_period_end" type="date"></div>
+        <div class="field"><label for="hours-f1">Hours</label><input id="hours-f1" name="hours" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="hourly_rate-f1">Hourly cost rate</label><input id="hourly_rate-f1" name="hourly_rate" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="days-f1">Days</label><input id="days-f1" name="days" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="day_rate-f1">Day cost rate</label><input id="day_rate-f1" name="day_rate" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="gross_cost-f1">Gross cost override</label><input id="gross_cost-f1" name="gross_cost" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="apportionment_percentage-f1">R&D apportionment percentage</label><input id="apportionment_percentage-f1" name="apportionment_percentage" type="number" min="0" step="0.01"></div>
         <div class="field">
-          <label>Paid status</label>
-          <select name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
-        </div>
-        <div class="field">
-          <label>UK or overseas</label>
-          <select name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="paid_status-f1">Paid status</label>
+          <select id="paid_status-f1" name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Connected party status</label>
-          <select name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="uk_or_overseas-f1">UK or overseas</label>
+          <select id="uk_or_overseas-f1" name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label for="connected_party_status-f1">Connected party status</label>
+          <select id="connected_party_status-f1" name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
       </div>
-      <div class="field"><label>PAYE / NIC notes</label><textarea name="paye_nic_notes" placeholder="Payroll basis, employment status, EPW notes, or rate source"></textarea></div>
-      <div class="field"><label>Timesheet / PSA evidence link</label><input name="evidence_link" placeholder="Timesheet, PSA entry, resource plan, or finance reference"></div>
-      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <div class="field"><label for="paye_nic_notes-f1">PAYE / NIC notes</label><textarea id="paye_nic_notes-f1" name="paye_nic_notes" placeholder="Payroll basis, employment status, EPW notes, or rate source"></textarea></div>
+      <div class="field"><label for="evidence_link-f1">Timesheet / PSA evidence link</label><input id="evidence_link-f1" name="evidence_link" placeholder="Timesheet, PSA entry, resource plan, or finance reference"></div>
+      <div class="field"><label for="notes-f1">Notes</label><textarea id="notes-f1" name="notes"></textarea></div>
       <button type="submit">Add people time</button>
     </form>
   </section>
@@ -54,30 +54,30 @@
     <form method="post" action="/projects/{{ context.project.id }}/costs" hx-post="/projects/{{ context.project.id }}/costs" hx-target="#cost-lines" hx-swap="outerHTML">
       <input type="hidden" name="cost_input_type" value="direct_cost">
       <div class="form-grid">
-        <div class="field"><label>Activity</label><input name="activity" placeholder="Prototype, test, spike, or QIA activity"></div>
+        <div class="field"><label for="activity-f2">Activity</label><input id="activity-f2" name="activity" placeholder="Prototype, test, spike, or QIA activity"></div>
         <div class="field">
-          <label>Cost category</label>
-          <select name="cost_category">{% for item in domain.COST_CATEGORIES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="cost_category-f2">Cost category</label>
+          <select id="cost_category-f2" name="cost_category">{% for item in domain.COST_CATEGORIES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Person / supplier name</label><input name="person_or_supplier_name"></div>
-        <div class="field"><label>Gross cost</label><input name="gross_cost" type="number" min="0" step="0.01"></div>
-        <div class="field"><label>R&D apportionment percentage</label><input name="apportionment_percentage" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="person_or_supplier_name-f2">Person / supplier name</label><input id="person_or_supplier_name-f2" name="person_or_supplier_name"></div>
+        <div class="field"><label for="gross_cost-f2">Gross cost</label><input id="gross_cost-f2" name="gross_cost" type="number" min="0" step="0.01"></div>
+        <div class="field"><label for="apportionment_percentage-f2">R&D apportionment percentage</label><input id="apportionment_percentage-f2" name="apportionment_percentage" type="number" min="0" step="0.01"></div>
         <div class="field">
-          <label>Paid status</label>
-          <select name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
-        </div>
-        <div class="field">
-          <label>UK or overseas</label>
-          <select name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="paid_status-f2">Paid status</label>
+          <select id="paid_status-f2" name="paid_status">{% for item in domain.PAID_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Connected party status</label>
-          <select name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="uk_or_overseas-f2">UK or overseas</label>
+          <select id="uk_or_overseas-f2" name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option>{{ item }}</option>{% endfor %}</select>
+        </div>
+        <div class="field">
+          <label for="connected_party_status-f2">Connected party status</label>
+          <select id="connected_party_status-f2" name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
       </div>
-      <div class="field"><label>PAYE / NIC notes</label><textarea name="paye_nic_notes"></textarea></div>
-      <div class="field"><label>Evidence link</label><input name="evidence_link" placeholder="Timesheet, invoice, finance reference, cloud billing path"></div>
-      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <div class="field"><label for="paye_nic_notes-f2">PAYE / NIC notes</label><textarea id="paye_nic_notes-f2" name="paye_nic_notes"></textarea></div>
+      <div class="field"><label for="evidence_link-f2">Evidence link</label><input id="evidence_link-f2" name="evidence_link" placeholder="Timesheet, invoice, finance reference, cloud billing path"></div>
+      <div class="field"><label for="notes-f2">Notes</label><textarea id="notes-f2" name="notes"></textarea></div>
       <button type="submit">Add cost</button>
     </form>
   </section>
