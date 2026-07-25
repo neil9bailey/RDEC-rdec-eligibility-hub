@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import json
+import logging
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Request
@@ -10,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, col, select
 
-from app import domain
+from app import data_integrity, database, domain
 from app.audit import compact_snapshot, log_event
 from app.company_setup import (
     accounting_period_label,
@@ -19,7 +20,8 @@ from app.company_setup import (
     validate_accounting_period_dates,
     validate_company_payload,
 )
-from app.database import engine, get_session, init_db
+from app.data_integrity import apply_foreign_key_policy
+from app.database import engine, get_session, init_db, set_fk_enforcement
 from app.data_management import (
     DATASETS,
     DEPENDENCY_RULES,
@@ -118,6 +120,9 @@ from app.services import (
 from app.settings import BASE_DIR, get_settings
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -130,7 +135,31 @@ async def lifespan(app: FastAPI):
     if settings.seed_demo_data:
         with Session(engine) as session:
             seed_demo_data(session)
-    yield
+
+    # ADR-0005 D3.3: init_db() first, then the orphan scan with enforcement still off, then either
+    # switch link checking on or withhold it and report. The scan sits after seeding rather than
+    # between init_db() and it, deliberately: seeding writes on every start, and running those
+    # writes under a control that has never been live before would turn a tolerated orphan into a
+    # refusal to start. The ADR guardrail is "fail closed on the control, never on the application",
+    # and a scan taken here also reads the database exactly as the first request will see it.
+    previous_enforcement = database.FK_ENFORCEMENT
+    try:
+        with Session(engine) as session:
+            apply_foreign_key_policy(session, engine)
+    except Exception:
+        # Same guardrail. A defect in the scan itself must not stop the sponsor's app from
+        # starting; it withholds the new control and says so loudly in the log.
+        logger.exception("The link integrity scan failed, so link checking stays switched off.")
+        set_fk_enforcement(False, engine)
+    try:
+        yield
+    finally:
+        # Startup installs process-global state (the enforcement flag and the orphan report).
+        # Shutdown hands it back so a second lifecycle in the same process starts from where the
+        # first one did instead of inheriting it.
+        data_integrity.INTEGRITY_REPORT = ()
+        data_integrity.INTEGRITY_WARNING = None
+        set_fk_enforcement(previous_enforcement, engine)
 
 
 app = FastAPI(title="R&D Claim Evidence Hub", lifespan=lifespan)
@@ -158,6 +187,10 @@ def template_context(request: Request, **extra):
         "domain": domain,
         "flash_error": friendly_query_error(str(request.query_params.get("error") or "")),
         "flash_notice": str(request.query_params.get("notice") or ""),
+        # ADR-0005 D3.4. Read off the module rather than bound at import time: startup rebinds
+        # app.data_integrity.INTEGRITY_WARNING, and a from-import here would freeze the None it
+        # held when this module was first imported.
+        "data_integrity_warning": data_integrity.INTEGRITY_WARNING,
     }
     base.update(extra)
     return base

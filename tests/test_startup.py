@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
+from starlette.requests import Request
 
 import app.data_integrity as data_integrity
 import app.database as database
@@ -250,8 +251,8 @@ def test_demo_seeding_is_not_guarded_by_the_reference_sentinel(session):
 
 
 # Link integrity: pragma installation, constraint presence, and the orphan pre-scan.
-# ADR-0005 D1, D2 and D3. Nothing here is wired into the lifespan yet, so FK_ENFORCEMENT is False
-# in production until a later increment calls apply_foreign_key_policy().
+# ADR-0005 D1, D2 and D3. These exercise the control directly, against their own engine; the
+# lifespan tests further down prove the application actually calls it.
 
 
 FK_EVIDENCE_TABLES = (
@@ -440,6 +441,86 @@ def test_the_operator_escape_hatch_withholds_enforcement(fk_engine, monkeypatch)
 
     assert result.enforcement_enabled is False
     assert pragma_value(fk_engine) == 0
+
+
+# The lifespan wiring. Everything above proves the control works when it is called; these prove the
+# application actually calls it, which is the part that was still inert (ADR-0005 D3.3 and D3.4).
+
+
+def bare_request() -> Request:
+    """A minimal GET request, enough for template_context to read its query parameters."""
+    return Request(
+        {"type": "http", "method": "GET", "path": "/", "headers": [], "query_string": b""}
+    )
+
+
+def test_startup_switches_link_enforcement_on_when_the_scan_is_clean(startup_engine):
+    """D3.3 step 3, end to end: the pragma is live for requests, not merely flipped in a variable."""
+    assert database.FK_ENFORCEMENT is False
+    with TestClient(main.app) as client:
+        assert database.FK_ENFORCEMENT is True
+        assert pragma_value(startup_engine) == 1
+        assert data_integrity.INTEGRITY_WARNING is None
+        assert main.template_context(bare_request())["data_integrity_warning"] is None
+        assert client.get("/").status_code == 200
+
+    # Shutdown hands the process-global flag back, so one lifecycle cannot silently configure
+    # the next one.
+    assert database.FK_ENFORCEMENT is False
+
+
+def test_enforcement_switched_on_at_startup_rejects_an_orphan_write(startup_engine):
+    """The pragma the lifespan installs refuses a dangling link, rather than only reading as 1."""
+    with TestClient(main.app):
+        with Session(startup_engine) as session:
+            session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+            with pytest.raises(IntegrityError):
+                session.commit()
+            session.rollback()
+
+        with Session(startup_engine) as session:
+            assert list(session.exec(select(Contract))) == []
+
+
+def test_startup_withholds_enforcement_and_publishes_the_warning_for_an_orphan(startup_engine):
+    """D3: the app starts, says so on every page, and does not touch the operator's records."""
+    SQLModel.metadata.create_all(startup_engine)
+    with Session(startup_engine) as session:
+        seed_minimum_parents(session)
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+        before = [
+            (contract.id, contract.contract_name, contract.customer_id)
+            for contract in session.exec(select(Contract))
+        ]
+
+    with TestClient(main.app) as client:
+        assert database.FK_ENFORCEMENT is False
+        assert pragma_value(startup_engine) == 0
+        warning = data_integrity.INTEGRITY_WARNING
+        assert warning is not None and "link checking is switched off" in warning
+        assert main.template_context(bare_request())["data_integrity_warning"] == warning
+        assert client.get("/").status_code == 200
+
+    with Session(startup_engine) as session:
+        after = [
+            (contract.id, contract.contract_name, contract.customer_id)
+            for contract in session.exec(select(Contract))
+        ]
+    assert after == before
+
+
+def test_a_failing_integrity_scan_still_lets_the_application_start(startup_engine, monkeypatch):
+    """Guardrail: fail closed on the control, never on the application."""
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("scan defect")
+
+    monkeypatch.setattr(main, "apply_foreign_key_policy", explode)
+    with TestClient(main.app) as client:
+        assert database.FK_ENFORCEMENT is False
+        assert pragma_value(startup_engine) == 0
+        assert client.get("/healthz").status_code == 200
 
 
 # Operator-documentation conformance. These live here because README.md is the runbook for the
