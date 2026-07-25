@@ -1,4 +1,4 @@
-from base64 import urlsafe_b64encode
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 import csv
 from io import BytesIO, StringIO
 import json
@@ -8,12 +8,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
+from app import data_management
 from app.data_management import (
     DataOperationError,
     ImportIssue,
     apply_import,
     build_import_plan,
     cleanup_candidates,
+    consume_import_payload,
     csv_export_zip_bytes,
     decode_import_payload,
     delete_unused_records,
@@ -402,16 +404,140 @@ def test_apply_refuses_an_update_the_preview_never_disclosed(session):
     session.add(Company(company_name="Disclosed Limited", utr="1111111111"))
     session.commit()
 
-    # A hand-crafted payload carrying no disclosed identifier: it matches a live record by
+    # Hand-crafted rows carrying no disclosed identifier: they match a live record by
     # natural key, so the re-plan wants to update, but the operator was shown nothing.
-    forged = forged_payload("add_update", {"companies": [{"company_name": "Disclosed Limited", "utr": "9999999999"}]})
-    mode, approved = decode_import_payload(forged)
+    undisclosed = {"companies": [{"company_name": "Disclosed Limited", "utr": "9999999999"}]}
 
     with pytest.raises(DataOperationError) as exc:
-        apply_import(session, approved, mode)
+        apply_import(session, undisclosed, "add_update")
 
     assert "the preview did not show" in str(exc.value)
     assert session.exec(select(Company).where(Company.company_name == "Disclosed Limited")).first().utr == "1111111111"
+
+
+def test_a_preview_payload_can_only_be_applied_once(session):
+    """C3, the proven defect: one preview applied three times created three rows."""
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Replay Limited", "utr": "1111111111"}]},
+        "add_only",
+    )
+    payload = encode_import_payload(preview)
+
+    mode, approved = consume_import_payload(payload)
+    first = apply_import(session, approved, mode)
+    assert first == {"created": 1, "updated": 0, "skipped": 0}
+
+    for _ in range(2):
+        with pytest.raises(DataOperationError) as exc:
+            consume_import_payload(payload)
+        assert "already been applied" in str(exc.value)
+
+    companies = list(session.exec(select(Company).where(Company.company_name == "Replay Limited")))
+    assert len(companies) == 1
+
+
+def test_the_apply_route_applies_one_preview_once(session):
+    """The runtime-proven route path: the same payload POSTed three times."""
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Route Replay Import", "utr": "3333333333"}]},
+        "add_only",
+    )
+    payload = encode_import_payload(preview)
+
+    client = client_for(session)
+    statuses = []
+    try:
+        for _ in range(3):
+            response = client.post(
+                "/data-management/import/apply",
+                data={"import_payload": payload},
+                follow_redirects=False,
+            )
+            statuses.append(response.status_code)
+            last = response
+    finally:
+        app.dependency_overrides.clear()
+
+    assert statuses[0] in (302, 303)
+    assert statuses[1:] == [400, 400]
+    assert "already been applied" in last.text
+    created = list(session.exec(select(Company).where(Company.company_name == "Route Replay Import")))
+    assert len(created) == 1
+
+
+def test_a_spent_preview_stays_spent_even_when_the_import_it_carried_failed(session):
+    """ADR-0004 D4: the pop is unconditional; restoring it on failure is prohibited."""
+    session.add(Customer(customer_name="Race Customer"))
+    session.commit()
+    preview = build_import_plan(
+        session,
+        {"contracts": [{"contract_name": "Race Contract", "customer_id": 1}]},
+        "add_only",
+    )
+    payload = encode_import_payload(preview)
+
+    mode, approved = consume_import_payload(payload)
+    # The parent disappears between preview and apply, so the import itself fails.
+    session.delete(session.get(Customer, 1))
+    session.commit()
+    with pytest.raises(DataOperationError):
+        apply_import(session, approved, mode)
+
+    with pytest.raises(DataOperationError) as exc:
+        consume_import_payload(payload)
+    assert "already been applied" in str(exc.value)
+
+
+def test_a_tampered_payload_is_refused(session):
+    """The content hash: the nonce alone must not authenticate edited contents."""
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Honest Limited", "utr": "1111111111"}]},
+        "add_only",
+    )
+    payload = encode_import_payload(preview)
+    body = json.loads(urlsafe_b64decode(payload.encode("ascii")).decode("utf-8"))
+    body["datasets"]["companies"][0]["values"]["company_name"] = "Tampered Limited"
+    tampered = urlsafe_b64encode(json.dumps(body, separators=(",", ":")).encode("utf-8")).decode("ascii")
+
+    with pytest.raises(DataOperationError) as exc:
+        consume_import_payload(tampered)
+
+    assert "could not be read" in str(exc.value)
+    assert session.exec(select(Company).where(Company.company_name == "Tampered Limited")).first() is None
+
+
+def test_a_preview_from_before_a_restart_is_refused(session):
+    """ADR-0004 D4: an in-process nonce set does not survive a restart, and fails closed."""
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Restart Limited", "utr": "1111111111"}]},
+        "add_only",
+    )
+    payload = encode_import_payload(preview)
+    data_management._ISSUED_PREVIEWS.clear()
+    data_management._CONSUMED_PREVIEWS.clear()
+
+    with pytest.raises(DataOperationError) as exc:
+        consume_import_payload(payload)
+
+    assert "expired" in str(exc.value)
+
+
+def test_the_issued_preview_set_stays_bounded(session):
+    """ADR-0004 ARB checklist: the nonce set is bounded at 32 entries."""
+    data_management._ISSUED_PREVIEWS.clear()
+    for index in range(40):
+        preview = build_import_plan(
+            session,
+            {"companies": [{"company_name": f"Bounded {index}", "utr": "1111111111"}]},
+            "add_only",
+        )
+        encode_import_payload(preview)
+
+    assert len(data_management._ISSUED_PREVIEWS) <= 32
 
 
 def test_restore_by_identifier_is_off_by_default_at_every_entry_point(session):

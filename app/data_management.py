@@ -4,8 +4,11 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 import csv
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from hashlib import sha256
 from io import BytesIO, StringIO
 import json
+import secrets
+import time
 from typing import Any, get_args
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -1012,6 +1015,34 @@ def build_import_plan(
     }
 
 
+# ADR-0004 D4. A preview is single use. The payload itself is unauthenticated base64 posted
+# back as a form field, so re-posting it re-applied the import: one preview applied three
+# times created three rows. The used-set cannot be a table (ADR-0002 line 54 forbids schema
+# migration) and cannot be a signature (ADR-0001 line 110 forbids a persisted secret), so it
+# is an in-process nonce set with a content hash and an expiry. A restart invalidates
+# outstanding previews, which degrades fail-closed.
+_ISSUED_PREVIEWS: dict[str, tuple[int, str]] = {}
+_CONSUMED_PREVIEWS: dict[str, tuple[int, str]] = {}
+_PREVIEW_TTL_SECONDS = 30 * 60
+_MAX_TRACKED_PREVIEWS = 32
+EXPIRED_PREVIEW_MESSAGE = "The import preview has expired or is too large. Preview the file again."
+APPLIED_PREVIEW_MESSAGE = "This import preview has already been applied. Preview the file again."
+UNREADABLE_PREVIEW_MESSAGE = "The import preview could not be read. Preview the file again."
+
+
+def _bound_preview_store(store: dict[str, tuple[int, str]], now: int) -> None:
+    for nonce, (stamped_at, _) in list(store.items()):
+        if now - stamped_at > _PREVIEW_TTL_SECONDS:
+            store.pop(nonce, None)
+    while len(store) > _MAX_TRACKED_PREVIEWS:
+        store.pop(next(iter(store)), None)
+
+
+def _prune_previews(now: int) -> None:
+    _bound_preview_store(_ISSUED_PREVIEWS, now)
+    _bound_preview_store(_CONSUMED_PREVIEWS, now)
+
+
 def encode_import_payload(plan: dict[str, Any]) -> str:
     if plan["has_errors"]:
         return ""
@@ -1027,8 +1058,18 @@ def encode_import_payload(plan: dict[str, Any]) -> str:
                     "existing_id": row["existing_id"],
                 }
             )
-    payload = json.dumps({"mode": plan["mode"], "datasets": datasets}, separators=(",", ":"), ensure_ascii=True)
-    return urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
+    issued_at = int(time.time())
+    nonce = secrets.token_hex(16)
+    payload = json.dumps(
+        {"mode": plan["mode"], "nonce": nonce, "issued_at": issued_at, "datasets": datasets},
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    body = payload.encode("utf-8")
+    _prune_previews(issued_at)
+    _ISSUED_PREVIEWS[nonce] = (issued_at, sha256(body).hexdigest())
+    _bound_preview_store(_ISSUED_PREVIEWS, issued_at)
+    return urlsafe_b64encode(body).decode("ascii")
 
 
 def _payload_entry(entry: Any) -> tuple[dict[str, Any], int | None, int | None]:
@@ -1050,15 +1091,23 @@ def _payload_entry(entry: Any) -> tuple[dict[str, Any], int | None, int | None]:
     raise DataOperationError("The import preview is not valid. Preview the file again.")
 
 
-def decode_import_payload(
+def _read_import_payload(
     encoded: str, *, restore_by_identifier_enabled: bool = False
-) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+) -> tuple[str, dict[str, list[dict[str, Any]]], bytes, str]:
+    """Decode and structurally validate a payload. Performs no writes and consumes nothing.
+
+    The dataset checks below are ADR-0004 D5 layer 2 and deliberately run before the
+    single-use check, so a rejected dataset key still produces its own specific message.
+    A payload that fails here can never match an issued content hash, so no replay window
+    is opened by leaving its nonce outstanding.
+    """
     if not encoded or len(encoded) > MAX_IMPORT_BYTES * 2:
-        raise DataOperationError("The import preview has expired or is too large. Preview the file again.")
+        raise DataOperationError(EXPIRED_PREVIEW_MESSAGE)
     try:
-        decoded = json.loads(urlsafe_b64decode(encoded.encode("ascii")).decode("utf-8"))
+        body = urlsafe_b64decode(encoded.encode("ascii"))
+        decoded = json.loads(body.decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DataOperationError("The import preview could not be read. Preview the file again.") from exc
+        raise DataOperationError(UNREADABLE_PREVIEW_MESSAGE) from exc
     mode = decoded.get("mode")
     datasets = decoded.get("datasets")
     if mode not in IMPORT_MODES or not isinstance(datasets, dict):
@@ -1077,7 +1126,50 @@ def decode_import_payload(
             raise DataOperationError(issue.message)
         if not isinstance(rows, list):
             raise DataOperationError("The import preview is not valid. Preview the file again.")
+    nonce = decoded.get("nonce")
+    return mode, datasets, body, nonce if isinstance(nonce, str) else ""
+
+
+def consume_import_payload(
+    encoded: str, *, restore_by_identifier_enabled: bool = False
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    """Read a preview payload exactly once (ADR-0004 D4).
+
+    The nonce is popped unconditionally, before any write and before the content hash and
+    expiry are checked, so a preview is spent whether or not the import that follows it
+    succeeds. Restoring the nonce on failure would reopen the replay window and is
+    prohibited.
+    """
+    mode, datasets, body, nonce = _read_import_payload(
+        encoded, restore_by_identifier_enabled=restore_by_identifier_enabled
+    )
+    now = int(time.time())
+    _prune_previews(now)
+    issued = _ISSUED_PREVIEWS.pop(nonce, None) if nonce else None
+    if issued is None:
+        if nonce and nonce in _CONSUMED_PREVIEWS:
+            raise DataOperationError(APPLIED_PREVIEW_MESSAGE)
+        raise DataOperationError(EXPIRED_PREVIEW_MESSAGE)
+    issued_at, digest = issued
+    _CONSUMED_PREVIEWS[nonce] = (now, digest)
+    _bound_preview_store(_CONSUMED_PREVIEWS, now)
+    if sha256(body).hexdigest() != digest:
+        raise DataOperationError(UNREADABLE_PREVIEW_MESSAGE)
+    if now - issued_at > _PREVIEW_TTL_SECONDS:
+        raise DataOperationError(EXPIRED_PREVIEW_MESSAGE)
     return mode, datasets
+
+
+def decode_import_payload(
+    encoded: str, *, restore_by_identifier_enabled: bool = False
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+    """Deprecated alias for consume_import_payload.
+
+    ADR-0004 D4 replaces the apply route's call with consume_import_payload. Until
+    app/main.py is wired to the new name this alias consumes as well, so the apply route is
+    fail-closed now rather than after the wiring. Delete it once the route has moved.
+    """
+    return consume_import_payload(encoded, restore_by_identifier_enabled=restore_by_identifier_enabled)
 
 
 def apply_import(
