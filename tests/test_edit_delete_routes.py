@@ -112,13 +112,15 @@ def test_delete_linked_customer_is_blocked(seeded_session):
 #   POST /projects/{missing}/competent-professional  303, one orphan opinion committed
 #   POST /claim-periods/{missing}/readiness          303, one orphan submission status committed
 #
-# Expected behaviour is the same as the delete routes: redirect (303) and write nothing.
+# Expected behaviour is the same as the delete routes: redirect (303) and write nothing. Every
+# case was a strict xfail until the read routes started looking the record up (E3-D1) and the POST
+# routes started checking the parent before building the child (E3-D2). The markers are gone and
+# the cases below stand as the regression net.
 #
-# The read routes now look the record up and redirect (E3-D1), so their markers are gone. The four
-# POST routes still write first and check later, so they keep a strict xfail until E3-D2 lands.
-#
-# The row-count assertion is the load-bearing half: two of these cases already return the right
-# status code and are only detectable by counting rows.
+# The row-count assertion is the load-bearing half and must not be reduced to a status check: two
+# of these cases returned a perfectly correct 303 while committing the orphan row, so they were
+# only ever detectable by counting rows. This also has to keep holding once foreign keys are
+# enforced (ADR-0005), where an orphan write becomes a hard error rather than a silent row.
 
 MISSING_ID = 999999
 
@@ -164,21 +166,10 @@ MISSING_RECORD_ROUTES = [
     ("POST", f"/claim-periods/{MISSING_ID}/readiness", VALID_READINESS_FORM),
 ]
 
-ORPHAN_WRITE_XFAIL = (
-    "The POST routes build the child row from the posted form and save it before anything checks "
-    "that the parent exists, so a missing id commits an orphan. Pending the app/main.py baton "
-    "owner's E3-D2 fix."
-)
-
-
-def missing_record_case(method: str, path: str, form: dict | None):
-    marks = [pytest.mark.xfail(strict=True, reason=ORPHAN_WRITE_XFAIL)] if method == "POST" else []
-    return pytest.param(method, path, form, marks=marks, id=f"{method} {path}")
-
-
 @pytest.mark.parametrize(
     "method, path, form",
-    [missing_record_case(*route) for route in MISSING_RECORD_ROUTES],
+    MISSING_RECORD_ROUTES,
+    ids=[f"{method} {path}" for method, path, _ in MISSING_RECORD_ROUTES],
 )
 def test_routes_for_a_missing_record_redirect_and_write_nothing(seeded_session, method, path, form):
     def override_session():

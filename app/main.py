@@ -2091,6 +2091,12 @@ def project_costs(project_id: int, request: Request, session: Session = Depends(
 @app.post("/projects/{project_id}/costs")
 async def add_project_cost(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    # The parent is checked before the child row is built, not after. These add routes used to
+    # save first and fail later, which committed a cost line, an evidence item, an opinion or a
+    # submission status pointing at a project or period that does not exist - an orphan that no
+    # screen can reach but that still counts towards claim totals and change history.
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     errors: list[str] = []
     cost = cost_line_from_form(form, project_id, errors)
     if errors:
@@ -2152,6 +2158,8 @@ def project_evidence(project_id: int, request: Request, session: Session = Depen
 @app.post("/projects/{project_id}/evidence")
 async def add_project_evidence(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     errors: list[str] = []
     date_created = parse_optional_date(form.get("date_created"), "Evidence date created", errors)
     source_system = parse_enum(form.get("source_system"), domain.SOURCE_SYSTEMS, "Source system", errors, "Manual upload / note")
@@ -2230,6 +2238,8 @@ def project_competent_professional(project_id: int, request: Request, session: S
 @app.post("/projects/{project_id}/competent-professional")
 async def add_competent_professional(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     errors: list[str] = []
     years = parse_optional_int(form.get("years_relevant_experience"), "Years of relevant experience", errors) or 0
     signoff_status = parse_enum(form.get("signoff_status"), domain.SIGNOFF_STATUSES, "Sign-off status", errors, "draft")
@@ -2327,6 +2337,8 @@ def claim_period_readiness(period_id: int, request: Request, session: Session = 
 @app.post("/claim-periods/{period_id}/readiness")
 async def update_claim_period_submission(period_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    if not session.get(AccountingPeriod, period_id):
+        return redirect("/companies")
     submission = session.exec(
         select(ClaimPeriodSubmissionStatus).where(ClaimPeriodSubmissionStatus.accounting_period_id == period_id)
     ).first()
