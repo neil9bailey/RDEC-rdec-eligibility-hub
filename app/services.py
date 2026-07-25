@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
+from math import isfinite
 from typing import Iterable
 
 from sqlmodel import Session, col, select
@@ -62,8 +63,29 @@ def money(value: float | int | None) -> str:
     return f"GBP {float(value or 0):,.2f}"
 
 
+def is_finite_number(value: float | int | None) -> bool:
+    try:
+        return isfinite(float(value or 0))
+    except (TypeError, ValueError):
+        return False
+
+
 def calculate_qualifying_amount(gross_cost: float, apportionment_percentage: float) -> float:
-    return round(float(gross_cost or 0) * float(apportionment_percentage or 0) / 100, 2)
+    """Qualifying amount, guarded against non-finite input and overflow.
+
+    A stored nan/inf gross cost or percentage previously propagated straight into
+    report totals and CSV exports (and returned HTTP 500 for "nan"). The guard
+    here is a last-resort arithmetic safety net, not the control: the real
+    control is validation at the form layer (app.form_utils.parse_money /
+    parse_percentage). Whenever this guard fires, cost_validation_warnings()
+    surfaces the affected cost line so the degrade is visible, never silent.
+    """
+    if not is_finite_number(gross_cost) or not is_finite_number(apportionment_percentage):
+        return 0.0
+    amount = float(gross_cost or 0) * float(apportionment_percentage or 0) / 100
+    if not isfinite(amount):
+        return 0.0
+    return round(amount, 2)
 
 
 def calculate_people_time_gross(hours: float, hourly_rate: float, days: float, day_rate: float) -> float:
@@ -71,7 +93,20 @@ def calculate_people_time_gross(hours: float, hourly_rate: float, days: float, d
 
 
 def project_qualifying_spend(costs: Iterable[CostLine]) -> float:
-    return round(sum(c.qualifying_amount or calculate_qualifying_amount(c.gross_cost, c.apportionment_percentage) for c in costs), 2)
+    """Total qualifying spend, excluding any cost line that is not a real number.
+
+    A single stored nan or inf would otherwise poison the whole total, and a nan
+    total silently defeats every downstream comparison (nan <= 0 is False, so a
+    period would report as ready). Excluded lines are flagged individually by
+    cost_validation_warnings().
+    """
+    total = 0.0
+    for cost in costs:
+        amount = cost.qualifying_amount or calculate_qualifying_amount(cost.gross_cost, cost.apportionment_percentage)
+        if not is_finite_number(amount):
+            continue
+        total += float(amount or 0)
+    return round(total, 2)
 
 
 def get_project_context(session: Session, project_id: int) -> ProjectContext:
@@ -148,6 +183,19 @@ def cost_validation_warnings(cost: CostLine) -> list[str]:
         warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('overseas_contractor_or_epw')}")
     if not has_text(cost.evidence_link):
         warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('missing_evidence')}")
+    if not is_finite_number(cost.gross_cost) or not is_finite_number(cost.apportionment_percentage):
+        warnings.append(
+            f"Cost line {cost.id or '-'} holds a gross cost or apportionment percentage that is not a "
+            "real number, so it is excluded from qualifying amount totals until it is corrected."
+        )
+    if is_finite_number(cost.gross_cost) and float(cost.gross_cost or 0) < 0:
+        warnings.append(
+            f"Cost line {cost.id or '-'} has a negative gross cost, which reduces the claimed total."
+        )
+    if is_finite_number(cost.apportionment_percentage) and float(cost.apportionment_percentage or 0) < 0:
+        warnings.append(
+            f"Cost line {cost.id or '-'} has a negative apportionment percentage."
+        )
     if cost.apportionment_percentage > 100:
         warnings.append(f"Cost line {cost.id or '-'}: {rules.cost_validation_flag('apportionment_over_100')}")
     if not cost.activity_id and not has_text(cost.activity):
