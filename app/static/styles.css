@@ -2130,8 +2130,15 @@ button.danger-button:hover {
   background: var(--telent-purple);
 }
 
+/* The real radio is opacity: 0, so this outline is the ONLY focus indicator these
+   controls have -- and the import mode is chosen here. The previous
+   rgba(0, 160, 181, 0.25) composited to roughly 1.2:1, the same defect already
+   pinned as the pre-fix baseline for the form-control ring. Same token, and the
+   offset lifts the ring clear of the checked purple pill so both of its adjacent
+   colours are the #eef1f4 track, which it clears at 5.6:1. */
 .segmented-options input:focus-visible + span {
-  outline: 3px solid rgba(0, 160, 181, 0.25);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .trust-note {

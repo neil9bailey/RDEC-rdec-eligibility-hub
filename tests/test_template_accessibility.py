@@ -723,6 +723,252 @@ def test_raw_enum_shapes_are_not_displayed_as_badge_text() -> None:
 # --------------------------------------------------------------------------
 
 
+# ==========================================================================
+# E2-FE-3: the import-preview disclosure markup holds the same standard
+#
+# The detectors above glob every template, so app/templates/data_management.html
+# and its new preview markup are already inside every one of them. The tests
+# below add what those detectors cannot see: that the detectors actually reach
+# the new markup, that the disclosure ADR-0004 D1.3/D1.4 mandates is present,
+# that meaning is never carried by a glyph alone, and that amber is reserved for
+# states that need attention.
+# ==========================================================================
+
+DATA_MANAGEMENT_TEMPLATE = TEMPLATE_DIR / "data_management.html"
+
+#: ADR-0004 D1.4 and D1.3. Each of these is a disclosure the preview must render.
+REQUIRED_PREVIEW_DISCLOSURE = (
+    "row.existing_display",
+    "row.existing_id",
+    "row.changed_fields",
+    "row.no_change",
+    "import_preview.notices",
+)
+
+
+@pytest.fixture(scope="module")
+def data_management_source() -> str:
+    """The template with Jinja comments stripped.
+
+    A comment is not rendered and, more to the point here, a comment that
+    *names* the thing under test would satisfy or defeat a source-level
+    assertion without any markup existing.
+    """
+    source = DATA_MANAGEMENT_TEMPLATE.read_text(encoding="utf-8")
+    return re.sub(r"\{#.*?#\}", "", source, flags=re.S)
+
+
+def test_preview_renders_the_ratified_issue_shape(data_management_source: str) -> None:
+    """ADR-0004 D7. ``issues`` is the contract; ``errors`` was a temporary mirror.
+
+    The mirror existed only so the un-wired template would not print dataclass
+    reprs at users. While the template still reads it, it cannot be deleted.
+    """
+    assert "row.issues" in data_management_source, (
+        "the preview must render row.issues, the ratified ImportIssue shape"
+    )
+    assert "issue.message" in data_management_source, (
+        "the message is the only part of an issue a person reads"
+    )
+    assert not re.search(r"\brow\.errors\b", data_management_source), (
+        "the preview still reads the derived row['errors'] mirror, so the "
+        "governance-engine Principal cannot delete it"
+    )
+
+
+def test_preview_never_parses_an_issue_message(data_management_source: str) -> None:
+    """D7: ``code`` is the contract a frontend may branch on, ``message`` is not."""
+    offenders = re.findall(
+        r"issue\.message\s*(?:\||\.)\s*(\w+)", data_management_source
+    )
+    assert not offenders, (
+        f"the template applies {offenders} to issue.message; message is display "
+        f"only and must never be parsed. Branch on issue.code instead."
+    )
+
+
+def test_preview_discloses_the_live_record_it_would_change(
+    data_management_source: str,
+) -> None:
+    """ADR-0004 D1.4, and the reason finding C2 was destructive.
+
+    The preview showed the uploaded record's name. The live record it was about
+    to overwrite was never named, so nobody could see the substitution.
+    """
+    missing = [name for name in REQUIRED_PREVIEW_DISCLOSURE if name not in data_management_source]
+    assert not missing, (
+        f"the import preview does not render {missing}; ADR-0004 D1.4 requires the "
+        f"live record, its identifier and every field that moves to be disclosed "
+        f"before an operator can apply, and D1.3 requires the create-only notice"
+    )
+    assert "row.display" in data_management_source, (
+        "the uploaded record's own name must stay on the row beside the live one; "
+        "seeing both together is what makes a substitution visible"
+    )
+
+
+def test_preview_disclosure_detector_fires_on_the_pre_fix_markup() -> None:
+    """Non-vacuity: the pinned pre-fix row must fail the assertion above.
+
+    Copied from app/templates/data_management.html:136-142 as it stood before
+    this increment.
+    """
+    pre_fix = (
+        "{% for row in import_preview.rows[:100] %}"
+        "<tr><td>{{ row.dataset_label }}</td><td>{{ row.display }}</td>"
+        '<td><span class="badge">{{ row.status }}</span></td>'
+        "<td>{{ row.errors|join(' ') if row.errors else 'Checks passed' }}</td>"
+        "</tr>{% endfor %}"
+    )
+    assert [name for name in REQUIRED_PREVIEW_DISCLOSURE if name not in pre_fix] == list(
+        REQUIRED_PREVIEW_DISCLOSURE
+    ), "the pre-fix row is expected to disclose none of it"
+    assert re.search(r"\brow\.errors\b", pre_fix), (
+        "the pre-fix row is expected to read the derived mirror"
+    )
+
+
+def test_amber_is_never_used_for_a_state_that_needs_no_attention(
+    data_management_source: str,
+) -> None:
+    """Amber means "needs attention" in this interface.
+
+    A row that changes nothing, and a row deliberately left alone because the
+    operator chose add-new-only, are neutral facts. Colouring them amber trains
+    a reviewer to ignore amber on the rows that really do overwrite live data.
+    """
+    badge = re.search(
+        r"<span class=\"badge \{\{([^}]*?row\.status[^}]*?)\}\}\">\{\{([^}]+?)\}\}</span>",
+        data_management_source,
+    )
+    assert badge, "the preview result badge was not found"
+    colour_expression, text_expression = (g.strip() for g in badge.groups())
+    assert "'amber' if row.status == 'update'" in colour_expression, (
+        f"amber must be reserved for a real overwrite; got {colour_expression!r}"
+    )
+    for neutral in ("row.no_change", "'skip'"):
+        assert f"'amber' if {neutral}" not in colour_expression, (
+            f"{neutral} is a neutral state and must not be ambered"
+        )
+    assert "no change" in text_expression, (
+        "a row whose changed_fields are empty must be marked so a reviewer can "
+        f"skip it; got {text_expression!r}"
+    )
+
+
+def test_the_detectors_actually_reach_the_new_preview_markup(
+    data_management_source: str,
+) -> None:
+    """Guard against a green that means "nothing was inspected".
+
+    ``unnamed_controls`` and ``ids_in_repeated_context`` return an empty list
+    both when the markup is clean and when there is no markup. This pins that
+    the preview block is present and is inside a loop the id detector walks.
+    """
+    assert 'class="import-preview"' in data_management_source
+    assert "{% for row in import_preview.rows" in data_management_source
+    assert len(ControlCollectorCount(data_management_source)) >= 15, (
+        "the data-management page is expected to carry the export, import, "
+        "cleanup and purge controls; a sudden drop means the parser stopped early"
+    )
+    # The loop the preview rows are emitted from must be visible to the
+    # constant-id detector, i.e. FOR_TAG must match it.
+    loops = [m.group(1) for m in FOR_TAG.finditer(data_management_source)]
+    assert loops.count("for") == loops.count("endfor") >= 5, loops
+
+
+def ControlCollectorCount(source: str) -> list[dict]:  # noqa: N802 - test helper
+    parser = ControlCollector()
+    parser.feed(source)
+    return parser.controls
+
+
+def test_no_meaning_is_carried_by_a_decorative_glyph_alone() -> None:
+    """SC 1.1.1. An arrow hidden from assistive technology needs a text twin.
+
+    The before/after arrow in the preview is ``aria-hidden``, so a screen-reader
+    user would otherwise hear "Sector Transport operator Rail operations" with
+    no indication of which value replaces which.
+    """
+    offenders: list[str] = []
+    inspected = 0
+    for template in template_files():
+        source = template.read_text(encoding="utf-8")
+        for match in re.finditer(r'aria-hidden="true"[^>]*>([^<]*)<', source):
+            glyph = match.group(1).strip()
+            if not glyph:
+                continue
+            inspected += 1
+            window = source[match.end() : match.end() + 400]
+            if "visually-hidden" not in window:
+                line = source.count("\n", 0, match.start()) + 1
+                offenders.append(f"{template.name}:{line} hides {glyph!r} with no text equivalent")
+    assert not offenders, "\n".join(offenders)
+    assert inspected >= 1, (
+        "no aria-hidden glyph was inspected, so this test proved nothing; the "
+        "before/after arrow in the import preview is expected to be one"
+    )
+    # Non-vacuity: the same glyph with no text twin must be caught.
+    naked = '<span aria-hidden="true">&rarr;</span><span>after</span>'
+    assert "visually-hidden" not in naked[naked.index(">&rarr;<") :]
+
+
+def test_visually_hidden_text_stays_in_the_accessibility_tree(stylesheet: str) -> None:
+    """``display: none`` would remove the text equivalent from screen readers too."""
+    rule = re.search(r"\.visually-hidden\s*\{([^}]*)\}", stylesheet)
+    assert rule, ".visually-hidden is used in the templates but not defined in styles.css"
+    body = rule.group(1)
+    for banned in ("display: none", "visibility: hidden"):
+        assert banned not in body, (
+            f".visually-hidden must not use {banned}; that removes the text from "
+            f"the accessibility tree, which is the opposite of its purpose"
+        )
+    assert "clip-path" in body or "clip:" in body, body
+
+
+def test_no_focus_rule_anywhere_uses_a_translucent_outline(stylesheet: str) -> None:
+    """Generalises the pinned form-control check to every focus indicator.
+
+    ``.segmented-options input`` is ``opacity: 0``, so the outline on its sibling
+    ``span`` was the only focus indicator the import-mode radios had, and it was
+    ``rgba(0, 160, 181, 0.25)`` -- the same composite-to-1.2:1 defect that was
+    already fixed on the form controls.
+    """
+    offenders = []
+    for match in re.finditer(r"([^{}]*:focus[^{}]*)\{([^}]*)\}", stylesheet):
+        selector, body = match.group(1).strip(), match.group(2)
+        outline = re.search(r"outline\s*:\s*([^;]+);", body)
+        if outline and "rgba(" in outline.group(1):
+            line = stylesheet.count("\n", 0, match.start()) + 1
+            offenders.append(f"styles.css:{line} {selector} -> {outline.group(1).strip()}")
+    assert not offenders, (
+        "a translucent outline is composited against the background before it is "
+        "seen, so the declared colour is not the rendered one:\n" + "\n".join(offenders)
+    )
+
+
+def test_translucent_focus_detector_fires_on_the_pre_fix_rule() -> None:
+    """Non-vacuity for the check above, against the exact pre-fix declaration."""
+    pre_fix = (
+        ".segmented-options input:focus-visible + span {\n"
+        "  outline: 3px solid rgba(0, 160, 181, 0.25);\n}"
+    )
+    matched = []
+    for rule in re.finditer(r"([^{}]*:focus[^{}]*)\{([^}]*)\}", pre_fix):
+        outline = re.search(r"outline\s*:\s*([^;]+);", rule.group(2))
+        if outline and "rgba(" in outline.group(1):
+            matched.append(rule.group(1).strip())
+    assert len(matched) == 1, f"the detector must fire on the pinned pre-fix rule; got {matched}"
+    ring, alpha = (0, 160, 181), 0.25
+    ratio = contrast_ratio(
+        composite_over(ring, alpha, parse_hex("#eef1f4")), parse_hex("#eef1f4")
+    )
+    assert ratio < MINIMUM_FOCUS_CONTRAST, (
+        f"the pre-fix segmented-option ring is expected to fail SC 1.4.11 against "
+        f"its own track; measured {ratio:.2f}:1"
+    )
+
+
 def test_compliance_caveat_mechanism_is_intact() -> None:
     """ADR-0002 line 58, as narrowed by Ruling R2.
 

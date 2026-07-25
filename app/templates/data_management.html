@@ -159,7 +159,7 @@
       {% endif %}
       <div class="table-wrap compact-table">
         <table class="preview-table">
-          <thead><tr><th>Data area</th><th>Record in this file</th><th>Live record it would change</th><th>Result</th><th>What would happen</th></tr></thead>
+          <thead><tr><th scope="col">Data area</th><th scope="col">Record in this file</th><th scope="col">Live record it would change</th><th scope="col">Result</th><th scope="col">What would happen</th></tr></thead>
           <tbody>
             {% for row in import_preview.rows[:100] %}
               {#- ADR-0004 D1.4. Finding C2 was destructive precisely because the preview showed
