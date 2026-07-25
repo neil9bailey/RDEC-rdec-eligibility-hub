@@ -20,31 +20,33 @@
   <div class="panel">
     <h2>Where To Add Costs</h2>
     {% if projects %}
-      <table>
-        <thead>
-          <tr>
-            <th>Project</th>
-            <th>Solution / customer</th>
-            <th>Lines</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for project in projects %}
-            {% set solution = solution_map.get(project.solution_id) %}
-            {% set customer = customer_map.get(solution.customer_id) if solution else none %}
+      <div class="table-scroll">
+        <table>
+          <thead>
             <tr>
-              <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
-              <td>
-                {{ solution.solution_name if solution else "No solution" }}
-                <br><span class="muted">{{ customer.customer_name if customer else "No customer" }}</span>
-              </td>
-              <td>{{ project_cost_counts.get(project.id, 0) }}</td>
-              <td><a class="button secondary" href="/projects/{{ project.id }}/costs">Add costs</a></td>
+              <th>Project</th>
+              <th>Solution / customer</th>
+              <th>Lines</th>
+              <th>Action</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+              {% set solution = solution_map.get(project.solution_id) %}
+              {% set customer = customer_map.get(solution.customer_id) if solution else none %}
+              <tr>
+                <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
+                <td>
+                  {{ solution.solution_name if solution else "No solution" }}
+                  <br><span class="muted">{{ customer.customer_name if customer else "No customer" }}</span>
+                </td>
+                <td>{{ project_cost_counts.get(project.id, 0) }}</td>
+                <td><a class="button secondary" href="/projects/{{ project.id }}/costs">Add costs</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
       <div class="warning-panel">
         No R&D projects exist yet. Create a company, customer, contract, solution, and project first, then return here to capture people time and costs.
@@ -69,36 +71,38 @@
 <section class="panel" style="margin-top: 18px;">
   <h2>Cost Register</h2>
   {% if cost_lines %}
-    <table>
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th>Basis</th>
-          <th>Person / supplier</th>
-          <th>Activity</th>
-          <th>Gross</th>
-          <th>Qualifying</th>
-          <th>Evidence</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for cost in cost_lines %}
-          {% set project = project_map.get(cost.project_id) %}
+    <div class="table-scroll">
+      <table>
+        <thead>
           <tr>
-            <td><a href="/projects/{{ cost.project_id }}/costs">{{ project.project_title if project else "Unknown project" }}</a></td>
-            <td>
-              {{ "people time" if cost.cost_input_type == "people_time" else "direct cost" }}
-              <br><span class="muted">{{ cost.cost_category }}</span>
-            </td>
-            <td>{{ cost.person_or_supplier_name or "Missing" }}{% if cost.person_role %}<br><span class="muted">{{ cost.person_role }}</span>{% endif %}</td>
-            <td>{{ cost.activity or "Missing" }}</td>
-            <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
-            <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>
-            <td>{{ cost.evidence_link or "Missing" }}</td>
+            <th>Project</th>
+            <th>Basis</th>
+            <th>Person / supplier</th>
+            <th>Activity</th>
+            <th>Gross</th>
+            <th>Qualifying</th>
+            <th>Evidence</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for cost in cost_lines %}
+            {% set project = project_map.get(cost.project_id) %}
+            <tr>
+              <td><a href="/projects/{{ cost.project_id }}/costs">{{ project.project_title if project else "Unknown project" }}</a></td>
+              <td>
+                {{ "people time" if cost.cost_input_type == "people_time" else "direct cost" }}
+                <br><span class="muted">{{ cost.cost_category }}</span>
+              </td>
+              <td>{{ cost.person_or_supplier_name or "Missing" }}{% if cost.person_role %}<br><span class="muted">{{ cost.person_role }}</span>{% endif %}</td>
+              <td>{{ cost.activity or "Missing" }}</td>
+              <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
+              <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>
+              <td>{{ cost.evidence_link or "Missing" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   {% else %}
     <div class="warning-panel">No cost lines captured yet.</div>
   {% endif %}

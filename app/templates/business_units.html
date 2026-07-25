@@ -20,43 +20,45 @@
           <p><span class="badge {{ 'green' if unit.active else 'red' }}">{{ 'active' if unit.active else 'inactive' }}</span> {{ customer_counts.get(unit.id, 0) }} customer(s)</p>
           {% set children = children_by_parent.get(unit.id, []) %}
           {% if children %}
-            <table>
-              <thead><tr><th>Sub-unit</th><th>Description</th><th>Customers</th></tr></thead>
-              <tbody>
-                {% for child in children %}
-                  <tr>
-                    <td><strong>{{ child.name }}</strong></td>
-                    <td>{{ child.description }}</td>
-                    <td>
-                      {{ customer_counts.get(child.id, 0) }}
-                      <details>
-                        <summary>View or edit business unit</summary>
-                        <form method="post" action="/business-units/{{ child.id }}/update">
-                          <div class="field"><label for="name-f1-{{ child.id }}">Name</label><input id="name-f1-{{ child.id }}" name="name" value="{{ child.name }}" required></div>
-                          <div class="field">
-                            <label for="parent_id-f1-{{ child.id }}">Parent business unit</label>
-                            <select id="parent_id-f1-{{ child.id }}" name="parent_id">
-                              <option value="">Top level</option>
-                              {% for candidate in units %}
-                                {% if candidate.id != child.id %}
-                                  <option value="{{ candidate.id }}" {% if child.parent_id == candidate.id %}selected{% endif %}>{{ candidate.name }}</option>
-                                {% endif %}
-                              {% endfor %}
-                            </select>
-                          </div>
-                          <div class="field"><label for="description-f1-{{ child.id }}">Description</label><textarea id="description-f1-{{ child.id }}" name="description">{{ child.description }}</textarea></div>
-                          <label class="checkbox"><input type="checkbox" name="active" {% if child.active %}checked{% endif %}> Active</label>
-                          <button type="submit">Update</button>
-                        </form>
-                        <form method="post" action="/business-units/{{ child.id }}/delete" onsubmit="return confirm('Delete this business unit? This cannot be undone.');">
-                          <button class="danger-button" type="submit">Delete business unit</button>
-                        </form>
-                      </details>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Sub-unit</th><th>Description</th><th>Customers</th></tr></thead>
+                <tbody>
+                  {% for child in children %}
+                    <tr>
+                      <td><strong>{{ child.name }}</strong></td>
+                      <td>{{ child.description }}</td>
+                      <td>
+                        {{ customer_counts.get(child.id, 0) }}
+                        <details>
+                          <summary>View or edit business unit</summary>
+                          <form method="post" action="/business-units/{{ child.id }}/update">
+                            <div class="field"><label for="name-f1-{{ child.id }}">Name</label><input id="name-f1-{{ child.id }}" name="name" value="{{ child.name }}" required></div>
+                            <div class="field">
+                              <label for="parent_id-f1-{{ child.id }}">Parent business unit</label>
+                              <select id="parent_id-f1-{{ child.id }}" name="parent_id">
+                                <option value="">Top level</option>
+                                {% for candidate in units %}
+                                  {% if candidate.id != child.id %}
+                                    <option value="{{ candidate.id }}" {% if child.parent_id == candidate.id %}selected{% endif %}>{{ candidate.name }}</option>
+                                  {% endif %}
+                                {% endfor %}
+                              </select>
+                            </div>
+                            <div class="field"><label for="description-f1-{{ child.id }}">Description</label><textarea id="description-f1-{{ child.id }}" name="description">{{ child.description }}</textarea></div>
+                            <label class="checkbox"><input type="checkbox" name="active" {% if child.active %}checked{% endif %}> Active</label>
+                            <button type="submit">Update</button>
+                          </form>
+                          <form method="post" action="/business-units/{{ child.id }}/delete" onsubmit="return confirm('Delete this business unit? This cannot be undone.');">
+                            <button class="danger-button" type="submit">Delete business unit</button>
+                          </form>
+                        </details>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           {% endif %}
           <details>
             <summary>View or edit business unit</summary>

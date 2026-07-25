@@ -1,86 +1,88 @@
 <div id="cost-lines" class="stack">
   {% if context.costs %}
-    <table>
-      <thead>
-        <tr>
-          <th>Activity</th>
-          <th>Basis</th>
-          <th>Category</th>
-          <th>Person / supplier</th>
-          <th>Gross</th>
-          <th>Apportionment</th>
-          <th>Qualifying</th>
-          <th>Flags</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for cost in context.costs %}
+    <div class="table-scroll">
+      <table>
+        <thead>
           <tr>
-            <td>{{ cost.activity or "Missing" }}</td>
-            <td>
-              {{ "people time" if cost.cost_input_type == "people_time" else "direct cost" }}
-              {% if cost.cost_input_type == "people_time" %}
-                <br><span class="muted">{{ "%.2f"|format(cost.hours) }}h @ GBP {{ "%.2f"|format(cost.hourly_rate) }} / {{ "%.2f"|format(cost.days) }}d @ GBP {{ "%.2f"|format(cost.day_rate) }}</span>
-              {% endif %}
-            </td>
-            <td>{{ cost.cost_category }}</td>
-            <td>{{ cost.person_or_supplier_name or "Missing" }}{% if cost.person_role %}<br><span class="muted">{{ cost.person_role }}</span>{% endif %}</td>
-            <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
-            <td>{{ "%.1f"|format(cost.apportionment_percentage) }}%</td>
-            <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>
-            <td>
-              {% if cost.paid_status != "paid" %}<span class="badge amber">unpaid</span>{% endif %}
-              {% if cost.uk_or_overseas != "UK" and cost.cost_category in ["externally provided workers", "subcontractors"] %}<span class="badge amber">overseas review</span>{% endif %}
-              {% if not cost.evidence_link %}<span class="badge amber">missing evidence</span>{% endif %}
-              {% if cost.apportionment_percentage > 100 %}<span class="badge red">over 100%</span>{% endif %}
-              {% if not cost.activity and not cost.activity_id %}<span class="badge amber">activity missing</span>{% endif %}
-              <details>
-                <summary>Edit</summary>
-                <form method="post" action="/costs/{{ cost.id }}/update">
-                  <input type="hidden" name="cost_input_type" value="{{ cost.cost_input_type }}">
-                  <div class="field"><label for="activity-f1-{{ cost.id }}">Activity</label><input id="activity-f1-{{ cost.id }}" name="activity" value="{{ cost.activity }}"></div>
-                  <div class="field">
-                    <label for="cost_category-f1-{{ cost.id }}">Cost category</label>
-                    <select id="cost_category-f1-{{ cost.id }}" name="cost_category">{% for item in domain.COST_CATEGORIES %}<option {% if cost.cost_category == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
-                  </div>
-                  <div class="field"><label for="person_or_supplier_name-f1-{{ cost.id }}">Person / supplier name</label><input id="person_or_supplier_name-f1-{{ cost.id }}" name="person_or_supplier_name" value="{{ cost.person_or_supplier_name }}"></div>
-                  <div class="field"><label for="person_role-f1-{{ cost.id }}">Role</label><input id="person_role-f1-{{ cost.id }}" name="person_role" value="{{ cost.person_role }}"></div>
-                  <div class="form-grid">
-                    <div class="field"><label for="time_period_start-f1-{{ cost.id }}">Time period start</label><input id="time_period_start-f1-{{ cost.id }}" name="time_period_start" type="date" value="{{ cost.time_period_start or '' }}"></div>
-                    <div class="field"><label for="time_period_end-f1-{{ cost.id }}">Time period end</label><input id="time_period_end-f1-{{ cost.id }}" name="time_period_end" type="date" value="{{ cost.time_period_end or '' }}"></div>
-                    <div class="field"><label for="hours-f1-{{ cost.id }}">Hours</label><input id="hours-f1-{{ cost.id }}" name="hours" type="number" step="0.01" min="0" value="{{ cost.hours }}"></div>
-                    <div class="field"><label for="hourly_rate-f1-{{ cost.id }}">Hourly cost rate</label><input id="hourly_rate-f1-{{ cost.id }}" name="hourly_rate" type="number" step="0.01" min="0" value="{{ cost.hourly_rate }}"></div>
-                    <div class="field"><label for="days-f1-{{ cost.id }}">Days</label><input id="days-f1-{{ cost.id }}" name="days" type="number" step="0.01" min="0" value="{{ cost.days }}"></div>
-                    <div class="field"><label for="day_rate-f1-{{ cost.id }}">Day cost rate</label><input id="day_rate-f1-{{ cost.id }}" name="day_rate" type="number" step="0.01" min="0" value="{{ cost.day_rate }}"></div>
-                    <div class="field"><label for="gross_cost-f1-{{ cost.id }}">Gross cost</label><input id="gross_cost-f1-{{ cost.id }}" name="gross_cost" type="number" step="0.01" min="0" value="{{ cost.gross_cost }}"></div>
-                    <div class="field"><label for="apportionment_percentage-f1-{{ cost.id }}">Apportionment percentage</label><input id="apportionment_percentage-f1-{{ cost.id }}" name="apportionment_percentage" type="number" step="0.01" min="0" value="{{ cost.apportionment_percentage }}"></div>
-                  </div>
-                  <div class="field">
-                    <label for="paid_status-f1-{{ cost.id }}">Paid status</label>
-                    <select id="paid_status-f1-{{ cost.id }}" name="paid_status">{% for item in domain.PAID_STATUSES %}<option {% if cost.paid_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
-                  </div>
-                  <div class="field">
-                    <label for="uk_or_overseas-f1-{{ cost.id }}">UK or overseas</label>
-                    <select id="uk_or_overseas-f1-{{ cost.id }}" name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option {% if cost.uk_or_overseas == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
-                  </div>
-                  <div class="field">
-                    <label for="connected_party_status-f1-{{ cost.id }}">Connected party status</label>
-                    <select id="connected_party_status-f1-{{ cost.id }}" name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option {% if cost.connected_party_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
-                  </div>
-                  <div class="field"><label for="paye_nic_notes-f1-{{ cost.id }}">PAYE / NIC notes</label><textarea id="paye_nic_notes-f1-{{ cost.id }}" name="paye_nic_notes">{{ cost.paye_nic_notes }}</textarea></div>
-                  <div class="field"><label for="evidence_link-f1-{{ cost.id }}">Evidence link</label><input id="evidence_link-f1-{{ cost.id }}" name="evidence_link" value="{{ cost.evidence_link }}"></div>
-                  <div class="field"><label for="notes-f1-{{ cost.id }}">Notes</label><textarea id="notes-f1-{{ cost.id }}" name="notes">{{ cost.notes }}</textarea></div>
-                  <button type="submit">Update cost</button>
-                </form>
-              </details>
-              <form method="post" action="/costs/{{ cost.id }}/delete" style="margin-top: 8px;" onsubmit="return confirm('Delete this cost line? This cannot be undone.');">
-                <button class="danger-button" type="submit">Delete cost</button>
-              </form>
-            </td>
+            <th>Activity</th>
+            <th>Basis</th>
+            <th>Category</th>
+            <th>Person / supplier</th>
+            <th>Gross</th>
+            <th>Apportionment</th>
+            <th>Qualifying</th>
+            <th>Flags</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for cost in context.costs %}
+            <tr>
+              <td>{{ cost.activity or "Missing" }}</td>
+              <td>
+                {{ "people time" if cost.cost_input_type == "people_time" else "direct cost" }}
+                {% if cost.cost_input_type == "people_time" %}
+                  <br><span class="muted">{{ "%.2f"|format(cost.hours) }}h @ GBP {{ "%.2f"|format(cost.hourly_rate) }} / {{ "%.2f"|format(cost.days) }}d @ GBP {{ "%.2f"|format(cost.day_rate) }}</span>
+                {% endif %}
+              </td>
+              <td>{{ cost.cost_category }}</td>
+              <td>{{ cost.person_or_supplier_name or "Missing" }}{% if cost.person_role %}<br><span class="muted">{{ cost.person_role }}</span>{% endif %}</td>
+              <td>GBP {{ "%.2f"|format(cost.gross_cost) }}</td>
+              <td>{{ "%.1f"|format(cost.apportionment_percentage) }}%</td>
+              <td>GBP {{ "%.2f"|format(cost.qualifying_amount) }}</td>
+              <td>
+                {% if cost.paid_status != "paid" %}<span class="badge amber">unpaid</span>{% endif %}
+                {% if cost.uk_or_overseas != "UK" and cost.cost_category in ["externally provided workers", "subcontractors"] %}<span class="badge amber">overseas review</span>{% endif %}
+                {% if not cost.evidence_link %}<span class="badge amber">missing evidence</span>{% endif %}
+                {% if cost.apportionment_percentage > 100 %}<span class="badge red">over 100%</span>{% endif %}
+                {% if not cost.activity and not cost.activity_id %}<span class="badge amber">activity missing</span>{% endif %}
+                <details>
+                  <summary>Edit</summary>
+                  <form method="post" action="/costs/{{ cost.id }}/update">
+                    <input type="hidden" name="cost_input_type" value="{{ cost.cost_input_type }}">
+                    <div class="field"><label for="activity-f1-{{ cost.id }}">Activity</label><input id="activity-f1-{{ cost.id }}" name="activity" value="{{ cost.activity }}"></div>
+                    <div class="field">
+                      <label for="cost_category-f1-{{ cost.id }}">Cost category</label>
+                      <select id="cost_category-f1-{{ cost.id }}" name="cost_category">{% for item in domain.COST_CATEGORIES %}<option {% if cost.cost_category == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field"><label for="person_or_supplier_name-f1-{{ cost.id }}">Person / supplier name</label><input id="person_or_supplier_name-f1-{{ cost.id }}" name="person_or_supplier_name" value="{{ cost.person_or_supplier_name }}"></div>
+                    <div class="field"><label for="person_role-f1-{{ cost.id }}">Role</label><input id="person_role-f1-{{ cost.id }}" name="person_role" value="{{ cost.person_role }}"></div>
+                    <div class="form-grid">
+                      <div class="field"><label for="time_period_start-f1-{{ cost.id }}">Time period start</label><input id="time_period_start-f1-{{ cost.id }}" name="time_period_start" type="date" value="{{ cost.time_period_start or '' }}"></div>
+                      <div class="field"><label for="time_period_end-f1-{{ cost.id }}">Time period end</label><input id="time_period_end-f1-{{ cost.id }}" name="time_period_end" type="date" value="{{ cost.time_period_end or '' }}"></div>
+                      <div class="field"><label for="hours-f1-{{ cost.id }}">Hours</label><input id="hours-f1-{{ cost.id }}" name="hours" type="number" step="0.01" min="0" value="{{ cost.hours }}"></div>
+                      <div class="field"><label for="hourly_rate-f1-{{ cost.id }}">Hourly cost rate</label><input id="hourly_rate-f1-{{ cost.id }}" name="hourly_rate" type="number" step="0.01" min="0" value="{{ cost.hourly_rate }}"></div>
+                      <div class="field"><label for="days-f1-{{ cost.id }}">Days</label><input id="days-f1-{{ cost.id }}" name="days" type="number" step="0.01" min="0" value="{{ cost.days }}"></div>
+                      <div class="field"><label for="day_rate-f1-{{ cost.id }}">Day cost rate</label><input id="day_rate-f1-{{ cost.id }}" name="day_rate" type="number" step="0.01" min="0" value="{{ cost.day_rate }}"></div>
+                      <div class="field"><label for="gross_cost-f1-{{ cost.id }}">Gross cost</label><input id="gross_cost-f1-{{ cost.id }}" name="gross_cost" type="number" step="0.01" min="0" value="{{ cost.gross_cost }}"></div>
+                      <div class="field"><label for="apportionment_percentage-f1-{{ cost.id }}">Apportionment percentage</label><input id="apportionment_percentage-f1-{{ cost.id }}" name="apportionment_percentage" type="number" step="0.01" min="0" value="{{ cost.apportionment_percentage }}"></div>
+                    </div>
+                    <div class="field">
+                      <label for="paid_status-f1-{{ cost.id }}">Paid status</label>
+                      <select id="paid_status-f1-{{ cost.id }}" name="paid_status">{% for item in domain.PAID_STATUSES %}<option {% if cost.paid_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field">
+                      <label for="uk_or_overseas-f1-{{ cost.id }}">UK or overseas</label>
+                      <select id="uk_or_overseas-f1-{{ cost.id }}" name="uk_or_overseas">{% for item in domain.UK_OR_OVERSEAS %}<option {% if cost.uk_or_overseas == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field">
+                      <label for="connected_party_status-f1-{{ cost.id }}">Connected party status</label>
+                      <select id="connected_party_status-f1-{{ cost.id }}" name="connected_party_status">{% for item in domain.CONNECTED_PARTY_STATUSES %}<option {% if cost.connected_party_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    </div>
+                    <div class="field"><label for="paye_nic_notes-f1-{{ cost.id }}">PAYE / NIC notes</label><textarea id="paye_nic_notes-f1-{{ cost.id }}" name="paye_nic_notes">{{ cost.paye_nic_notes }}</textarea></div>
+                    <div class="field"><label for="evidence_link-f1-{{ cost.id }}">Evidence link</label><input id="evidence_link-f1-{{ cost.id }}" name="evidence_link" value="{{ cost.evidence_link }}"></div>
+                    <div class="field"><label for="notes-f1-{{ cost.id }}">Notes</label><textarea id="notes-f1-{{ cost.id }}" name="notes">{{ cost.notes }}</textarea></div>
+                    <button type="submit">Update cost</button>
+                  </form>
+                </details>
+                <form method="post" action="/costs/{{ cost.id }}/delete" style="margin-top: 8px;" onsubmit="return confirm('Delete this cost line? This cannot be undone.');">
+                  <button class="danger-button" type="submit">Delete cost</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   {% else %}
     <div class="warning-panel">No cost lines linked yet.</div>
   {% endif %}

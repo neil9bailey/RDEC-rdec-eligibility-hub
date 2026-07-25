@@ -52,17 +52,19 @@
 
 <section class="panel" style="margin-top: 18px;">
   <h2>Projects Requiring Description</h2>
-  <table>
-    <thead><tr><th>ID</th><th>Project</th><th>Marked in AIF</th></tr></thead>
-    <tbody>
-      {% for project in readiness.projects %}
-        <tr>
-          <td>{{ project.id }}</td>
-          <td><a href="/projects/{{ project.id }}/assessment">{{ project.project_title }}</a></td>
-          <td>{% if project.described_in_aif %}<span class="badge green">described</span>{% else %}<span class="badge amber">pending</span>{% endif %}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>ID</th><th>Project</th><th>Marked in AIF</th></tr></thead>
+      <tbody>
+        {% for project in readiness.projects %}
+          <tr>
+            <td>{{ project.id }}</td>
+            <td><a href="/projects/{{ project.id }}/assessment">{{ project.project_title }}</a></td>
+            <td>{% if project.described_in_aif %}<span class="badge green">described</span>{% else %}<span class="badge amber">pending</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

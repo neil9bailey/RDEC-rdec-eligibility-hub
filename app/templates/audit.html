@@ -37,31 +37,33 @@
 
 <section class="panel">
   <h2>Latest Events</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Timestamp</th>
-        <th>Actor</th>
-        <th>Entity</th>
-        <th>Action</th>
-        <th>Summary</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for event in events %}
+  <div class="table-scroll">
+    <table>
+      <thead>
         <tr>
-          <td>{{ event.created_at }}</td>
-          <td>{{ event.actor }}</td>
-          <td>{{ event.entity_type }} #{{ event.entity_id or "-" }}</td>
-          <td><span class="badge amber">{{ event.action }}</span></td>
-          <td>{{ event.summary }}</td>
+          <th>Timestamp</th>
+          <th>Actor</th>
+          <th>Entity</th>
+          <th>Action</th>
+          <th>Summary</th>
         </tr>
-      {% else %}
-        <tr>
-          <td colspan="5">No audit events recorded yet.</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.created_at }}</td>
+            <td>{{ event.actor }}</td>
+            <td>{{ event.entity_type }} #{{ event.entity_id or "-" }}</td>
+            <td><span class="badge amber">{{ event.action }}</span></td>
+            <td>{{ event.summary }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5">No audit events recorded yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

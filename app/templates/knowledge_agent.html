@@ -48,87 +48,93 @@
   <section class="panel" style="margin-top: 18px;">
     <h2>Live Check Result</h2>
     <p class="hint">Checks are optional and use only approved official domains. The application remains usable offline.</p>
-    <table>
-      <thead>
-        <tr>
-          <th>Source</th>
-          <th>Status</th>
-          <th>Detected updated date</th>
-          <th>Notes</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for check in live_checks %}
+    <div class="table-scroll">
+      <table>
+        <thead>
           <tr>
-            <td><a href="{{ check.url }}">{{ check.title }}</a></td>
-            <td><span class="badge {{ 'green' if check.ok else 'red' }}">{{ check.status_code if check.status_code else 'failed' }}</span></td>
-            <td>{{ check.detected_last_updated or check.last_modified_header or "Not detected" }}</td>
-            <td>{{ check.notes }}</td>
+            <th>Source</th>
+            <th>Status</th>
+            <th>Detected updated date</th>
+            <th>Notes</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for check in live_checks %}
+            <tr>
+              <td><a href="{{ check.url }}">{{ check.title }}</a></td>
+              <td><span class="badge {{ 'green' if check.ok else 'red' }}">{{ check.status_code if check.status_code else 'failed' }}</span></td>
+              <td>{{ check.detected_last_updated or check.last_modified_header or "Not detected" }}</td>
+              <td>{{ check.notes }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 {% endif %}
 
 <section class="panel" style="margin-top: 18px;">
   <h2>Rule Coverage</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Rule file</th>
-        <th>Official source coverage</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for rule_file, sources in summary.rule_coverage.items()|sort %}
+  <div class="table-scroll">
+    <table>
+      <thead>
         <tr>
-          <td><strong>{{ rule_file }}</strong></td>
-          <td>
-            {% for source in sources %}
-              <span class="badge {{ 'red' if source.priority == 'critical' else 'amber' if source.priority == 'high' else 'weak' }}">{{ source.topic }}</span>
-            {% endfor %}
-          </td>
+          <th>Rule file</th>
+          <th>Official source coverage</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for rule_file, sources in summary.rule_coverage.items()|sort %}
+          <tr>
+            <td><strong>{{ rule_file }}</strong></td>
+            <td>
+              {% for source in sources %}
+                <span class="badge {{ 'red' if source.priority == 'critical' else 'amber' if source.priority == 'high' else 'weak' }}">{{ source.topic }}</span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel" style="margin-top: 18px;">
   <h2>Official Source Register</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Source</th>
-        <th>Topic</th>
-        <th>Priority</th>
-        <th>Manual review due</th>
-        <th>Latest check</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for source in summary.sources %}
-        {% set check = summary.latest_checks.get(source.id) %}
+  <div class="table-scroll">
+    <table>
+      <thead>
         <tr>
-          <td>
-            <a href="{{ source.url }}">{{ source.title }}</a>
-            <p class="hint">{{ source.url }}</p>
-          </td>
-          <td>{{ source.topic }}</td>
-          <td><span class="badge {{ 'red' if source.priority == 'critical' else 'amber' if source.priority == 'high' else 'weak' }}">{{ source.priority }}</span></td>
-          <td>{{ source.review_due_date }}</td>
-          <td>
-            {% if check %}
-              <span class="badge {{ 'green' if check.ok else 'red' }}">{{ check.status_code if check.status_code else 'failed' }}</span>
-              <p class="hint">{{ check.checked_at.date() }} | {{ check.detected_last_updated or check.last_modified_header or "No update marker" }}</p>
-            {% else %}
-              <span class="badge amber">not checked</span>
-            {% endif %}
-          </td>
+          <th>Source</th>
+          <th>Topic</th>
+          <th>Priority</th>
+          <th>Manual review due</th>
+          <th>Latest check</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for source in summary.sources %}
+          {% set check = summary.latest_checks.get(source.id) %}
+          <tr>
+            <td>
+              <a href="{{ source.url }}">{{ source.title }}</a>
+              <p class="hint">{{ source.url }}</p>
+            </td>
+            <td>{{ source.topic }}</td>
+            <td><span class="badge {{ 'red' if source.priority == 'critical' else 'amber' if source.priority == 'high' else 'weak' }}">{{ source.priority }}</span></td>
+            <td>{{ source.review_due_date }}</td>
+            <td>
+              {% if check %}
+                <span class="badge {{ 'green' if check.ok else 'red' }}">{{ check.status_code if check.status_code else 'failed' }}</span>
+                <p class="hint">{{ check.checked_at.date() }} | {{ check.detected_last_updated or check.last_modified_header or "No update marker" }}</p>
+              {% else %}
+                <span class="badge amber">not checked</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

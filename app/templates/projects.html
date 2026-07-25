@@ -11,67 +11,69 @@
 <section class="grid two">
   <div class="panel">
     <h2>Projects</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Project</th>
-          <th>Solution</th>
-          <th>Period</th>
-          <th>Rating</th>
-          <th>Score</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for project in projects %}
-          {% set score = scores.get(project.id) %}
+    <div class="table-scroll">
+      <table>
+        <thead>
           <tr>
-            <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
-            <td>{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
-            <td>{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
-            <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
-            <td>{{ score.score }}</td>
+            <th>Project</th>
+            <th>Solution</th>
+            <th>Period</th>
+            <th>Rating</th>
+            <th>Score</th>
           </tr>
-          <tr>
-            <td colspan="5">
-              <details class="record-editor">
-                <summary>View or edit project</summary>
-                <form method="post" action="/projects/{{ project.id }}/update">
-                  <div class="field"><label for="project_title-f1-{{ project.id }}">Project title</label><input id="project_title-f1-{{ project.id }}" name="project_title" value="{{ project.project_title }}" required></div>
-                  <div class="form-grid">
-                    <div class="field">
-                      <label for="solution_id-f1-{{ project.id }}">Solution</label>
-                      <select id="solution_id-f1-{{ project.id }}" name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}" {% if project.solution_id == solution.id %}selected{% endif %}>{{ solution.solution_name }}</option>{% endfor %}</select>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+            {% set score = scores.get(project.id) %}
+            <tr>
+              <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
+              <td>{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
+              <td>{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
+              <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
+              <td>{{ score.score }}</td>
+            </tr>
+            <tr>
+              <td colspan="5">
+                <details class="record-editor">
+                  <summary>View or edit project</summary>
+                  <form method="post" action="/projects/{{ project.id }}/update">
+                    <div class="field"><label for="project_title-f1-{{ project.id }}">Project title</label><input id="project_title-f1-{{ project.id }}" name="project_title" value="{{ project.project_title }}" required></div>
+                    <div class="form-grid">
+                      <div class="field">
+                        <label for="solution_id-f1-{{ project.id }}">Solution</label>
+                        <select id="solution_id-f1-{{ project.id }}" name="solution_id" required>{% for solution in solutions %}<option value="{{ solution.id }}" {% if project.solution_id == solution.id %}selected{% endif %}>{{ solution.solution_name }}</option>{% endfor %}</select>
+                      </div>
+                      <div class="field">
+                        <label for="accounting_period_id-f1-{{ project.id }}">Accounting period</label>
+                        <select id="accounting_period_id-f1-{{ project.id }}" name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}" {% if project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>{% endfor %}</select>
+                      </div>
                     </div>
-                    <div class="field">
-                      <label for="accounting_period_id-f1-{{ project.id }}">Accounting period</label>
-                      <select id="accounting_period_id-f1-{{ project.id }}" name="accounting_period_id"><option value="">Select period</option>{% for period in periods %}<option value="{{ period.id }}" {% if project.accounting_period_id == period.id %}selected{% endif %}>{{ period.label }}</option>{% endfor %}</select>
+                    <div class="field"><label for="field_of_science_or_technology-f1-{{ project.id }}">Field of science or technology</label><textarea id="field_of_science_or_technology-f1-{{ project.id }}" name="field_of_science_or_technology">{{ project.field_of_science_or_technology }}</textarea></div>
+                    <div class="field"><label for="baseline_knowledge-f1-{{ project.id }}">Baseline level of knowledge/capability</label><textarea id="baseline_knowledge-f1-{{ project.id }}" name="baseline_knowledge">{{ project.baseline_knowledge }}</textarea></div>
+                    <div class="field"><label for="advance_sought-f1-{{ project.id }}">Advance sought</label><textarea id="advance_sought-f1-{{ project.id }}" name="advance_sought">{{ project.advance_sought }}</textarea></div>
+                    <div class="field"><label for="scientific_or_technological_uncertainties-f1-{{ project.id }}">Scientific or technological uncertainties</label><textarea id="scientific_or_technological_uncertainties-f1-{{ project.id }}" name="scientific_or_technological_uncertainties">{{ project.scientific_or_technological_uncertainties }}</textarea></div>
+                    <div class="form-grid">
+                      <div class="field"><label for="rd_start_date-f1-{{ project.id }}">R&D start date</label><input id="rd_start_date-f1-{{ project.id }}" name="rd_start_date" type="date" value="{{ project.rd_start_date or '' }}"></div>
+                      <div class="field"><label for="rd_end_date-f1-{{ project.id }}">R&D end date</label><input id="rd_end_date-f1-{{ project.id }}" name="rd_end_date" type="date" value="{{ project.rd_end_date or '' }}"></div>
                     </div>
-                  </div>
-                  <div class="field"><label for="field_of_science_or_technology-f1-{{ project.id }}">Field of science or technology</label><textarea id="field_of_science_or_technology-f1-{{ project.id }}" name="field_of_science_or_technology">{{ project.field_of_science_or_technology }}</textarea></div>
-                  <div class="field"><label for="baseline_knowledge-f1-{{ project.id }}">Baseline level of knowledge/capability</label><textarea id="baseline_knowledge-f1-{{ project.id }}" name="baseline_knowledge">{{ project.baseline_knowledge }}</textarea></div>
-                  <div class="field"><label for="advance_sought-f1-{{ project.id }}">Advance sought</label><textarea id="advance_sought-f1-{{ project.id }}" name="advance_sought">{{ project.advance_sought }}</textarea></div>
-                  <div class="field"><label for="scientific_or_technological_uncertainties-f1-{{ project.id }}">Scientific or technological uncertainties</label><textarea id="scientific_or_technological_uncertainties-f1-{{ project.id }}" name="scientific_or_technological_uncertainties">{{ project.scientific_or_technological_uncertainties }}</textarea></div>
-                  <div class="form-grid">
-                    <div class="field"><label for="rd_start_date-f1-{{ project.id }}">R&D start date</label><input id="rd_start_date-f1-{{ project.id }}" name="rd_start_date" type="date" value="{{ project.rd_start_date or '' }}"></div>
-                    <div class="field"><label for="rd_end_date-f1-{{ project.id }}">R&D end date</label><input id="rd_end_date-f1-{{ project.id }}" name="rd_end_date" type="date" value="{{ project.rd_end_date or '' }}"></div>
-                  </div>
-                  <div class="field"><label for="boundary_explanation-f1-{{ project.id }}">Boundary explanation</label><textarea id="boundary_explanation-f1-{{ project.id }}" name="boundary_explanation">{{ project.boundary_explanation }}</textarea></div>
-                  <div class="field">
-                    <label for="outcome-f1-{{ project.id }}">Outcome</label>
-                    <select id="outcome-f1-{{ project.id }}" name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option {% if project.outcome == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
-                  </div>
-                  <button type="submit">Update project</button>
-                </form>
-                <form method="post" action="/projects/{{ project.id }}/delete" onsubmit="return confirm('Delete this project? This cannot be undone.');">
-                  <button class="danger-button" type="submit">Delete project</button>
-                  <p class="hint">Delete is blocked if costs, evidence, or competent professional opinions are linked.</p>
-                </form>
-              </details>
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+                    <div class="field"><label for="boundary_explanation-f1-{{ project.id }}">Boundary explanation</label><textarea id="boundary_explanation-f1-{{ project.id }}" name="boundary_explanation">{{ project.boundary_explanation }}</textarea></div>
+                    <div class="field">
+                      <label for="outcome-f1-{{ project.id }}">Outcome</label>
+                      <select id="outcome-f1-{{ project.id }}" name="outcome">{% for item in domain.PROJECT_OUTCOMES %}<option {% if project.outcome == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                    </div>
+                    <button type="submit">Update project</button>
+                  </form>
+                  <form method="post" action="/projects/{{ project.id }}/delete" onsubmit="return confirm('Delete this project? This cannot be undone.');">
+                    <button class="danger-button" type="submit">Delete project</button>
+                    <p class="hint">Delete is blocked if costs, evidence, or competent professional opinions are linked.</p>
+                  </form>
+                </details>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   <div class="panel">
     <h2>Add Project</h2>
