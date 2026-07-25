@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from typing import Any, Iterable
+import html
 import math
 
 from fastapi.responses import HTMLResponse
@@ -180,8 +181,16 @@ def parse_enum(
 
 
 def validation_error_response(errors: list[str], back_href: str = "javascript:history.back()") -> HTMLResponse:
-    items = "".join(f"<li>{error}</li>" for error in errors)
-    html = f"""<!doctype html>
+    """Render validation failures as HTML (ADR-0004 D7: escaping is mandatory).
+
+    This is the one page in the Hub assembled by string interpolation rather than by
+    Jinja, so it has no autoescaping to inherit. Every message and the back link are
+    escaped here, at the boundary that builds the markup, so no caller can be the reason
+    an injection lands: a caller that starts passing uploaded or otherwise attacker-shaped
+    text must not have to know that this page is hand-built.
+    """
+    items = "".join(f"<li>{html.escape(str(error))}</li>" for error in errors)
+    document = f"""<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -194,10 +203,10 @@ def validation_error_response(errors: list[str], back_href: str = "javascript:hi
         <h1>Check the submitted values</h1>
         <p>The form was not saved because one or more values could not be understood.</p>
         <ul>{items}</ul>
-        <p><a href="{back_href}">Go back and correct the form</a></p>
+        <p><a href="{html.escape(str(back_href), quote=True)}">Go back and correct the form</a></p>
       </section>
     </main>
   </body>
 </html>"""
-    return HTMLResponse(html, status_code=400)
+    return HTMLResponse(document, status_code=400)
 
