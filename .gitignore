@@ -26,3 +26,7 @@ docs/*.pdf
 
 # Local browser inspection artifacts.
 .playwright-mcp/
+
+# Local UI/UX score-loop capture artifacts (binary screenshots only).
+# The textual scorecard.md is retained as ADR-0002 line 70 verification evidence.
+ux-loop-artifacts/**/*.png
