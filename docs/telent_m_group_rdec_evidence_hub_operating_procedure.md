@@ -145,11 +145,15 @@ docker compose up --build
 
 After reset, reference business units and reference customers are recreated. Demo contract, solution, project, evidence, and cost data is not seeded by default.
 
+For routine editing, export, previewed import, unused-record cleanup, or deliberately enabled purge, use `/data-management` instead of deleting the SQLite folder. Purge is disabled by default and does not replace managed backup, retention, or access controls.
+
 ## 7. Page Map
 
 | Page | Use |
 | --- | --- |
-| `/` | Dashboard showing counts, ratings, missing opinions, missing evidence, AIF readiness, and timing warnings. |
+| `/` | Workflow overview showing ordered review stages, current gaps, next actions, project status, and supporting tools. |
+| `/final-review` | Review accounting-period warnings and open claim-period working papers. |
+| `/data-management` | Edit records, export selected data, preview additions and updates, clean up unused records, and inspect guarded purge scopes. |
 | `/knowledge-agent` | Check official source register and identify rule review actions. |
 | `/framework-intelligence` | Review framework source status, opportunity signals, RDEC candidate review items, and latest run history. |
 | `/framework-intelligence/source-catalogue` | Review configured official/public procurement source catalogue metadata. |
@@ -164,7 +168,7 @@ After reset, reference business units and reference customers are recreated. Dem
 | `/framework-intelligence/agent-runs` | Review guarded source-check and watch-profile run history. |
 | `/framework-intelligence/reports` | Generate framework intelligence reports. |
 | `/business-units` | Maintain Telent / M Group business units and child units. |
-| `/companies` | Capture claimant company and accounting period details. |
+| `/companies` | Capture claimant company and accounting period details, review setup readiness gaps, normalize common identifiers, and auto-label blank accounting period labels. |
 | `/customers` | Capture live customer records and business-unit ownership. |
 | `/contracts` | Capture contract, SOW, bid, procurement, funding, and entitlement facts. |
 | `/solutions` | Capture technical solution context and initial R&D radar status. |
@@ -177,6 +181,39 @@ After reset, reference business units and reference customers are recreated. Dem
 | `/claim-periods/{id}/readiness` | Review AIF readiness for an accounting period. |
 | `/claim-periods/{id}/pack` | Generate claim-period pack. |
 | `/evidence-index` | Review evidence grouped by project and relevance. |
+
+### Local Data Management
+
+Use `/data-management` for local working-data administration.
+
+Export:
+
+- Select only the data areas required.
+- Use JSON when the file may be used to re-add or update Hub records.
+- Use the ZIP of CSV files for spreadsheet review. Formula-like cell prefixes are neutralised in CSV output.
+- Treat every export as potentially sensitive working information.
+
+Import:
+
+- Preview every file before applying it.
+- Choose `Add new only` when existing records must remain unchanged.
+- Choose `Add new and update matches` only after reviewing every proposed update.
+- The Hub matches by record identifier first and a conservative record key second.
+- A file with unknown columns, invalid values, duplicate records, missing parent links, more than 5 MB, or more than 5,000 records is rejected.
+- Import never deletes records that are absent from the file.
+
+Cleanup:
+
+- Only records with no current dependent links are listed.
+- Select each record deliberately and type `DELETE UNUSED`.
+- The Hub checks dependencies again immediately before deletion.
+
+Purge:
+
+- Purge is disabled by default.
+- When an administrator deliberately enables it, the user must select a scope, acknowledge the required backup, and type the exact phrase shown.
+- Working records are deleted in dependency order. Rule files, reference source catalogues, business-unit reference data, and local change history are preserved.
+- Do not use local purge as a substitute for a controlled retention, backup, restore, or deletion policy.
 
 ## 8. End-To-End Operating Procedure
 

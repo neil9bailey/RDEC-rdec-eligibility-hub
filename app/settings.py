@@ -20,6 +20,26 @@ class Settings:
         "true",
         "yes",
     }
+    data_import_enabled: bool = os.getenv("DATA_IMPORT_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    data_export_enabled: bool = os.getenv("DATA_EXPORT_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    data_cleanup_enabled: bool = os.getenv("DATA_CLEANUP_ENABLED", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    data_purge_enabled: bool = os.getenv("DATA_PURGE_ENABLED", "false").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 @lru_cache

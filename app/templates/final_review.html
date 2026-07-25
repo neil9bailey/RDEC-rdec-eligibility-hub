@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Final review - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <span class="eyebrow">Step 5</span>
+    <h1>Final review and working papers</h1>
+    <p>Check each accounting period, resolve current warnings and prepare the material for Finance, competent professional and tax review.</p>
+  </div>
+  <a class="button secondary" href="/evidence-index">Open evidence index</a>
+</div>
+
+<section class="workflow-section">
+  <div class="section-title-row">
+    <div>
+      <h2>Accounting periods</h2>
+      <p>A clear status means the Hub has not detected a current completeness or sequencing warning. It is not filing approval.</p>
+    </div>
+  </div>
+  <div class="period-review-grid">
+    {% for review in reviews %}
+      <article class="period-review-item">
+        <div class="stage-heading">
+          <span class="badge {{ 'green' if review.ready else 'amber' }}">{{ 'No current warnings' if review.ready else 'Review needed' }}</span>
+          <span>{{ review.period.start_date }} to {{ review.period.end_date }}</span>
+        </div>
+        <h3>{{ review.period.label }}</h3>
+        <p>{{ review.company.company_name if review.company else 'Company details missing' }}</p>
+        {% if review.warnings %}
+          <ul>
+            {% for warning in review.warnings %}<li>{{ warning }}</li>{% endfor %}
+          </ul>
+        {% else %}
+          <p class="muted">No completeness or submission-order warning is currently detected.</p>
+        {% endif %}
+        <div class="actions">
+          <a class="button" href="/claim-periods/{{ review.period.id }}/readiness">Review period</a>
+          <a class="button secondary" href="/claim-periods/{{ review.period.id }}/pack">Open working pack</a>
+        </div>
+      </article>
+    {% else %}
+      <div class="empty-state">
+        <h3>No accounting period has been added</h3>
+        <p>Add the claimant company and accounting period before starting the final review.</p>
+        <a class="button" href="/companies#periods">Open company setup</a>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="supporting-tools">
+  <div>
+    <h2>Working papers</h2>
+    <p>Use these outputs for review conversations. They do not submit anything to HMRC.</p>
+  </div>
+  <div class="support-link-grid">
+    <a href="/evidence-index"><strong>Evidence index</strong><span>Review evidence grouped by project and purpose.</span></a>
+    <a href="/projects"><strong>Project reports</strong><span>Open a project and generate its review memo.</span></a>
+    <a href="/costs"><strong>Cost register</strong><span>Review people time, direct costs and supporting links.</span></a>
+    <a href="/audit"><strong>Change history</strong><span>Inspect who changed local working records and when.</span></a>
+  </div>
+</section>
+
+<div class="trust-note">{{ caveat }}</div>
+{% endblock %}

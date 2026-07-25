@@ -65,8 +65,8 @@
                 <button type="submit">Update opinion</button>
               </form>
             </details>
-            <form method="post" action="/competent-professional/{{ opinion.id }}/delete">
-              <button class="secondary" type="submit">Delete</button>
+            <form method="post" action="/competent-professional/{{ opinion.id }}/delete" onsubmit="return confirm('Delete this professional review? This cannot be undone.');">
+              <button class="danger-button" type="submit">Delete review</button>
             </form>
           </article>
         {% else %}

@@ -45,8 +45,8 @@
                   <button type="submit">Update evidence</button>
                 </form>
               </details>
-              <form method="post" action="/evidence/{{ item.id }}/delete" style="margin-top: 8px;">
-                <button class="secondary" type="submit">Delete</button>
+              <form method="post" action="/evidence/{{ item.id }}/delete" style="margin-top: 8px;" onsubmit="return confirm('Delete this evidence item? This cannot be undone.');">
+                <button class="danger-button" type="submit">Delete evidence</button>
               </form>
             </td>
           </tr>

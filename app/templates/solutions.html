@@ -21,8 +21,8 @@
           </p>
           <p>{{ solution.solution_description }}</p>
           <p class="muted">{{ solution.transport_environment_constraints }}</p>
-          <details>
-            <summary>Edit / delete</summary>
+          <details class="record-editor">
+            <summary>View or edit solution</summary>
             <form method="post" action="/solutions/{{ solution.id }}/update">
               <div class="field"><label>Solution name</label><input name="solution_name" value="{{ solution.solution_name }}" required></div>
               <div class="form-grid">
@@ -48,8 +48,8 @@
               </div>
               <button type="submit">Update solution</button>
             </form>
-            <form method="post" action="/solutions/{{ solution.id }}/delete">
-              <button class="secondary" type="submit">Delete</button>
+            <form method="post" action="/solutions/{{ solution.id }}/delete" onsubmit="return confirm('Delete this solution? This cannot be undone.');">
+              <button class="danger-button" type="submit">Delete solution</button>
               <p class="hint">Delete is blocked if R&D projects are linked.</p>
             </form>
           </details>

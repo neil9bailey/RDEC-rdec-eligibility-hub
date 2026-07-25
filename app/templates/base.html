@@ -4,51 +4,71 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
-    <link rel="stylesheet" href="/static/styles.css?v=telent-enterprise-5">
+    <link rel="icon" href="/static/telent-part-of-m-logo.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/styles.css?v=workflow-1">
     <script src="/static/htmx.min.js" defer></script>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div class="topbar-inner">
-          <a class="brand-lockup" href="/" aria-label="Dashboard">
+          <a class="brand-lockup" href="/" aria-label="Open review overview">
             <span class="brand-logo-wrap"><img src="/static/telent-part-of-m-logo.svg" alt="Telent part of M Group"></span>
             <span class="brand-copy">
               <strong>{{ app_name }}</strong>
-              <span>Telent / M Group | RDEC decision support</span>
+              <span>R&D claim review workspace</span>
             </span>
           </a>
-          <div class="topbar-status" aria-label="Application status">
-            <span class="status-chip"><span class="status-dot"></span>Local MVP</span>
-            <span class="status-chip">AIF review</span>
-            <span class="status-chip">Not tax advice</span>
+          <div class="topbar-status" aria-label="Workspace status">
+            <span class="status-chip"><span class="status-dot"></span>Local workspace</span>
+            <span class="status-chip">Review support only</span>
           </div>
           <div class="topbar-actions">
-            <a class="header-action" href="/projects">Projects</a>
-            <a class="header-action primary" href="/framework-intelligence">Framework Intel</a>
+            <a class="header-action" href="/data-management">Manage data</a>
+            <a class="header-action primary" href="/framework-intelligence">Opportunities</a>
           </div>
         </div>
-        <nav class="nav" aria-label="Main navigation">
-          <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">Dashboard</a>
-          <a class="{{ 'active' if request.url.path.startswith('/framework-intelligence') else '' }}" href="/framework-intelligence">Framework Intelligence</a>
-          <a class="{{ 'active' if request.url.path.startswith('/knowledge-agent') else '' }}" href="/knowledge-agent">Knowledge Agent</a>
-          <a class="{{ 'active' if request.url.path.startswith('/business-units') else '' }}" href="/business-units">Business Units</a>
-          <a class="{{ 'active' if request.url.path.startswith('/companies') else '' }}" href="/companies">Company</a>
-          <a class="{{ 'active' if request.url.path.startswith('/customers') else '' }}" href="/customers">Customers</a>
-          <a class="{{ 'active' if request.url.path.startswith('/contracts') else '' }}" href="/contracts">Contracts</a>
-          <a class="{{ 'active' if request.url.path.startswith('/solutions') else '' }}" href="/solutions">Solutions</a>
-          <a class="{{ 'active' if request.url.path.startswith('/projects') else '' }}" href="/projects">Projects</a>
-          <a class="{{ 'active' if request.url.path.startswith('/costs') else '' }}" href="/costs">Costs</a>
-          <a class="{{ 'active' if request.url.path.startswith('/evidence-index') else '' }}" href="/evidence-index">Evidence Index</a>
-          <a class="{{ 'active' if request.url.path.startswith('/audit') else '' }}" href="/audit">Audit</a>
+        <nav class="workflow-nav" aria-label="R&D claim workflow">
+          <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">
+            <span class="nav-step">0</span><span>Overview</span>
+          </a>
+          <a class="{{ 'active' if request.url.path.startswith('/companies') else '' }}" href="/companies">
+            <span class="nav-step">1</span><span>Company setup</span>
+          </a>
+          <a class="{{ 'active' if request.url.path.startswith('/customers') or request.url.path.startswith('/contracts') or request.url.path.startswith('/solutions') or request.url.path.startswith('/business-units') else '' }}" href="/customers">
+            <span class="nav-step">2</span><span>Work context</span>
+          </a>
+          <a class="{{ 'active' if request.url.path.startswith('/projects') and '/costs' not in request.url.path and '/evidence' not in request.url.path and '/competent-professional' not in request.url.path and '/report' not in request.url.path else '' }}" href="/projects">
+            <span class="nav-step">3</span><span>R&D review</span>
+          </a>
+          <a class="{{ 'active' if request.url.path.startswith('/costs') or request.url.path.startswith('/evidence-index') or '/costs' in request.url.path or '/evidence' in request.url.path or '/competent-professional' in request.url.path else '' }}" href="/costs">
+            <span class="nav-step">4</span><span>Evidence and costs</span>
+          </a>
+          <a class="{{ 'active' if request.url.path.startswith('/final-review') or request.url.path.startswith('/claim-periods') or '/report' in request.url.path else '' }}" href="/final-review">
+            <span class="nav-step">5</span><span>Final review</span>
+          </a>
+          <details class="nav-menu">
+            <summary>More</summary>
+            <div class="nav-menu-panel">
+              <a href="/business-units">Business structure</a>
+              <a href="/contracts">Contracts</a>
+              <a href="/solutions">Solutions</a>
+              <a href="/knowledge-agent">Guidance checks</a>
+              <a href="/framework-intelligence">Opportunity review</a>
+              <a href="/data-management">Data management</a>
+              <a href="/audit">Change history</a>
+            </div>
+          </details>
         </nav>
       </header>
       <main class="container">
+        {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}
+        {% if flash_notice %}<div class="flash-message success" role="status">{{ flash_notice }}</div>{% endif %}
         {% block content %}{% endblock %}
       </main>
       <footer class="footer">
         <div class="footer-inner">
-          <span>Not tax advice. Decision support and evidence capture only.</span>
+          <span>Decision support and evidence capture only. Not tax advice.</span>
           <span>{{ caveat }}</span>
         </div>
       </footer>

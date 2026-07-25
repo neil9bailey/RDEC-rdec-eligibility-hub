@@ -30,7 +30,7 @@
                     <td>
                       {{ customer_counts.get(child.id, 0) }}
                       <details>
-                        <summary>Edit / delete</summary>
+                        <summary>View or edit business unit</summary>
                         <form method="post" action="/business-units/{{ child.id }}/update">
                           <div class="field"><label>Name</label><input name="name" value="{{ child.name }}" required></div>
                           <div class="field">
@@ -48,8 +48,8 @@
                           <label class="checkbox"><input type="checkbox" name="active" {% if child.active %}checked{% endif %}> Active</label>
                           <button type="submit">Update</button>
                         </form>
-                        <form method="post" action="/business-units/{{ child.id }}/delete">
-                          <button class="secondary" type="submit">Delete</button>
+                        <form method="post" action="/business-units/{{ child.id }}/delete" onsubmit="return confirm('Delete this business unit? This cannot be undone.');">
+                          <button class="danger-button" type="submit">Delete business unit</button>
                         </form>
                       </details>
                     </td>
@@ -59,7 +59,7 @@
             </table>
           {% endif %}
           <details>
-            <summary>Edit / delete</summary>
+            <summary>View or edit business unit</summary>
             <form method="post" action="/business-units/{{ unit.id }}/update">
               <div class="field"><label>Name</label><input name="name" value="{{ unit.name }}" required></div>
               <div class="field">
@@ -79,8 +79,8 @@
                 <button type="submit">Update</button>
               </div>
             </form>
-            <form method="post" action="/business-units/{{ unit.id }}/delete">
-              <button class="secondary" type="submit">Delete</button>
+            <form method="post" action="/business-units/{{ unit.id }}/delete" onsubmit="return confirm('Delete this business unit? This cannot be undone.');">
+              <button class="danger-button" type="submit">Delete business unit</button>
               <p class="hint">Delete is blocked if child business units or customers are linked.</p>
             </form>
           </details>

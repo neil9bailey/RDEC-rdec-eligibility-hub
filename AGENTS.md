@@ -63,11 +63,15 @@ docker compose up --build
 - `app/main.py` - FastAPI routes and form handling.
 - `app/models.py` - SQLModel persistence models.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, and dashboard metrics.
+- `app/review_cockpit.py` - workflow stage status and prioritised review actions.
+- `app/data_management.py` - selected exports, previewed imports, unused-record cleanup, purge scopes, and relationship safeguards.
 - `app/rules_engine.py` and `app/rules/` - YAML-backed runtime decision rules.
 - `app/templates/` - server-rendered HTML.
 - `app/static/styles.css` - Telent / M Group visual styling.
 - `app/reports.py` - Markdown report generation.
 - `tests/` - route, rules, model, report, framework intelligence, and audit coverage.
+
+Data import, export, and cleanup controls are configurable. Whole-area purge must remain disabled by default and must retain exact typed confirmation, backup acknowledgement, dependency-order deletion, and preserved audit history.
 
 ## UI/UX Score Loop
 

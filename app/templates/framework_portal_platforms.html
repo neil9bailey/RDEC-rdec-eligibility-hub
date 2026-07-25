@@ -49,7 +49,7 @@
           <p class="hint">{% if portal.portal_url %}<a href="{{ portal.portal_url }}">{{ portal.portal_url }}</a>{% else %}No portal URL recorded{% endif %}</p>
           <p>{{ portal.notes }}</p>
           <details>
-            <summary>Edit / delete</summary>
+            <summary>View or edit buyer portal</summary>
             <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/update">
               <div class="field"><label>Portal name</label><input name="portal_name" value="{{ portal.portal_name }}" required></div>
               <div class="form-grid">
@@ -66,8 +66,8 @@
               <div class="field"><label>Notes</label><textarea name="notes">{{ portal.notes }}</textarea></div>
               <button type="submit">Update portal</button>
             </form>
-            <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/delete">
-              <button type="submit" class="secondary">Delete</button>
+            <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/delete" onsubmit="return confirm('Delete this buyer portal? This cannot be undone.');">
+              <button type="submit" class="danger-button">Delete buyer portal</button>
             </form>
           </details>
         </article>

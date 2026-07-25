@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import json
+from urllib.parse import quote
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -9,7 +12,30 @@ from sqlmodel import Session, col, select
 
 from app import domain
 from app.audit import compact_snapshot, log_event
+from app.company_setup import (
+    accounting_period_label,
+    company_setup_context,
+    normalize_company_payload,
+    validate_accounting_period_dates,
+    validate_company_payload,
+)
 from app.database import engine, get_session, init_db
+from app.data_management import (
+    DEPENDENCY_RULES,
+    DataOperationError,
+    apply_import,
+    cleanup_candidates,
+    csv_export_zip_bytes,
+    data_inventory,
+    decode_import_payload,
+    delete_unused_records,
+    encode_import_payload,
+    json_export_bytes,
+    parse_import_file,
+    purge_records,
+    purge_scope_cards,
+    build_import_plan,
+)
 from app.form_utils import (
     parse_bool as parse_form_bool,
     parse_enum,
@@ -69,6 +95,7 @@ from app.models import (
 )
 from app.knowledge_agent import knowledge_agent_summary, knowledge_review_actions, run_live_source_checks
 from app.reports import generate_claim_period_pack_markdown, generate_evidence_index_markdown, generate_project_memo_markdown
+from app.review_cockpit import review_workflow_context
 from app.rule_loader import rules_version_summary
 from app.rules_engine import get_rules, validate_all_rules
 from app.seed import seed_business_units, seed_demo_data
@@ -84,54 +111,6 @@ from app.services import (
     sync_entitlement_for_project,
 )
 from app.settings import BASE_DIR, get_settings
-
-
-DEPENDENCY_RULES = {
-    Company: [(AccountingPeriod, AccountingPeriod.company_id, "accounting periods")],
-    AccountingPeriod: [(RDProject, RDProject.accounting_period_id, "R&D projects")],
-    BusinessUnit: [
-        (BusinessUnit, BusinessUnit.parent_id, "child business units"),
-        (Customer, Customer.business_unit_id, "customers"),
-        (CustomerWatchProfile, CustomerWatchProfile.business_unit_id, "framework watch profiles"),
-        (FrameworkOpportunity, FrameworkOpportunity.business_unit_id, "framework opportunities"),
-        (IntelligenceReport, IntelligenceReport.business_unit_id, "framework intelligence reports"),
-        (BuyerPortalInstance, BuyerPortalInstance.business_unit_id, "buyer portal instances"),
-    ],
-    Customer: [
-        (Contract, Contract.customer_id, "contracts"),
-        (Solution, Solution.customer_id, "solutions"),
-        (CustomerWatchProfile, CustomerWatchProfile.customer_id, "framework watch profiles"),
-        (FrameworkOpportunity, FrameworkOpportunity.customer_id, "framework opportunities"),
-        (IntelligenceReport, IntelligenceReport.customer_id, "framework intelligence reports"),
-        (BuyerPortalInstance, BuyerPortalInstance.customer_id, "buyer portal instances"),
-    ],
-    Contract: [(Solution, Solution.contract_id, "solutions")],
-    Solution: [(RDProject, RDProject.solution_id, "R&D projects")],
-    RDProject: [
-        (TechnicalUncertainty, TechnicalUncertainty.project_id, "technical uncertainties"),
-        (Activity, Activity.project_id, "activities"),
-        (CostLine, CostLine.project_id, "cost lines"),
-        (EvidenceItem, EvidenceItem.project_id, "evidence items"),
-        (CompetentProfessionalOpinion, CompetentProfessionalOpinion.project_id, "competent professional opinions"),
-        (ReviewDecision, ReviewDecision.project_id, "review decisions"),
-    ],
-    FrameworkSource: [
-        (FrameworkOpportunity, FrameworkOpportunity.source_id, "framework opportunities"),
-        (SourceCheckSnapshot, SourceCheckSnapshot.source_id, "source check snapshots"),
-    ],
-    CustomerWatchProfile: [(FrameworkAgentRun, FrameworkAgentRun.watch_profile_id, "framework agent runs")],
-    FrameworkOpportunity: [
-        (OpportunityDocument, OpportunityDocument.opportunity_id, "opportunity documents"),
-        (ExtractedRequirement, ExtractedRequirement.opportunity_id, "extracted requirements"),
-        (RDECOpportunitySignal, RDECOpportunitySignal.opportunity_id, "RDEC opportunity signals"),
-        (ExtractedQualityQuestion, ExtractedQualityQuestion.opportunity_id, "extracted quality questions"),
-        (PortalRetrievalRun, PortalRetrievalRun.opportunity_id, "portal retrieval runs"),
-    ],
-    ExtractedRequirement: [(RDECOpportunitySignal, RDECOpportunitySignal.requirement_id, "RDEC opportunity signals")],
-    OpportunityDocument: [(ExtractedQualityQuestion, ExtractedQualityQuestion.document_id, "extracted quality questions")],
-    ProcurementPlatform: [(BuyerPortalInstance, BuyerPortalInstance.platform_id, "buyer portal instances")],
-    BuyerPortalInstance: [(PortalRetrievalRun, PortalRetrievalRun.portal_instance_id, "portal retrieval runs")],
-}
 
 
 @asynccontextmanager
@@ -154,6 +133,17 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+def friendly_query_error(value: str) -> str:
+    if not value:
+        return ""
+    if value == "purge_disabled":
+        return "Purge is turned off. An administrator must enable it before this action is available."
+    if value.startswith("delete_blocked_"):
+        linked_area = value.removeprefix("delete_blocked_").replace("_", " ")
+        return f"This record is still used by {linked_area}. Remove or reassign those links first."
+    return "The requested change could not be completed. Review the record and try again."
+
+
 def template_context(request: Request, **extra):
     base = {
         "request": request,
@@ -161,6 +151,8 @@ def template_context(request: Request, **extra):
         "caveat": CAVEAT,
         "rules_versions": rules_version_summary(),
         "domain": domain,
+        "flash_error": friendly_query_error(str(request.query_params.get("error") or "")),
+        "flash_notice": str(request.query_params.get("notice") or ""),
     }
     base.update(extra)
     return base
@@ -309,7 +301,8 @@ def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -
     for child_model, child_field, label in DEPENDENCY_RULES.get(model, []):
         child = session.exec(select(child_model).where(child_field == item_id)).first()
         if child:
-            return redirect(f"{redirect_path}?error=delete_blocked_{label.replace(' ', '_')}")
+            error = quote(f"delete_blocked_{label.replace(' ', '_')}")
+            return redirect(f"{redirect_path}?error={error}")
     delete_with_audit(session, item, f"Deleted {model.__name__} {item_id}")
     return redirect(redirect_path)
 
@@ -318,27 +311,9 @@ def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -
 def dashboard(request: Request, session: Session = Depends(get_session)):
     projects = list(session.exec(select(RDProject).order_by(col(RDProject.project_title))))
     metrics = dashboard_metrics(session)
-    business_units = list(session.exec(select(BusinessUnit).order_by(col(BusinessUnit.name))))
-    customers = list(session.exec(select(Customer)))
-    unit_customer_counts = {unit.id: 0 for unit in business_units}
-    for customer in customers:
-        if customer.business_unit_id in unit_customer_counts:
-            unit_customer_counts[customer.business_unit_id] += 1
-    focus_names = [
-        "Highways",
-        "Rail",
-        "SCADA",
-        "TfL",
-        "Network Services",
-        "HPC / Hinkley Point C",
-        "Nuclear Power",
-        "Core Central Asset Management",
-    ]
-    focus_units = [
-        {"name": unit.name, "count": unit_customer_counts.get(unit.id, 0)}
-        for unit in business_units
-        if unit.name in focus_names
-    ]
+    companies = list(session.exec(select(Company).order_by(col(Company.company_name))))
+    periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
+    setup_context = company_setup_context(companies, periods)
     signed_project_ids = {
         opinion.project_id
         for opinion in session.exec(
@@ -350,6 +325,7 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
     }
     total_qualifying_costs = round(sum(cost.qualifying_amount or 0 for cost in session.exec(select(CostLine))), 2)
     framework_metrics = framework_intelligence_metrics(session)
+    workflow = review_workflow_context(session, metrics, setup_context, framework_metrics)
     framework_signals = list(
         session.exec(select(RDECOpportunitySignal).order_by(col(RDECOpportunitySignal.created_at).desc()).limit(3))
     )
@@ -363,43 +339,6 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
         for opportunity in session.exec(select(FrameworkOpportunity))
         if opportunity.id in opportunity_ids
     }
-    next_actions = []
-    if metrics["missing_competent_professional"]:
-        next_actions.append(
-            {
-                "title": "Competent professional sign-off",
-                "text": f"{metrics['missing_competent_professional']} project(s) need signed competent professional opinions.",
-                "status": "open",
-                "tone": "amber",
-            }
-        )
-    if metrics["missing_evidence"]:
-        next_actions.append(
-            {
-                "title": "Evidence gap closure",
-                "text": f"{metrics['missing_evidence']} project(s) need evidence linked before claim-pack review.",
-                "status": "review",
-                "tone": "red",
-            }
-        )
-    if framework_metrics["pending_signals"]:
-        next_actions.append(
-            {
-                "title": "Framework intelligence review",
-                "text": f"{framework_metrics['pending_signals']} RDEC candidate signal(s) need human review.",
-                "status": "review",
-                "tone": "weak",
-            }
-        )
-    if metrics["aif_total_periods"]:
-        next_actions.append(
-            {
-                "title": "AIF and Ayming pack",
-                "text": "Generate the claim-period pack once selected project descriptions and cost evidence are complete.",
-                "status": "blocked" if metrics["aif_ready_periods"] < metrics["aif_total_periods"] else "ready",
-                "tone": "red" if metrics["aif_ready_periods"] < metrics["aif_total_periods"] else "green",
-            }
-        )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -407,7 +346,8 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             request,
             metrics=metrics,
             projects=projects,
-            focus_units=focus_units,
+            company_setup=setup_context,
+            workflow=workflow,
             signed_project_count=len(signed_project_ids),
             strong_evidence_project_count=len(strong_evidence_project_ids),
             total_qualifying_costs=total_qualifying_costs,
@@ -415,8 +355,177 @@ def dashboard(request: Request, session: Session = Depends(get_session)):
             framework_signals=framework_signals,
             recent_requirements=recent_requirements,
             opportunity_map=opportunities,
-            next_actions=next_actions[:3],
         ),
+    )
+
+
+def data_management_response(
+    request: Request,
+    session: Session,
+    *,
+    error_message: str = "",
+    import_preview: dict | None = None,
+    import_payload: str = "",
+    status_code: int = 200,
+):
+    settings = get_settings()
+    return templates.TemplateResponse(
+        request,
+        "data_management.html",
+        template_context(
+            request,
+            inventory=data_inventory(session),
+            cleanup_items=cleanup_candidates(session),
+            purge_scopes=purge_scope_cards(session),
+            editable_areas=[
+                {"label": "Company and accounting periods", "href": "/companies"},
+                {"label": "Customers", "href": "/customers"},
+                {"label": "Contracts", "href": "/contracts"},
+                {"label": "Solutions", "href": "/solutions"},
+                {"label": "R&D projects", "href": "/projects"},
+                {"label": "Costs", "href": "/costs"},
+                {"label": "Evidence", "href": "/evidence-index"},
+                {"label": "Opportunities", "href": "/framework-intelligence/opportunities"},
+            ],
+            data_features={
+                "import": settings.data_import_enabled,
+                "export": settings.data_export_enabled,
+                "cleanup": settings.data_cleanup_enabled,
+                "purge": settings.data_purge_enabled,
+            },
+            error_message=error_message,
+            import_preview=import_preview,
+            import_payload=import_payload,
+        ),
+        status_code=status_code,
+    )
+
+
+@app.get("/data-management", response_class=HTMLResponse)
+def data_management(request: Request, session: Session = Depends(get_session)):
+    return data_management_response(request, session)
+
+
+@app.post("/data-management/export")
+async def export_data(request: Request, session: Session = Depends(get_session)):
+    if not get_settings().data_export_enabled:
+        return data_management_response(request, session, error_message="Exports are turned off by the administrator.", status_code=403)
+    form = await request.form()
+    dataset_keys = [str(value) for value in form.getlist("data_areas")]
+    export_format = str(form.get("export_format") or "json")
+    try:
+        if export_format == "json":
+            content = json_export_bytes(session, dataset_keys)
+            media_type = "application/json"
+            filename = "rdec-hub-data.json"
+        elif export_format == "csv_zip":
+            content = csv_export_zip_bytes(session, dataset_keys)
+            media_type = "application/zip"
+            filename = "rdec-hub-csv-files.zip"
+        else:
+            raise DataOperationError("Choose JSON backup or CSV files.")
+    except DataOperationError as exc:
+        return data_management_response(request, session, error_message=str(exc), status_code=400)
+    log_event(
+        session,
+        entity_type="DataExport",
+        entity_id=None,
+        action="export",
+        summary=f"Exported {len(dataset_keys)} selected data areas as {export_format}",
+        after=json.dumps({"data_areas": dataset_keys, "format": export_format}, sort_keys=True),
+    )
+    session.commit()
+    return Response(
+        content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/data-management/import/preview", response_class=HTMLResponse)
+async def preview_data_import(request: Request, session: Session = Depends(get_session)):
+    if not get_settings().data_import_enabled:
+        return data_management_response(request, session, error_message="Imports are turned off by the administrator.", status_code=403)
+    form = await request.form()
+    upload = form.get("import_file")
+    if not upload or not hasattr(upload, "read"):
+        return data_management_response(request, session, error_message="Choose a JSON or CSV file to preview.", status_code=400)
+    try:
+        content = await upload.read()
+        datasets = parse_import_file(
+            str(getattr(upload, "filename", "") or ""),
+            content,
+            str(form.get("data_area") or ""),
+        )
+        plan = build_import_plan(session, datasets, str(form.get("import_mode") or "add_only"))
+        payload = encode_import_payload(plan)
+    except DataOperationError as exc:
+        return data_management_response(request, session, error_message=str(exc), status_code=400)
+    return data_management_response(request, session, import_preview=plan, import_payload=payload)
+
+
+@app.post("/data-management/import/apply")
+async def apply_data_import(request: Request, session: Session = Depends(get_session)):
+    if not get_settings().data_import_enabled:
+        return data_management_response(request, session, error_message="Imports are turned off by the administrator.", status_code=403)
+    form = await request.form()
+    try:
+        mode, datasets = decode_import_payload(str(form.get("import_payload") or ""))
+        result = apply_import(session, datasets, mode)
+    except DataOperationError as exc:
+        return data_management_response(request, session, error_message=str(exc), status_code=400)
+    notice = quote(
+        f"Import complete: {result['created']} added, {result['updated']} updated and {result['skipped']} unchanged."
+    )
+    return redirect(f"/data-management?notice={notice}")
+
+
+@app.post("/data-management/cleanup")
+async def cleanup_data(request: Request, session: Session = Depends(get_session)):
+    if not get_settings().data_cleanup_enabled:
+        return data_management_response(request, session, error_message="Cleanup is turned off by the administrator.", status_code=403)
+    form = await request.form()
+    if str(form.get("cleanup_confirmation") or "").strip() != "DELETE UNUSED":
+        return data_management_response(request, session, error_message="Type DELETE UNUSED exactly to remove the selected records.", status_code=400)
+    try:
+        removed = delete_unused_records(session, [str(value) for value in form.getlist("cleanup_items")])
+    except DataOperationError as exc:
+        return data_management_response(request, session, error_message=str(exc), status_code=400)
+    return redirect(f"/data-management?notice={quote(f'{removed} unused record(s) removed.')}")
+
+
+@app.post("/data-management/purge")
+async def purge_data(request: Request, session: Session = Depends(get_session)):
+    if not get_settings().data_purge_enabled:
+        return redirect("/data-management?error=purge_disabled")
+    form = await request.form()
+    if not parse_form_bool(form.get("backup_acknowledged")):
+        return data_management_response(
+            request,
+            session,
+            error_message="Confirm that the required backup has been downloaded before purging data.",
+            status_code=400,
+        )
+    try:
+        counts = purge_records(
+            session,
+            str(form.get("purge_scope") or ""),
+            str(form.get("purge_confirmation") or ""),
+        )
+    except DataOperationError as exc:
+        return data_management_response(request, session, error_message=str(exc), status_code=400)
+    removed = sum(counts.values())
+    return redirect(f"/data-management?notice={quote(f'Purge complete: {removed} working record(s) removed. Change history was preserved.')}")
+
+
+@app.get("/final-review", response_class=HTMLResponse)
+def final_review(request: Request, session: Session = Depends(get_session)):
+    periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
+    reviews = [aif_readiness_for_period(session, period.id or 0) for period in periods]
+    return templates.TemplateResponse(
+        request,
+        "final_review.html",
+        template_context(request, reviews=reviews),
     )
 
 
@@ -1146,34 +1255,39 @@ def framework_report_detail(
 def companies(request: Request, session: Session = Depends(get_session)):
     companies = list(session.exec(select(Company).order_by(col(Company.company_name))))
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
+    setup_context = company_setup_context(companies, periods)
     return templates.TemplateResponse(
         request,
         "companies.html",
-        template_context(request, companies=companies, periods=periods),
+        template_context(request, companies=companies, periods=periods, company_setup=setup_context),
     )
 
 
 @app.post("/companies")
 async def create_company(request: Request, session: Session = Depends(get_session)):
     form = await request.form()
+    payload = normalize_company_payload(form)
+    errors = validate_company_payload(payload)
+    if errors:
+        return validation_error_response(errors, "/companies")
     company = Company(
-        company_name=str(form.get("company_name") or ""),
-        utr=str(form.get("utr") or ""),
-        paye_reference=str(form.get("paye_reference") or ""),
-        vat_number=str(form.get("vat_number") or ""),
-        sic_code=str(form.get("sic_code") or ""),
-        registered_office_country=str(form.get("registered_office_country") or "United Kingdom"),
-        registered_office_region=str(form.get("registered_office_region") or ""),
+        company_name=payload["company_name"],
+        utr=payload["utr"],
+        paye_reference=payload["paye_reference"],
+        vat_number=payload["vat_number"],
+        sic_code=payload["sic_code"],
+        registered_office_country=payload["registered_office_country"],
+        registered_office_region=payload["registered_office_region"],
         northern_ireland_registered=parse_form_bool(form.get("northern_ireland_registered")),
-        senior_rd_contact_name=str(form.get("senior_rd_contact_name") or ""),
-        senior_rd_contact_role=str(form.get("senior_rd_contact_role") or ""),
-        senior_rd_contact_email=str(form.get("senior_rd_contact_email") or ""),
-        senior_rd_contact_phone=str(form.get("senior_rd_contact_phone") or ""),
-        agent_name=str(form.get("agent_name") or ""),
-        agent_reference=str(form.get("agent_reference") or ""),
-        agent_email=str(form.get("agent_email") or ""),
-        agent_phone=str(form.get("agent_phone") or ""),
-        agent_role=str(form.get("agent_role") or ""),
+        senior_rd_contact_name=payload["senior_rd_contact_name"],
+        senior_rd_contact_role=payload["senior_rd_contact_role"],
+        senior_rd_contact_email=payload["senior_rd_contact_email"],
+        senior_rd_contact_phone=payload["senior_rd_contact_phone"],
+        agent_name=payload["agent_name"],
+        agent_reference=payload["agent_reference"],
+        agent_email=payload["agent_email"],
+        agent_phone=payload["agent_phone"],
+        agent_role=payload["agent_role"],
     )
     save_with_audit(session, company, "create", f"Created company {company.company_name}")
     return redirect("/companies")
@@ -1185,24 +1299,28 @@ async def update_company(company_id: int, request: Request, session: Session = D
     company = session.get(Company, company_id)
     if not company:
         return redirect("/companies")
+    payload = normalize_company_payload(form)
+    errors = validate_company_payload(payload)
+    if errors:
+        return validation_error_response(errors, "/companies")
     before_snapshot = compact_snapshot(company)
-    company.company_name = str(form.get("company_name") or "")
-    company.utr = str(form.get("utr") or "")
-    company.paye_reference = str(form.get("paye_reference") or "")
-    company.vat_number = str(form.get("vat_number") or "")
-    company.sic_code = str(form.get("sic_code") or "")
-    company.registered_office_country = str(form.get("registered_office_country") or "United Kingdom")
-    company.registered_office_region = str(form.get("registered_office_region") or "")
+    company.company_name = payload["company_name"]
+    company.utr = payload["utr"]
+    company.paye_reference = payload["paye_reference"]
+    company.vat_number = payload["vat_number"]
+    company.sic_code = payload["sic_code"]
+    company.registered_office_country = payload["registered_office_country"]
+    company.registered_office_region = payload["registered_office_region"]
     company.northern_ireland_registered = parse_form_bool(form.get("northern_ireland_registered"))
-    company.senior_rd_contact_name = str(form.get("senior_rd_contact_name") or "")
-    company.senior_rd_contact_role = str(form.get("senior_rd_contact_role") or "")
-    company.senior_rd_contact_email = str(form.get("senior_rd_contact_email") or "")
-    company.senior_rd_contact_phone = str(form.get("senior_rd_contact_phone") or "")
-    company.agent_name = str(form.get("agent_name") or "")
-    company.agent_reference = str(form.get("agent_reference") or "")
-    company.agent_email = str(form.get("agent_email") or "")
-    company.agent_phone = str(form.get("agent_phone") or "")
-    company.agent_role = str(form.get("agent_role") or "")
+    company.senior_rd_contact_name = payload["senior_rd_contact_name"]
+    company.senior_rd_contact_role = payload["senior_rd_contact_role"]
+    company.senior_rd_contact_email = payload["senior_rd_contact_email"]
+    company.senior_rd_contact_phone = payload["senior_rd_contact_phone"]
+    company.agent_name = payload["agent_name"]
+    company.agent_reference = payload["agent_reference"]
+    company.agent_email = payload["agent_email"]
+    company.agent_phone = payload["agent_phone"]
+    company.agent_role = payload["agent_role"]
     save_with_audit(session, company, "update", f"Updated company {company.company_name}", before_snapshot)
     return redirect("/companies")
 
@@ -1230,16 +1348,28 @@ async def create_accounting_period(request: Request, session: Session = Depends(
         "Claim notification date",
         errors,
     )
+    claim_notification_submitted = parse_form_bool(form.get("claim_notification_submitted"))
+    errors.extend(
+        validate_accounting_period_dates(
+            start_date,
+            end_date,
+            period_of_account_start,
+            period_of_account_end,
+            claim_notification_submitted,
+            claim_notification_date,
+        )
+    )
     if errors:
         return validation_error_response(errors, "/companies")
+    label = str(form.get("label") or "").strip() or accounting_period_label(start_date, end_date)
     period = AccountingPeriod(
         company_id=company_id,
-        label=str(form.get("label") or ""),
+        label=label,
         start_date=start_date,
         end_date=end_date,
         period_of_account_start=period_of_account_start,
         period_of_account_end=period_of_account_end,
-        claim_notification_submitted=parse_form_bool(form.get("claim_notification_submitted")),
+        claim_notification_submitted=claim_notification_submitted,
         claim_notification_date=claim_notification_date,
         prior_claim_within_3_years=parse_form_bool(form.get("prior_claim_within_3_years")),
         scheme_notes=str(form.get("scheme_notes") or ""),
@@ -1276,16 +1406,27 @@ async def update_accounting_period(period_id: int, request: Request, session: Se
         "Claim notification date",
         errors,
     )
+    claim_notification_submitted = parse_form_bool(form.get("claim_notification_submitted"))
+    errors.extend(
+        validate_accounting_period_dates(
+            start_date,
+            end_date,
+            period_of_account_start,
+            period_of_account_end,
+            claim_notification_submitted,
+            claim_notification_date,
+        )
+    )
     if errors:
         return validation_error_response(errors, "/companies")
     before_snapshot = compact_snapshot(period)
     period.company_id = company_id
-    period.label = str(form.get("label") or "")
+    period.label = str(form.get("label") or "").strip() or accounting_period_label(start_date, end_date)
     period.start_date = start_date
     period.end_date = end_date
     period.period_of_account_start = period_of_account_start
     period.period_of_account_end = period_of_account_end
-    period.claim_notification_submitted = parse_form_bool(form.get("claim_notification_submitted"))
+    period.claim_notification_submitted = claim_notification_submitted
     period.claim_notification_date = claim_notification_date
     period.prior_claim_within_3_years = parse_form_bool(form.get("prior_claim_within_3_years"))
     period.scheme_notes = str(form.get("scheme_notes") or "")
@@ -1297,7 +1438,7 @@ async def update_accounting_period(period_id: int, request: Request, session: Se
 def delete_accounting_period(period_id: int, session: Session = Depends(get_session)):
     linked_project = session.exec(select(RDProject).where(RDProject.accounting_period_id == period_id)).first()
     if linked_project:
-        return redirect("/companies?error=delete_blocked_R&D_projects")
+        return redirect(f"/companies?error={quote('delete_blocked_R&D_projects')}")
     submission = session.exec(
         select(ClaimPeriodSubmissionStatus).where(ClaimPeriodSubmissionStatus.accounting_period_id == period_id)
     ).first()
@@ -1750,7 +1891,8 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
     for child_model, child_field, label in DEPENDENCY_RULES[RDProject]:
         child = session.exec(select(child_model).where(child_field == project_id)).first()
         if child:
-            return redirect(f"/projects?error=delete_blocked_{label.replace(' ', '_')}")
+            error = quote(f"delete_blocked_{label.replace(' ', '_')}")
+            return redirect(f"/projects?error={error}")
     project = session.get(RDProject, project_id)
     if not project:
         return redirect("/projects")

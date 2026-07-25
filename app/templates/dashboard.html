@@ -1,205 +1,145 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - {{ app_name }}{% endblock %}
+{% block title %}Review overview - {{ app_name }}{% endblock %}
 {% block content %}
-<div class="dashboard-shell">
-  <aside class="side-panel">
-    <h2>Operational Focus</h2>
-    <a class="active" href="/">
-      <span>Claim dashboard</span>
-      <small>Live</small>
-    </a>
-    {% for unit in focus_units %}
-      <a href="/business-units">
-        <span>{{ unit.name }}</span>
-        <small>{{ unit.count }}</small>
-      </a>
+<section class="workspace-intro">
+  <div>
+    <span class="eyebrow">Review overview</span>
+    <h1>See what needs attention and continue from the right place.</h1>
+    <p>The workspace brings company setup, project reviews, evidence, costs and final checks into one ordered workflow.</p>
+  </div>
+  <div class="intro-actions">
+    <a class="button" href="{{ workflow.next_stage.href }}">{{ workflow.next_stage.action }}</a>
+    <a class="button secondary" href="/data-management">Manage data</a>
+  </div>
+</section>
+
+<section class="workflow-section" aria-labelledby="workflow-heading">
+  <div class="section-title-row">
+    <div>
+      <h2 id="workflow-heading">Your review workflow</h2>
+      <p>Each step shows the next useful action. A complete step means the current information has no detected gaps; it is not a tax or eligibility approval.</p>
+    </div>
+    <div class="progress-summary">
+      <strong>{{ workflow.complete_count }} of 5 steps complete</strong>
+      <div class="progress-track" aria-label="{{ workflow.progress_percent }} percent complete">
+        <span style="width: {{ workflow.progress_percent }}%"></span>
+      </div>
+    </div>
+  </div>
+  <ol class="workflow-stage-grid">
+    {% for stage in workflow.stages %}
+      <li class="workflow-stage {{ stage.status }}">
+        <div class="stage-heading">
+          <span class="stage-number">{{ stage.number }}</span>
+          <span class="badge {{ stage.tone }}">{{ stage.status_label }}</span>
+        </div>
+        <h3>{{ stage.title }}</h3>
+        <p>{{ stage.description }}</p>
+        <small>{{ stage.detail }}</small>
+        <a href="{{ stage.href }}">{{ stage.action }}</a>
+      </li>
     {% endfor %}
+  </ol>
+</section>
+
+<section class="dashboard-work-grid">
+  <div class="action-section">
+    <div class="section-title-row compact">
+      <div>
+        <h2>Next actions</h2>
+        <p>Ordered from the earliest incomplete workflow step.</p>
+      </div>
+    </div>
+    <div class="action-queue">
+      {% for action in workflow.actions %}
+        <article class="action-item">
+          <span class="action-marker {{ action.tone }}"></span>
+          <div>
+            <h3>{{ action.title }}</h3>
+            <p>{{ action.text }}</p>
+          </div>
+          <div class="action-end">
+            <span class="badge {{ action.tone }}">{{ action.status }}</span>
+            <a href="{{ action.href }}">{{ action.action }}</a>
+          </div>
+        </article>
+      {% else %}
+        <article class="action-item">
+          <span class="action-marker green"></span>
+          <div>
+            <h3>No current workflow gaps detected</h3>
+            <p>Continue the final review with Finance, a competent professional and your tax adviser.</p>
+          </div>
+          <div class="action-end"><a href="/final-review">Open final review</a></div>
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+
+  <aside class="review-summary" aria-label="Current review summary">
+    <h2>Current position</h2>
+    <dl>
+      <div><dt>R&D projects</dt><dd>{{ metrics.total_projects }}</dd></div>
+      <div><dt>Signed professional reviews</dt><dd>{{ signed_project_count }} / {{ metrics.total_projects }}</dd></div>
+      <div><dt>Projects with strong evidence</dt><dd>{{ strong_evidence_project_count }} / {{ metrics.total_projects }}</dd></div>
+      <div><dt>Costs marked for review</dt><dd>GBP {{ "%.2f"|format(total_qualifying_costs) }}</dd></div>
+      <div><dt>Accounting periods with no current warnings</dt><dd>{{ metrics.aif_ready_periods }} / {{ metrics.aif_total_periods }}</dd></div>
+    </dl>
+    <p>{{ caveat }}</p>
   </aside>
+</section>
 
-  <section class="dashboard-content">
-    <section class="command-hero">
-      <div>
-        <span class="badge purple">RDEC review cockpit</span>
-        <h1>Claim evidence, blockers and review actions in one view.</h1>
-        <p>Prioritise R&D candidates, evidence gaps, cost review points, AIF readiness and framework intelligence signals for Finance, competent professional and Ayming review.</p>
-        <div class="hero-actions">
-          <a href="/framework-intelligence/watch-profiles">Add opportunity</a>
-          <a class="secondary" href="/framework-intelligence">Run framework watch</a>
-          <a class="secondary" href="{% if projects and projects[0].accounting_period_id %}/claim-periods/{{ projects[0].accounting_period_id }}/pack{% else %}/companies{% endif %}">Generate claim pack</a>
-        </div>
-      </div>
-      <div class="readiness-panel">
-        <h2>Readiness Signals</h2>
-        <div class="readiness-row">
-          <span>Signed competent professional opinions</span>
-          <strong>{{ signed_project_count }} / {{ metrics.total_projects }}</strong>
-        </div>
-        <div class="readiness-row">
-          <span>Projects with strong evidence</span>
-          <strong>{{ strong_evidence_project_count }} / {{ metrics.total_projects }}</strong>
-        </div>
-        <div class="readiness-row">
-          <span>Costs ready for Finance review</span>
-          <strong>GBP {{ "%.2f"|format(total_qualifying_costs) }}</strong>
-        </div>
-        <div class="readiness-row">
-          <span>AIF timing risk</span>
-          {% if metrics.deadline_warnings %}
-            <span class="badge red">warning</span>
-          {% else %}
-            <span class="badge amber">review</span>
-          {% endif %}
-        </div>
-      </div>
-    </section>
+<section class="table-shell claim-workbench" aria-labelledby="project-work-heading">
+  <div class="table-head">
+    <div>
+      <h2 id="project-work-heading">R&D project review</h2>
+      <p class="hint">Open a project to complete its assessment, evidence, costs and professional review.</p>
+    </div>
+    <a class="button secondary" href="/projects">View all projects</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Project</th>
+          <th>Current view</th>
+          <th>Score</th>
+          <th>Open issues</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for project in projects %}
+          {% set score = metrics.scores.get(project.id) %}
+          <tr>
+            <td data-label="Project">
+              <strong><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></strong>
+            </td>
+            <td data-label="Current view"><span class="badge {{ score.rating }}">{{ score.rating_label }}</span></td>
+            <td data-label="Score">{{ score.score }}</td>
+            <td data-label="Open issues">{{ score.blockers|length }}</td>
+            <td data-label="Action"><a href="/projects/{{ project.id }}/assessment">Continue review</a></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5">No R&D projects have been added. Complete company and work context first, then add the first project.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 
-    <section class="review-strip" aria-label="Review cockpit summary">
-      <div>
-        <span class="label">AIF periods ready</span>
-        <strong>{{ metrics.aif_ready_periods }} / {{ metrics.aif_total_periods }}</strong>
-      </div>
-      <div>
-        <span class="label">Competent professional gaps</span>
-        <strong>{{ metrics.missing_competent_professional }}</strong>
-      </div>
-      <div>
-        <span class="label">Framework signals pending</span>
-        <strong>{{ framework_metrics.pending_signals }}</strong>
-      </div>
-      <div>
-        <span class="label">Source warnings</span>
-        <strong>{{ framework_metrics.source_warnings }}</strong>
-      </div>
-    </section>
-
-    <section class="metric-grid">
-      <div class="metric">
-        <span class="label">Total solutions</span>
-        <span class="value">{{ metrics.total_solutions }}</span>
-        <p>Across Highways, Rail, SCADA, TfL, Network Services and HPC.</p>
-      </div>
-      <div class="metric">
-        <span class="label">Strong candidates</span>
-        <span class="value">{{ metrics.rating_counts.get("green", 0) }}</span>
-        <p>Green only where sign-off, evidence and costs align.</p>
-      </div>
-      <div class="metric">
-        <span class="label">Framework opportunities</span>
-        <span class="value">{{ framework_metrics.opportunity_count }}</span>
-        <p>Tracked from official/public procurement sources.</p>
-      </div>
-      <div class="metric">
-        <span class="label">Evidence gaps</span>
-        <span class="value">{{ metrics.missing_evidence }}</span>
-        <p>Missing project boundary, cost, or uncertainty proof.</p>
-      </div>
-    </section>
-
-    <section class="grid two dashboard-panels">
-      <div class="panel">
-        <h2>Framework Intelligence Signals</h2>
-        <div class="signal-list">
-          {% for signal in framework_signals %}
-            {% set opportunity = opportunity_map.get(signal.opportunity_id) %}
-            <article class="signal-item">
-              <div class="signal-line"></div>
-              <div>
-                <h3>{{ opportunity.title if opportunity else signal.signal_type }}</h3>
-                <p>{{ signal.signal_text }}</p>
-              </div>
-              <span class="badge {{ 'green' if signal.human_review_status == 'accepted' else 'amber' }}">{{ signal.signal_strength }}</span>
-            </article>
-          {% else %}
-            {% for requirement in recent_requirements %}
-              {% set opportunity = opportunity_map.get(requirement.opportunity_id) %}
-              <article class="signal-item">
-                <div class="signal-line"></div>
-                <div>
-                  <h3>{{ opportunity.title if opportunity else requirement.requirement_theme }}</h3>
-                  <p>{{ requirement.requirement_text[:220] }}</p>
-                </div>
-                <span class="badge amber">{{ requirement.human_review_status }}</span>
-              </article>
-            {% else %}
-              <article class="signal-item">
-                <div class="signal-line"></div>
-                <div>
-                  <h3>No framework intelligence signals yet</h3>
-                  <p>Create a customer watch profile and run a guarded source check to populate bid and RDEC candidate intelligence.</p>
-                </div>
-                <span class="badge amber">open</span>
-              </article>
-            {% endfor %}
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="panel">
-        <h2>Next Best Actions</h2>
-        <div class="signal-list">
-          {% for action in next_actions %}
-            <article class="signal-item">
-              <div class="signal-line {{ action.tone }}"></div>
-              <div>
-                <h3>{{ action.title }}</h3>
-                <p>{{ action.text }}</p>
-              </div>
-              <span class="badge {{ action.tone }}">{{ action.status }}</span>
-            </article>
-          {% else %}
-            <article class="signal-item">
-              <div class="signal-line green"></div>
-              <div>
-                <h3>No urgent blockers in the current dashboard</h3>
-                <p>Continue capturing project evidence, costs, entitlement notes and review decisions as live work progresses.</p>
-              </div>
-              <span class="badge green">clear</span>
-            </article>
-          {% endfor %}
-        </div>
-      </div>
-    </section>
-
-    <section class="table-shell claim-workbench">
-      <div class="table-head">
-        <h2>Claim Period Workbench</h2>
-        <span class="badge amber">{{ caveat }}</span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Rating</th>
-              <th>Score</th>
-              <th>Blockers</th>
-              <th>Next step</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for project in projects %}
-              {% set score = metrics.scores.get(project.id) %}
-              <tr>
-                <td data-label="Project">
-                  <strong><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></strong>
-                  <p class="hint">{{ score.rating_label }}</p>
-                </td>
-                <td data-label="Rating"><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
-                <td data-label="Score">{{ score.score }}</td>
-                <td data-label="Blockers">{{ score.blockers|length }}</td>
-                <td data-label="Next step"><a href="/projects/{{ project.id }}/assessment">Review assessment</a></td>
-              </tr>
-            {% else %}
-              <tr>
-                <td colspan="5">No projects captured yet. Add customers, contracts, solutions and R&D projects to populate the workbench.</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <p class="dashboard-footnote">Decision support only. Every R&D candidate, entitlement position, cost value and report remains subject to competent professional and tax review.</p>
-  </section>
-</div>
+<section class="supporting-tools">
+  <div>
+    <h2>Supporting tools</h2>
+    <p>Check official guidance sources, review public opportunities, manage data and inspect the change history when needed.</p>
+  </div>
+  <div class="support-link-grid">
+    <a href="/knowledge-agent"><strong>Guidance checks</strong><span>See when configured sources were last checked.</span></a>
+    <a href="/framework-intelligence"><strong>Opportunity review</strong><span>Review public opportunity suggestions and supporting sources.</span></a>
+    <a href="/data-management"><strong>Data management</strong><span>Edit, import, export and clean up local working data.</span></a>
+    <a href="/audit"><strong>Change history</strong><span>Review recorded create, update, import and deletion actions.</span></a>
+  </div>
+</section>
 {% endblock %}

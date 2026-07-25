@@ -73,8 +73,8 @@
                   <button type="submit">Update cost</button>
                 </form>
               </details>
-              <form method="post" action="/costs/{{ cost.id }}/delete" style="margin-top: 8px;">
-                <button class="secondary" type="submit">Delete</button>
+              <form method="post" action="/costs/{{ cost.id }}/delete" style="margin-top: 8px;" onsubmit="return confirm('Delete this cost line? This cannot be undone.');">
+                <button class="danger-button" type="submit">Delete cost</button>
               </form>
             </td>
           </tr>

@@ -33,8 +33,8 @@
           </tr>
           <tr>
             <td colspan="5">
-              <details>
-                <summary>Edit / delete project</summary>
+              <details class="record-editor">
+                <summary>View or edit project</summary>
                 <form method="post" action="/projects/{{ project.id }}/update">
                   <div class="field"><label>Project title</label><input name="project_title" value="{{ project.project_title }}" required></div>
                   <div class="form-grid">
@@ -62,8 +62,8 @@
                   </div>
                   <button type="submit">Update project</button>
                 </form>
-                <form method="post" action="/projects/{{ project.id }}/delete">
-                  <button class="secondary" type="submit">Delete</button>
+                <form method="post" action="/projects/{{ project.id }}/delete" onsubmit="return confirm('Delete this project? This cannot be undone.');">
+                  <button class="danger-button" type="submit">Delete project</button>
                   <p class="hint">Delete is blocked if costs, evidence, or competent professional opinions are linked.</p>
                 </form>
               </details>

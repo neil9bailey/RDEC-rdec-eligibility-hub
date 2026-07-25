@@ -5,5 +5,9 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: sqlite:///./data/rdec_hub.db
+      DATA_IMPORT_ENABLED: ${DATA_IMPORT_ENABLED:-true}
+      DATA_EXPORT_ENABLED: ${DATA_EXPORT_ENABLED:-true}
+      DATA_CLEANUP_ENABLED: ${DATA_CLEANUP_ENABLED:-true}
+      DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-false}
     volumes:
       - ./data:/app/data

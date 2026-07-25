@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Data management - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Data management</h1>
+    <p>Edit existing records, download selected working data, preview additions and updates, and remove information that is no longer required.</p>
+  </div>
+  <a class="button secondary" href="/audit">Open change history</a>
+</div>
+
+{% if error_message %}<div class="flash-message error" role="alert">{{ error_message }}</div>{% endif %}
+
+<nav class="section-tabs" aria-label="Data management sections">
+  <a href="#edit-records">Edit records</a>
+  <a href="#export-data">Export</a>
+  <a href="#import-data">Import</a>
+  <a href="#cleanup-data">Clean up</a>
+  <a href="#purge-data">Purge</a>
+</nav>
+
+<section id="edit-records" class="data-section">
+  <div class="section-title-row">
+    <div>
+      <span class="eyebrow">Everyday changes</span>
+      <h2>Edit records</h2>
+      <p>Open the relevant area to add, correct, update or delete an individual record. Deletion is blocked while another record still uses it.</p>
+    </div>
+  </div>
+  <div class="edit-link-grid">
+    {% for area in editable_areas %}<a href="{{ area.href }}">{{ area.label }}<span>Open</span></a>{% endfor %}
+  </div>
+</section>
+
+<section id="export-data" class="data-section">
+  <div class="section-title-row">
+    <div>
+      <span class="eyebrow">Download</span>
+      <h2>Export selected data</h2>
+      <p>Choose exactly what to include. Use JSON when you may need to re-add or update records later; use CSV files for spreadsheet review.</p>
+    </div>
+    <span class="badge {{ 'green' if data_features.export else 'weak' }}">{{ 'Available' if data_features.export else 'Turned off' }}</span>
+  </div>
+  {% if data_features.export %}
+    <form method="post" action="/data-management/export">
+      <fieldset class="plain-fieldset">
+        <legend>File type</legend>
+        <div class="segmented-options">
+          <label><input type="radio" name="export_format" value="json" checked><span>JSON backup</span></label>
+          <label><input type="radio" name="export_format" value="csv_zip"><span>CSV files</span></label>
+        </div>
+      </fieldset>
+      <div class="data-area-groups">
+        {% for group, areas in inventory.items() %}
+          <fieldset class="plain-fieldset">
+            <legend>{{ group }}</legend>
+            <div class="selection-list">
+              {% for area in areas %}
+                <label class="selection-row">
+                  <input type="checkbox" name="data_areas" value="{{ area.key }}" {% if group != 'History' %}checked{% endif %}>
+                  <span><strong>{{ area.label }}</strong><small>{{ area.count }} record{{ '' if area.count == 1 else 's' }}</small></span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+        {% endfor %}
+      </div>
+      <div class="trust-note compact">Exports contain local working information and may be sensitive. Store and share them under your business data-handling rules.</div>
+      <button type="submit">Download selected data</button>
+    </form>
+  {% else %}
+    <div class="empty-state"><p>Exports are currently turned off by the administrator.</p></div>
+  {% endif %}
+</section>
+
+<section id="import-data" class="data-section">
+  <div class="section-title-row">
+    <div>
+      <span class="eyebrow">Preview first</span>
+      <h2>Import additions and updates</h2>
+      <p>Nothing is changed during preview. The app checks fields, matching records and links before showing what would be added, updated or left unchanged.</p>
+    </div>
+    <span class="badge {{ 'green' if data_features.import else 'weak' }}">{{ 'Available' if data_features.import else 'Turned off' }}</span>
+  </div>
+  {% if data_features.import %}
+    <form method="post" action="/data-management/import/preview" enctype="multipart/form-data">
+      <div class="form-grid three">
+        <div class="field">
+          <label for="import_file">JSON or CSV file</label>
+          <input id="import_file" name="import_file" type="file" accept=".json,.csv,application/json,text/csv" required>
+          <span class="hint">Maximum 5 MB and 5,000 records.</span>
+        </div>
+        <div class="field">
+          <label for="data_area">Data area for a CSV or simple JSON list</label>
+          <select id="data_area" name="data_area">
+            <option value="">Read areas from a Hub JSON backup</option>
+            {% for group, areas in inventory.items() %}
+              <optgroup label="{{ group }}">
+                {% for area in areas %}{% if area.importable %}<option value="{{ area.key }}">{{ area.label }}</option>{% endif %}{% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+        <fieldset class="plain-fieldset">
+          <legend>How matches should be handled</legend>
+          <div class="segmented-options vertical">
+            <label><input type="radio" name="import_mode" value="add_only" checked><span>Add new only</span></label>
+            <label><input type="radio" name="import_mode" value="add_update"><span>Add new and update matches</span></label>
+          </div>
+        </fieldset>
+      </div>
+      <button type="submit">Preview import</button>
+    </form>
+  {% else %}
+    <div class="empty-state"><p>Imports are currently turned off by the administrator.</p></div>
+  {% endif %}
+
+  {% if import_preview %}
+    <div class="import-preview" aria-live="polite">
+      <div class="section-title-row compact">
+        <div>
+          <h3>Import preview</h3>
+          <p>Review every proposed change before applying it.</p>
+        </div>
+        <div class="preview-counts">
+          <span class="badge green">{{ import_preview.summary["create"] }} add</span>
+          <span class="badge amber">{{ import_preview.summary["update"] }} update</span>
+          <span class="badge weak">{{ import_preview.summary["skip"] }} unchanged</span>
+          <span class="badge red">{{ import_preview.summary["error"] }} errors</span>
+        </div>
+      </div>
+      <div class="table-wrap compact-table">
+        <table>
+          <thead><tr><th>Data area</th><th>Record</th><th>Result</th><th>Details</th></tr></thead>
+          <tbody>
+            {% for row in import_preview.rows[:100] %}
+              <tr>
+                <td>{{ row.dataset_label }}</td>
+                <td>{{ row.display }}</td>
+                <td><span class="badge {{ 'green' if row.status == 'create' else 'amber' if row.status == 'update' else 'weak' if row.status == 'skip' else 'red' }}">{{ 'add' if row.status == 'create' else row.status }}</span></td>
+                <td>{{ row.errors|join(' ') if row.errors else 'Checks passed' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if import_preview.rows|length > 100 %}<p class="hint">Showing the first 100 of {{ import_preview.rows|length }} preview records.</p>{% endif %}
+      {% if import_preview.has_errors %}
+        <div class="flash-message error">Fix the listed errors in the source file and preview it again. No records have changed.</div>
+      {% elif import_payload %}
+        <form method="post" action="/data-management/import/apply" class="confirm-action">
+          <input type="hidden" name="import_payload" value="{{ import_payload }}">
+          <label class="checkbox"><input type="checkbox" required> I have reviewed the additions and updates shown above.</label>
+          <button type="submit">Apply these changes</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+</section>
+
+<section id="cleanup-data" class="data-section">
+  <div class="section-title-row">
+    <div>
+      <span class="eyebrow">Unused records only</span>
+      <h2>Clean up selected records</h2>
+      <p>Only records with no current links are shown. The app checks them again immediately before deletion.</p>
+    </div>
+    <span class="badge {{ 'green' if data_features.cleanup else 'weak' }}">{{ 'Available' if data_features.cleanup else 'Turned off' }}</span>
+  </div>
+  {% if data_features.cleanup and cleanup_items %}
+    <form method="post" action="/data-management/cleanup">
+      <div class="selection-list cleanup-list">
+        {% for item in cleanup_items %}
+          <label class="selection-row">
+            <input type="checkbox" name="cleanup_items" value="{{ item.token }}">
+            <span><strong>{{ item.display }}</strong><small>{{ item.dataset_label }}</small></span>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="field confirmation-field">
+        <label for="cleanup_confirmation">Type DELETE UNUSED to confirm</label>
+        <input id="cleanup_confirmation" name="cleanup_confirmation" autocomplete="off" required>
+      </div>
+      <button class="danger-button" type="submit">Remove selected unused records</button>
+    </form>
+  {% elif data_features.cleanup %}
+    <div class="empty-state"><p>No unused records are currently available for cleanup.</p></div>
+  {% else %}
+    <div class="empty-state"><p>Cleanup is currently turned off by the administrator.</p></div>
+  {% endif %}
+</section>
+
+<section id="purge-data" class="data-section danger-section">
+  <div class="section-title-row">
+    <div>
+      <span class="eyebrow">Administrator control</span>
+      <h2>Purge a whole area</h2>
+      <p>Purge permanently removes a selected group of working records. It keeps reference catalogues and change history, but the deleted working data cannot be restored without a backup.</p>
+    </div>
+    <span class="badge {{ 'red' if data_features.purge else 'weak' }}">{{ 'Enabled' if data_features.purge else 'Safely off' }}</span>
+  </div>
+  {% if data_features.purge %}
+    <form method="post" action="/data-management/purge">
+      <div class="purge-scope-list">
+        {% for scope in purge_scopes %}
+          <label class="purge-scope">
+            <input type="radio" name="purge_scope" value="{{ scope.key }}" required>
+            <span><strong>{{ scope.label }}</strong><small>{{ scope.description }}</small><em>{{ scope.count }} records now. Confirmation: {{ scope.confirmation }}</em></span>
+          </label>
+        {% endfor %}
+      </div>
+      <label class="checkbox"><input type="checkbox" name="backup_acknowledged" required> I have downloaded the backup required by my business process.</label>
+      <div class="field confirmation-field">
+        <label for="purge_confirmation">Type the exact confirmation shown for the selected area</label>
+        <input id="purge_confirmation" name="purge_confirmation" autocomplete="off" required>
+      </div>
+      <button class="danger-button" type="submit">Permanently purge selected area</button>
+    </form>
+  {% else %}
+    <div class="empty-state">
+      <h3>Purge is not available in this workspace</h3>
+      <p>An administrator must deliberately enable it. Everyday editing, guarded deletion and unused-record cleanup remain available.</p>
+    </div>
+  {% endif %}
+</section>
+
+<div class="trust-note">{{ caveat }}</div>
+{% endblock %}

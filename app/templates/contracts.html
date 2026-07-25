@@ -22,8 +22,8 @@
             {% if contract.technical_uncertainty_described %}<span class="badge amber">uncertainty in contract</span>{% endif %}
           </p>
           <p class="muted">{{ contract.public_sector_procurement_notes }}</p>
-          <details>
-            <summary>Edit / delete</summary>
+          <details class="record-editor">
+            <summary>View or edit contract</summary>
             <form method="post" action="/contracts/{{ contract.id }}/update">
               <div class="field"><label>Contract name</label><input name="contract_name" value="{{ contract.contract_name }}" required></div>
               <div class="form-grid">
@@ -49,8 +49,8 @@
               <div class="field"><label>Contract evidence links</label><textarea name="contract_evidence_links">{{ contract.contract_evidence_links }}</textarea></div>
               <button type="submit">Update contract</button>
             </form>
-            <form method="post" action="/contracts/{{ contract.id }}/delete">
-              <button class="secondary" type="submit">Delete</button>
+            <form method="post" action="/contracts/{{ contract.id }}/delete" onsubmit="return confirm('Delete this contract? This cannot be undone.');">
+              <button class="danger-button" type="submit">Delete contract</button>
               <p class="hint">Delete is blocked if solutions are linked.</p>
             </form>
           </details>

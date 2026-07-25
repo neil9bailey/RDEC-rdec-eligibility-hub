@@ -7,6 +7,7 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 ## What It Does
 
 - Captures company, customer, contract/SOW, solution, R&D project, evidence, cost, competent professional, entitlement, and claim-period submission data.
+- Guides users through company setup, work context, R&D review, evidence and costs, and final review from one ordered overview.
 - Captures people time with roles, periods, hours or days, internal rates, apportionment, and timesheet / PSA evidence links.
 - Scores projects using configurable YAML-backed runtime rules.
 - Tracks official HMRC/GOV.UK guidance through a Knowledge Agent source register and optional live source checks.
@@ -15,6 +16,8 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Calculates qualifying cost amounts from gross cost and apportionment percentage.
 - Applies configurable Additional Information Form project-selection logic.
 - Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
+- Exports selected local data as a JSON backup bundle or review-friendly CSV files, and previews controlled JSON/CSV additions and updates before applying them.
+- Identifies explicitly selected unused records for guarded cleanup. Whole-area purge is implemented but disabled by default.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
 - Generates exportable Markdown framework intelligence summaries for bid, engineering, Finance, and Ayming review discussions.
 - Seeds reference business units and a small set of non-demo reference customers by default, ready for live project entry after exact customer/legal-entity review.
@@ -55,7 +58,7 @@ The demo baseline remains a decision-support MVP. It is not legal, tax, accounti
 
 This remains an MVP for local evidence capture and decision support. It is not suitable for live public-sector evidence operations without additional controls, including SSO, role-based access control, formal audit-log review, backup/restore, deployment controls, encryption and retention policies, and evidence export governance.
 
-The current audit log is useful for local traceability, but it is not immutable or append-only. Production use should move to a controlled deployment model, stronger identity, and a database platform such as Postgres with managed migrations.
+The current audit log is useful for local traceability, but it is not immutable or append-only. Import, export, cleanup, and purge controls are local MVP safeguards rather than production data governance. Production use should move to a controlled deployment model, stronger identity, managed backup/restore, retention controls, and a database platform such as Postgres with managed migrations.
 
 ## Official Guidance Checked
 
@@ -126,9 +129,37 @@ $env:SEED_DEMO_DATA="true"
 docker compose up --build
 ```
 
-## Data Reset
+## Local Data Management And Reset
 
 SQLite data is stored under `./data` and is ignored by Git.
+
+Use `/data-management` for normal local administration:
+
+- open the existing edit pages for individual records
+- export selected data as a JSON backup bundle or ZIP of CSV files
+- preview JSON or CSV additions and updates before applying them
+- remove selected records only when the Hub confirms they have no current links
+- inspect purge scopes and record counts
+
+Import, export, and unused-record cleanup are enabled by default. Whole-area purge is disabled by default. To make purge available only in a controlled local session:
+
+```powershell
+$env:DATA_PURGE_ENABLED="true"
+docker compose up --build
+```
+
+An enabled purge still requires a selected scope, backup acknowledgement, and the exact confirmation phrase shown in the UI. Reference catalogues and local change history are preserved. This does not replace a managed business backup and restore process.
+
+The local data controls can be configured independently before startup:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `DATA_IMPORT_ENABLED` | `true` | Allows previewed JSON/CSV additions and updates. |
+| `DATA_EXPORT_ENABLED` | `true` | Allows selected JSON and CSV downloads. |
+| `DATA_CLEANUP_ENABLED` | `true` | Allows deletion of explicitly selected unused records. |
+| `DATA_PURGE_ENABLED` | `false` | Makes guarded whole-area purge controls available. |
+
+For a deliberate full local SQLite reset outside the UI:
 
 ```powershell
 docker compose down
@@ -193,6 +224,9 @@ It covers business-unit setup, company/accounting period setup, customer and con
 
 - `app/main.py` - FastAPI routes and Jinja rendering.
 - `app/models.py` - SQLModel database models.
+- `app/company_setup.py` - claimant company normalization, setup readiness, and accounting-period guardrails.
+- `app/review_cockpit.py` - workflow stage status and prioritised next actions.
+- `app/data_management.py` - selected exports, previewed imports, unused-record cleanup, purge scopes, and relationship safeguards.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, dashboard metrics.
 - `app/rules_engine.py` - typed runtime accessors and validation for YAML rules.
 - `app/form_utils.py` - safe form parsing helpers and validation responses.
@@ -204,7 +238,7 @@ It covers business-unit setup, company/accounting period setup, customer and con
 - `app/templates/` - server-rendered HTML.
 - `app/static/` - CSS and vendored HTMX.
 - `app/rules/` - versioned YAML rules.
-- `tests/` - pytest coverage for rules, reports, costs, AIF logic, models, route smoke tests, validation, and audit logging.
+- `tests/` - pytest coverage for rules, reports, costs, company setup readiness, data management, AIF logic, models, route smoke tests, validation, and audit logging.
 
 The app uses SQLite for MVP persistence and initialises tables automatically at startup. No secrets are required.
 
@@ -231,6 +265,8 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 ## Main Pages
 
 - `/`
+- `/final-review`
+- `/data-management`
 - `/knowledge-agent`
 - `/framework-intelligence`
 - `/framework-intelligence/source-catalogue`
@@ -265,9 +301,9 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 
 ## Future Roadmap
 
-- Jira import
-- Azure DevOps import
-- GitHub import
+- Direct Jira connector
+- Direct Azure DevOps connector
+- Direct GitHub connector
 - ServiceNow evidence links
 - SharePoint document indexing
 - Confluence evidence links

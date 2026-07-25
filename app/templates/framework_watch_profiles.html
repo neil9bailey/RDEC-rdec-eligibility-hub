@@ -32,7 +32,7 @@
             <button type="submit">Run guarded source check</button>
           </form>
           <details>
-            <summary>Edit / delete</summary>
+            <summary>View or edit saved search</summary>
             <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/update">
               <div class="field"><label>Profile name</label><input name="profile_name" value="{{ profile.profile_name }}" required></div>
               <div class="form-grid">
@@ -64,8 +64,8 @@
               <div class="field"><label>Review notes</label><textarea name="review_notes">{{ profile.review_notes }}</textarea></div>
               <button type="submit">Update profile</button>
             </form>
-            <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/delete">
-              <button class="secondary" type="submit">Delete</button>
+            <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/delete" onsubmit="return confirm('Delete this saved search? This cannot be undone.');">
+              <button class="danger-button" type="submit">Delete saved search</button>
               <p class="hint">Delete is blocked if agent runs are linked.</p>
             </form>
           </details>

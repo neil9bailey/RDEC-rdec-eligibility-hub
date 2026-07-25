@@ -29,7 +29,7 @@
           <p class="muted">Last status: {{ source.last_status or "not checked" }}</p>
           <p>{{ source.notes }}</p>
           <details>
-            <summary>Edit / delete</summary>
+            <summary>View or edit source</summary>
             <form method="post" action="/framework-intelligence/sources/{{ source.id }}/update">
               <div class="field"><label>Name</label><input name="name" value="{{ source.name }}" required></div>
               <div class="form-grid">
@@ -60,8 +60,8 @@
               <div class="field"><label>Notes</label><textarea name="notes">{{ source.notes }}</textarea></div>
               <button type="submit">Update source</button>
             </form>
-            <form method="post" action="/framework-intelligence/sources/{{ source.id }}/delete">
-              <button type="submit" class="secondary">Delete</button>
+            <form method="post" action="/framework-intelligence/sources/{{ source.id }}/delete" onsubmit="return confirm('Delete this source? This cannot be undone.');">
+              <button type="submit" class="danger-button">Delete source</button>
               <p class="hint">Delete is blocked if captured opportunities depend on this source.</p>
             </form>
           </details>
