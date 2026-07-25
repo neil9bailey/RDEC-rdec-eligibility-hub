@@ -22,6 +22,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
 
+import app.data_integrity as data_integrity
 import app.database as database
 import app.main as main
 import app.seed as seed
@@ -272,8 +273,8 @@ def fk_engine(tmp_path):
         yield engine
     finally:
         database.FK_ENFORCEMENT = False
-        database.INTEGRITY_REPORT = ()
-        database.INTEGRITY_WARNING = None
+        data_integrity.INTEGRITY_REPORT = ()
+        data_integrity.INTEGRITY_WARNING = None
         engine.dispose()
 
 
@@ -340,7 +341,7 @@ def test_a_fresh_schema_carries_every_foreign_key_the_scan_relies_on(fk_engine):
         for table in FK_EVIDENCE_TABLES:
             constraints = connection.execute(text(f"PRAGMA foreign_key_list({table})")).fetchall()
             assert constraints, f"{table} has no foreign key in the fresh schema"
-    assert database.missing_foreign_key_constraints(fk_engine) == {}
+    assert data_integrity.missing_foreign_key_constraints(fk_engine) == {}
 
 
 def test_an_alter_added_column_is_reported_as_unenforced(fk_engine, monkeypatch):
@@ -358,7 +359,7 @@ def test_an_alter_added_column_is_reported_as_unenforced(fk_engine, monkeypatch)
     monkeypatch.setattr(database, "engine", fk_engine)
     database.apply_sqlite_schema_updates()
 
-    assert database.missing_foreign_key_constraints(fk_engine) == {"customer": ("business_unit_id",)}
+    assert data_integrity.missing_foreign_key_constraints(fk_engine) == {"customer": ("business_unit_id",)}
 
 
 def test_scan_orphans_reports_the_orphan_and_changes_nothing(fk_engine):
@@ -372,7 +373,7 @@ def test_scan_orphans_reports_the_orphan_and_changes_nothing(fk_engine):
             for contract in session.exec(select(Contract))
         ]
 
-        orphans = database.scan_orphans(session)
+        orphans = data_integrity.scan_orphans(session)
 
         after = [
             (contract.id, contract.contract_name, contract.customer_id)
@@ -406,7 +407,7 @@ def test_an_orphan_withholds_enforcement_instead_of_repairing_anything(fk_engine
         session.add(Contract(contract_name="Orphan contract", customer_id=4242))
         session.commit()
 
-        result = database.apply_foreign_key_policy(session, fk_engine)
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
 
         surviving = [contract.contract_name for contract in session.exec(select(Contract))]
 
@@ -416,13 +417,13 @@ def test_an_orphan_withholds_enforcement_instead_of_repairing_anything(fk_engine
     assert len(result.orphans) == 1
     assert "Orphan contract" in surviving
     assert "link checking is switched off" in (result.warning or "")
-    assert database.INTEGRITY_WARNING == result.warning
+    assert data_integrity.INTEGRITY_WARNING == result.warning
 
 
 def test_a_clean_database_enables_enforcement_and_disposes_the_pool(fk_engine):
     with Session(fk_engine) as session:
         seed_minimum_parents(session)
-        result = database.apply_foreign_key_policy(session, fk_engine)
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
 
     assert result.enforcement_enabled is True
     assert result.orphans == ()
@@ -435,7 +436,7 @@ def test_the_operator_escape_hatch_withholds_enforcement(fk_engine, monkeypatch)
     monkeypatch.setattr(database.settings, "enforce_foreign_keys", False)
     with Session(fk_engine) as session:
         seed_minimum_parents(session)
-        result = database.apply_foreign_key_policy(session, fk_engine)
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
 
     assert result.enforcement_enabled is False
     assert pragma_value(fk_engine) == 0
