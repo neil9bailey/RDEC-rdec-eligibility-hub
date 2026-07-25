@@ -745,9 +745,53 @@ def _readable_value(value: Any) -> str:
     return text if len(text) <= CHANGED_VALUE_LIMIT else text[: CHANGED_VALUE_LIMIT - 1] + "…"
 
 
-def _changed_fields(spec: DatasetSpec, existing: SQLModel, values: dict[str, Any]) -> list[dict[str, str]]:
-    """Every field that actually moves on the live record (ADR-0004 D1.4)."""
+def _live_link_display(session: Session, target_key: str, target_id: int) -> str:
+    spec = DATASET_BY_KEY[target_key]
+    record = session.get(spec.model, target_id)
+    return _existing_display(spec, record) if record is not None else f"Record {target_id}"
+
+
+def _stored_link_display(session: Session, target_key: str, value: Any) -> str:
+    """Render a foreign key already committed in this database as its parent's name.
+
+    Used for the BEFORE side of a link change. The value is a live identifier by
+    construction -- it came off the stored record -- so resolving it against the live
+    database is correct here, and only here.
+    """
+    if value in (None, ""):
+        return ""
+    try:
+        target_id = int(value)
+    except (TypeError, ValueError):
+        return _readable_value(value)
+    return _readable_value(_live_link_display(session, target_key, target_id))
+
+
+def _changed_fields(
+    session: Session,
+    spec: DatasetSpec,
+    existing: SQLModel,
+    values: dict[str, Any],
+    links: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Every field that actually moves on the live record (ADR-0004 D1.4).
+
+    Link fields are disclosed by the parent's NAME. A raw ``Customer: 4 -> 5`` tells a
+    Finance reviewer nothing about which customer, which defeats the whole point of the
+    D1.3/D1.4 disclosure that exists to make finding C2 visible. Everything else renders
+    literally, because for a stored value such as ``ambiguous_tax_review`` the reviewer
+    needs to see exactly the text that will be written, not a prettier rendering of it.
+
+    The AFTER name is taken from ``links``, never re-resolved here: ``_plan_links`` is what
+    applied D2.1's L1-over-L3 precedence, so it already knows whether the parent is a row
+    from this file or a live record. Looking the number up again would resolve an in-file
+    identifier against the live database and name the wrong parent -- the exact C2 confusion
+    this disclosure exists to prevent. A link the preview could not resolve has no entry, so
+    its raw value is shown beside the issue that explains it.
+    """
     before_values = existing.model_dump(mode="json")
+    link_parents = {str(link["field"]): _readable_value(link["parent"]) for link in links}
+    link_targets = dict(spec.foreign_keys)
     changed: list[dict[str, str]] = []
     for name in spec.model.model_fields:
         if name == "id" or name not in values:
@@ -756,20 +800,20 @@ def _changed_fields(spec: DatasetSpec, existing: SQLModel, values: dict[str, Any
         after = values.get(name)
         if before == after:
             continue
+        if name in link_targets:
+            rendered_before = _stored_link_display(session, link_targets[name], before)
+            rendered_after = link_parents.get(name) or _readable_value(after)
+        else:
+            rendered_before = _readable_value(before)
+            rendered_after = _readable_value(after)
         changed.append(
             {
                 "field": _field_label(spec, name),
-                "before": _readable_value(before),
-                "after": _readable_value(after),
+                "before": rendered_before,
+                "after": rendered_after,
             }
         )
     return changed
-
-
-def _live_link_display(session: Session, target_key: str, target_id: int) -> str:
-    spec = DATASET_BY_KEY[target_key]
-    record = session.get(spec.model, target_id)
-    return _existing_display(spec, record) if record is not None else f"Record {target_id}"
 
 
 def _plan_links(
@@ -977,7 +1021,9 @@ def build_import_plan(
 
             issues.extend(link_issues)
 
-            changed_fields = _changed_fields(spec, existing, values) if existing is not None else []
+            changed_fields = (
+                _changed_fields(session, spec, existing, values, links) if existing is not None else []
+            )
             if issues:
                 status = "error"
             elif existing is None:

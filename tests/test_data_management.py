@@ -35,6 +35,7 @@ from app.models import (
     Contract,
     CostLine,
     Customer,
+    CustomerWatchProfile,
     EntitlementAssessment,
     RDProject,
     Solution,
@@ -500,6 +501,94 @@ def test_a_renaming_update_shows_the_victims_name_not_the_uploaded_one(session):
     assert row["existing_display"] == "Original Work Order"
     assert row["existing_id"] == contract.id
     assert [change["field"] for change in row["changed_fields"]] == ["IP owner"]
+
+
+def test_a_changed_link_is_disclosed_by_the_parents_name_not_its_identifier(session):
+    """ADR-0004 D1.4: ``Customer: 4 -> 5`` discloses nothing to a Finance reviewer.
+
+    The whole reason changed_fields exists is to make finding C2 visible before an operator
+    applies. A pair of bare foreign-key integers defeats that: the reviewer cannot tell
+    which customer the record is being moved to, which is precisely the fact C2 turned on.
+    Non-link values keep rendering literally in the same row, because for those the
+    reviewer needs to see exactly the text that will be written.
+    """
+    northern = Customer(customer_name="Northern Rail Alliance")
+    southern = Customer(customer_name="Southern Coast Transit")
+    session.add(northern)
+    session.add(southern)
+    session.commit()
+    session.refresh(northern)
+    session.refresh(southern)
+    session.add(
+        CustomerWatchProfile(
+            profile_name="Signalling renewals watch",
+            customer_id=northern.id,
+            review_notes="ambiguous_tax_review",
+        )
+    )
+    session.commit()
+
+    preview = build_import_plan(
+        session,
+        {
+            "watch_profiles": [
+                {
+                    "profile_name": "Signalling renewals watch",
+                    "customer_id": southern.id,
+                    "review_notes": "needs_second_opinion",
+                }
+            ]
+        },
+        "add_update",
+    )
+    row = preview["rows"][0]
+
+    assert row["status"] == "update"
+    moved = {change["field"]: (change["before"], change["after"]) for change in row["changed_fields"]}
+    assert moved["Customer"] == ("Northern Rail Alliance", "Southern Coast Transit")
+    # The identifiers themselves must not be what the reviewer is asked to interpret.
+    assert str(northern.id) not in moved["Customer"]
+    assert str(southern.id) not in moved["Customer"]
+    # Scoped to link fields only: a stored value stays byte-identical to what will be written.
+    assert moved["Review notes"] == ("ambiguous_tax_review", "needs_second_opinion")
+
+
+def test_a_link_to_a_parent_in_the_same_file_is_named_from_that_file(session):
+    """ADR-0004 D2.1 L1 over L3, carried into the disclosure itself.
+
+    An in-file identifier belongs to the exporting database's namespace. Resolving the
+    AFTER value against the live database would name whichever live record happens to
+    carry the same number -- the C2 confusion, reintroduced in the very disclosure that
+    exists to prevent it. The name must come from the parent row in this file.
+    """
+    rail = BusinessUnit(name="Rail Systems")
+    highways = BusinessUnit(name="Highways and Traffic")
+    session.add(rail)
+    session.add(highways)
+    session.commit()
+    session.refresh(rail)
+    session.refresh(highways)
+    session.add(Customer(customer_name="Colliding Customer", business_unit_id=highways.id))
+    session.commit()
+
+    preview = build_import_plan(
+        session,
+        {
+            # Declares an identifier that a DIFFERENT live business unit already owns.
+            "business_units": [{"id": rail.id, "name": "Digital Signalling"}],
+            "customers": [{"customer_name": "Colliding Customer", "business_unit_id": rail.id}],
+        },
+        "add_update",
+    )
+    unit_row, customer_row = preview["rows"]
+
+    assert unit_row["status"] == "create"
+    assert customer_row["status"] == "update"
+    moved = {change["field"]: (change["before"], change["after"]) for change in customer_row["changed_fields"]}
+    before, after = moved["Business unit"]
+    assert before == "Highways and Traffic"
+    assert after == "Digital Signalling", "the AFTER name was re-resolved against the live database"
+    assert after != rail.name
 
 
 def test_an_update_that_moves_nothing_is_not_counted_as_an_update(session):
