@@ -23,7 +23,8 @@ from sqlmodel import Session, select
 
 import app.database as database
 import app.main as main
-from app.models import BusinessUnit, Company, Customer
+import app.seed as seed
+from app.models import AuditEvent, BusinessUnit, Company, Customer
 from app.settings import get_settings
 
 
@@ -162,6 +163,88 @@ def test_startup_fails_loudly_when_rule_validation_fails(startup_engine, monkeyp
     with pytest.raises(ValueError, match="required key"):
         with TestClient(main.app):
             pass
+
+
+def test_reference_seeding_writes_exactly_one_sentinel_and_respects_a_rename(startup_engine):
+    """ADR-0005 D5, verification 9: renamed reference records must stay renamed."""
+    with TestClient(main.app):
+        pass
+    with Session(startup_engine) as session:
+        unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == "SCADA")).first()
+        assert unit is not None
+        unit.name = "SCADA and operational technology"
+        session.add(unit)
+        session.commit()
+
+    with TestClient(main.app):
+        pass
+
+    with Session(startup_engine) as session:
+        names = {unit.name for unit in session.exec(select(BusinessUnit))}
+        sentinels = list(
+            session.exec(
+                select(AuditEvent).where(AuditEvent.action == seed.REFERENCE_SEED_ACTION)
+            )
+        )
+    assert "SCADA" not in names
+    assert "SCADA and operational technology" in names
+    assert len(sentinels) == 1
+    assert sentinels[0].entity_type == "ReferenceData"
+    assert seed.reference_seed_marker() in sentinels[0].summary
+
+
+def test_reference_seeding_does_not_recreate_a_deleted_reference_customer(startup_engine):
+    with TestClient(main.app):
+        pass
+    with Session(startup_engine) as session:
+        customer = session.exec(
+            select(Customer).where(Customer.customer_name == "Transport for London (TfL)")
+        ).first()
+        assert customer is not None
+        session.delete(customer)
+        session.commit()
+
+    with TestClient(main.app):
+        pass
+
+    with Session(startup_engine) as session:
+        names = [customer.customer_name for customer in session.exec(select(Customer))]
+    assert "Transport for London (TfL)" not in names
+
+
+def test_a_reference_seed_version_bump_runs_a_new_wave(startup_engine, monkeypatch):
+    """ADR-0005 D5.3: re-seedability is preserved without a schema change."""
+    with TestClient(main.app):
+        pass
+    with Session(startup_engine) as session:
+        unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == "Rail")).first()
+        session.delete(unit)
+        session.commit()
+
+    monkeypatch.setattr(seed, "REFERENCE_SEED_VERSION", 2)
+    with TestClient(main.app):
+        pass
+
+    with Session(startup_engine) as session:
+        names = {unit.name for unit in session.exec(select(BusinessUnit))}
+        sentinels = list(
+            session.exec(
+                select(AuditEvent).where(AuditEvent.action == seed.REFERENCE_SEED_ACTION)
+            )
+        )
+    assert "Rail" in names
+    assert len(sentinels) == 2
+
+
+def test_demo_seeding_is_not_guarded_by_the_reference_sentinel(session):
+    """ADR-0005 D5.5: seed_demo_data must keep seeding a fresh database on every call."""
+    seed.seed_demo_data(session)
+
+    assert seed.reference_seed_complete(session) is True
+    companies = [company.company_name for company in session.exec(select(Company))]
+    units = {unit.name for unit in session.exec(select(BusinessUnit))}
+    assert "Northstar Digital Services Ltd" in companies
+    assert "Transport" in units
 
 
 def test_startup_never_touches_the_live_repository_database(startup_engine):

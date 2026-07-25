@@ -1,10 +1,11 @@
 from datetime import date
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.models import (
     AccountingPeriod,
     Activity,
+    AuditEvent,
     BusinessUnit,
     ClaimPeriodSubmissionStatus,
     Company,
@@ -25,6 +26,51 @@ BUSINESS_UNIT_RENAMES = {
     "Scada": "SCADA",
     "HPC / Hinckley Point C": "HPC / Hinkley Point C",
 }
+
+
+# ADR-0005 D5. Reference seeding used to run on every startup and match on exact name, so a
+# renamed or deleted reference record was silently recreated forever. First-run-only needs
+# persisted state, and ADR-0002 line 54 forbids schema migration, so the state is a sentinel row
+# in the existing AuditEvent table: no new table, no new column, and no marker file (a file inside
+# the image is lost on rebuild, and a file inside ./data is a second source of truth that can
+# diverge from the database it describes).
+#
+# Bumping REFERENCE_SEED_VERSION runs a new reference wave against databases that only carry an
+# older sentinel, so re-seedability is preserved without a schema change.
+REFERENCE_SEED_VERSION = 1
+REFERENCE_SEED_ENTITY_TYPE = "ReferenceData"
+REFERENCE_SEED_ACTION = "seed_complete"
+
+
+def reference_seed_marker() -> str:
+    return f"reference_seed_version={REFERENCE_SEED_VERSION}"
+
+
+def reference_seed_complete(session: Session) -> bool:
+    """True when this database already carries the sentinel for the current seed version."""
+    sentinel = session.exec(
+        select(AuditEvent).where(
+            AuditEvent.entity_type == REFERENCE_SEED_ENTITY_TYPE,
+            AuditEvent.action == REFERENCE_SEED_ACTION,
+            col(AuditEvent.summary).contains(reference_seed_marker()),
+        )
+    ).first()
+    return sentinel is not None
+
+
+def record_reference_seed(session: Session) -> None:
+    session.add(
+        AuditEvent(
+            entity_type=REFERENCE_SEED_ENTITY_TYPE,
+            entity_id=0,
+            action=REFERENCE_SEED_ACTION,
+            summary=(
+                "Reference business units and customers seeded "
+                f"({reference_seed_marker()})."
+            ),
+        )
+    )
+    session.commit()
 
 
 BUSINESS_UNIT_TREE = [
@@ -120,6 +166,11 @@ REFERENCE_CUSTOMERS = [
 
 
 def seed_business_units(session: Session) -> None:
+    if reference_seed_complete(session):
+        return
+
+    # ADR-0005 D5.4: the rename block is a one-time migration, so it lives inside the guard and
+    # stops running once the sentinel exists.
     for old_name, new_name in BUSINESS_UNIT_RENAMES.items():
         old_unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == old_name)).first()
         new_unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == new_name)).first()
@@ -144,9 +195,12 @@ def seed_business_units(session: Session) -> None:
         session.refresh(unit)
         existing[unit.name] = unit
     seed_reference_customers(session)
+    record_reference_seed(session)
 
 
 def seed_reference_customers(session: Session) -> None:
+    if reference_seed_complete(session):
+        return
     units = {unit.name: unit for unit in session.exec(select(BusinessUnit))}
     for item in REFERENCE_CUSTOMERS:
         unit = units.get(item["business_unit"])
