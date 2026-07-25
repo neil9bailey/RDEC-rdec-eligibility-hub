@@ -58,10 +58,12 @@ COST_LINE_COUNT = PROJECT_COUNT * COST_LINES_PER_PROJECT
 DASHBOARD_BUDGET_SECONDS = 1.0
 PACK_BUDGET_SECONDS = 0.7
 DASHBOARD_QUERY_CEILING = 80
+PACK_QUERY_CEILING = 60
 
 PACK_BUDGET_BLOCKED = (
-    "pending EA decision: the pack's remaining cost is the write-on-GET that ADR-0005 D6 scoped to "
-    "the dashboard only. Measured 8.07s cold / 0.96s warm after batching."
+    "pending EA decision: the pack's remaining cost is entirely the write-on-GET that ADR-0005 D6 "
+    "scoped to the dashboard only. Measured after batching -- cold render 10.87s / 6354 statements "
+    "/ 120 commits; the same render with nothing to assess is 0.16s / 23 statements / 0 commits."
 )
 
 
@@ -243,6 +245,54 @@ def test_claim_period_pack_renders_within_budget(benchmark):
     assert elapsed < PACK_BUDGET_SECONDS, (
         f"GET /claim-periods/{period_id}/pack took {elapsed:.2f}s at {PROJECT_COUNT} projects, "
         f"budget {PACK_BUDGET_SECONDS:.2f}s"
+    )
+
+
+def test_the_pack_read_path_is_batched_and_writes_nothing_once_assessed(benchmark):
+    """Separate the pack's two costs, so the one that is still open is unambiguous.
+
+    The pack's cold render misses its budget, and the xfailing test above records that honestly.
+    The cause is NOT the read path: it is the write-on-GET that ADR-0005 D6 scoped to the dashboard
+    only, so the pack still creates an EntitlementAssessment per unassessed project and commits
+    each one -- and every commit expires the session, forcing the batch-loaded rows to be read back
+    one at a time.
+
+    So this renders the pack once to settle those writes, then measures the next render. That
+    render needs no writes and is a clean read of the batched path: it is the evidence that E7-1b
+    landed on the pack route, and it is what regresses if per-project loading ever comes back.
+    Measured: 23 statements, 0 commits, well inside the budget the cold render misses.
+    """
+    client, engine, period_id = benchmark
+    url = f"/claim-periods/{period_id}/pack"
+    client.get(url)  # settle the write-on-GET that D6 has not yet reached
+
+    statements = 0
+    commits = 0
+
+    def count_statement(connection, cursor, statement, parameters, context, executemany):
+        nonlocal statements
+        statements += 1
+
+    def count_commit(connection):
+        nonlocal commits
+        commits += 1
+
+    event.listen(engine, "before_cursor_execute", count_statement)
+    event.listen(engine, "commit", count_commit)
+    try:
+        elapsed, status = measure(client, url)
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+        event.remove(engine, "commit", count_commit)
+
+    assert status == 200
+    assert commits == 0, f"a pack render with nothing to assess still issued {commits} COMMIT(s)"
+    assert statements < PACK_QUERY_CEILING, (
+        f"the pack issued {statements} statements at {PROJECT_COUNT} projects "
+        f"(ceiling {PACK_QUERY_CEILING}); per-project loading has returned"
+    )
+    assert elapsed < PACK_BUDGET_SECONDS, (
+        f"the pack's read path took {elapsed:.2f}s, budget {PACK_BUDGET_SECONDS:.2f}s"
     )
 
 
