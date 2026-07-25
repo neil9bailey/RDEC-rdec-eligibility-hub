@@ -138,7 +138,22 @@
                 <td>{{ row.dataset_label }}</td>
                 <td>{{ row.display }}</td>
                 <td><span class="badge {{ 'green' if row.status == 'create' else 'amber' if row.status == 'update' else 'weak' if row.status == 'skip' else 'red' }}">{{ 'add' if row.status == 'create' else row.status }}</span></td>
-                <td>{{ row.errors|join(' ') if row.errors else 'Checks passed' }}</td>
+                {#- ADR-0004 D7. ``row.issues`` is the ratified shape: ``message`` is the only
+                    thing a person reads, ``field`` and ``code`` shape the presentation and are
+                    never shown as jargon. Sorting by field groups every problem with the same
+                    field together and puts file-level problems (empty field), which explain the
+                    field-level ones, first. ``code`` is the stable contract, exposed as a data
+                    attribute so verification can assert on it without the message text ever
+                    being parsed. The derived ``row.errors`` mirror is no longer read. -#}
+                <td class="issue-cell">
+                  {% if row.issues %}
+                    <ul class="issue-list">
+                      {% for issue in row.issues|sort(attribute='field') %}
+                        <li data-issue-code="{{ issue.code }}" data-issue-field="{{ issue.field }}">{{ issue.message }}</li>
+                      {% endfor %}
+                    </ul>
+                  {% else %}Checks passed{% endif %}
+                </td>
               </tr>
             {% endfor %}
           </tbody>

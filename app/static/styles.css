@@ -2160,6 +2160,22 @@ button.danger-button:hover {
   gap: 6px;
 }
 
+/* ADR-0004 D7. One problem per list item, so several problems on one row stay
+   readable instead of running together as one sentence. The marker carries the
+   colour; the message keeps the body ink colour so its contrast never depends on
+   a decorative hue. */
+.issue-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.issue-list li::marker {
+  color: var(--red);
+}
+
 .confirm-action {
   margin-top: 14px;
 }
