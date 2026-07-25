@@ -670,6 +670,47 @@ def test_restore_by_identifier_names_the_record_it_would_overwrite_when_enabled(
     assert row["existing_display"] != row["display"]
 
 
+def test_an_imported_qualifying_amount_is_recomputed_never_trusted(session):
+    """B4, the proven file: gross 1000 at 50% claiming 999999 stored 999999."""
+    customer = Customer(customer_name="Qualifying Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    solution = Solution(solution_name="Qualifying Solution", customer_id=customer.id)
+    session.add(solution)
+    session.commit()
+    session.refresh(solution)
+    project = RDProject(project_title="Qualifying Project", solution_id=solution.id)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+
+    preview = build_import_plan(
+        session,
+        {
+            "cost_lines": [
+                {
+                    "project_id": project.id,
+                    "activity": "Overstated line",
+                    "gross_cost": 1000,
+                    "apportionment_percentage": 50,
+                    "qualifying_amount": 999999,
+                }
+            ]
+        },
+        "add_only",
+    )
+
+    assert preview["rows"][0]["values"]["qualifying_amount"] == 500
+
+    mode, approved = consume_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode)
+
+    stored = session.exec(select(CostLine).where(CostLine.project_id == project.id)).first()
+    assert stored.qualifying_amount == 500
+    assert stored.gross_cost == 1000
+
+
 def project_for(session, customer_name, project_title):
     customer = Customer(customer_name=customer_name, customer_type="transport authority")
     session.add(customer)

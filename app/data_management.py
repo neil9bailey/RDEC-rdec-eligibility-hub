@@ -49,7 +49,7 @@ from app.models import (
     SourceCheckSnapshot,
     TechnicalUncertainty,
 )
-from app.services import CAVEAT, sync_entitlement_for_project
+from app.services import CAVEAT, calculate_qualifying_amount, sync_entitlement_for_project
 
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
@@ -624,6 +624,21 @@ def _clean_row(
     return cleaned, issues
 
 
+def _derived_values(spec: DatasetSpec, values: dict[str, Any]) -> dict[str, Any]:
+    """Recompute the figures the Hub owns, so an uploaded file can never assert them.
+
+    B4: qualifying_amount was written verbatim, so a file claiming 999999 against a gross
+    cost of 1000 at 50% stored 999999 and that figure flowed into report totals and CSV
+    exports. It is derived data, and the same function the rest of the Hub uses derives it.
+    """
+    if spec.model is CostLine:
+        values["qualifying_amount"] = calculate_qualifying_amount(
+            values.get("gross_cost") or 0,
+            values.get("apportionment_percentage") or 0,
+        )
+    return values
+
+
 def _find_existing(
     session: Session,
     spec: DatasetSpec,
@@ -940,7 +955,7 @@ def build_import_plan(
             values: dict[str, Any] = cleaned
             try:
                 candidate = spec.model.model_validate(merged)
-                values = candidate.model_dump(mode="json")
+                values = _derived_values(spec, candidate.model_dump(mode="json"))
             except ValidationError as exc:
                 issues.extend(_validation_issues(spec, exc))
             if not restore_by_identifier:
