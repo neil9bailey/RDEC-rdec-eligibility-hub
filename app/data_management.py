@@ -49,7 +49,7 @@ from app.models import (
     SourceCheckSnapshot,
     TechnicalUncertainty,
 )
-from app.services import CAVEAT
+from app.services import CAVEAT, sync_entitlement_for_project
 
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
@@ -1194,6 +1194,71 @@ def decode_import_payload(
     return consume_import_payload(encoded, restore_by_identifier_enabled=restore_by_identifier_enabled)
 
 
+ENTITLEMENT_RESYNC_PHRASE = "following previewed import"
+# The datasets whose facts feed assess_entitlement. A project's entitlement is derived from
+# the project, and from the customer and contract reached through its solution.
+ENTITLEMENT_FACT_DATASETS = ("projects", "solutions", "customers", "contracts")
+
+
+def _projects_touched_by_import(session: Session, touched: dict[str, set[int]]) -> list[int]:
+    """ADR-0004 D6 guardrail 3: confined to what the import touched, never the whole table."""
+    project_ids: set[int] = set(touched.get("projects", set()))
+    solution_ids: set[int] = set(touched.get("solutions", set()))
+    for key, column in (("customers", Solution.customer_id), ("contracts", Solution.contract_id)):
+        parent_ids = touched.get(key, set())
+        if parent_ids:
+            solution_ids.update(
+                int(item.id)
+                for item in session.exec(select(Solution).where(column.in_(parent_ids)))
+                if item.id is not None
+            )
+    if solution_ids:
+        project_ids.update(
+            int(item.id)
+            for item in session.exec(select(RDProject).where(RDProject.solution_id.in_(solution_ids)))
+            if item.id is not None
+        )
+    return sorted(project_ids)
+
+
+def _resync_entitlements(session: Session, project_ids: list[int]) -> tuple[int, int]:
+    """Recalculate the derived entitlement reviews an import invalidated (ADR-0004 D6).
+
+    This applies unchanged ``assess_entitlement`` to changed facts. It does not change RDEC
+    eligibility logic, so it does not breach ADR-0002 line 40: the clause governs logic, not
+    facts, and the alternative is a Hub that knowingly shows an assessment computed from
+    facts that no longer exist.
+
+    Guardrail 1: this runs after the import has committed, so nothing here can make an import
+    partially apply. A project that cannot be recalculated is counted and reported, never
+    silently skipped.
+    """
+    resynced = 0
+    failed = 0
+    for project_id in project_ids:
+        try:
+            assessment = sync_entitlement_for_project(session, project_id)
+            project = session.get(RDProject, project_id)
+            log_event(
+                session,
+                entity_type="EntitlementAssessment",
+                entity_id=assessment.id,
+                action="import_entitlement_resync",
+                summary=(
+                    f"Recalculated the entitlement review for "
+                    f"{project.project_title if project else f'project {project_id}'} "
+                    f"{ENTITLEMENT_RESYNC_PHRASE}"
+                ),
+                after=assessment,
+            )
+            session.commit()
+            resynced += 1
+        except Exception:
+            session.rollback()
+            failed += 1
+    return resynced, failed
+
+
 def apply_import(
     session: Session,
     datasets: dict[str, list[dict[str, Any]]],
@@ -1250,6 +1315,7 @@ def apply_import(
     # database. Built as rows are written, in dependency order, so a child's link resolves
     # to whatever its parent actually became here.
     id_remap: dict[tuple[str, int], int] = {}
+    touched: dict[str, set[int]] = {}
     try:
         for row in plan["rows"]:
             spec = DATASET_BY_KEY[row["dataset_key"]]
@@ -1298,10 +1364,17 @@ def apply_import(
                 written_id = candidate.id
             if declared_id is not None and written_id is not None:
                 id_remap[(spec.key, int(declared_id))] = int(written_id)
+            if written_id is not None and spec.key in ENTITLEMENT_FACT_DATASETS:
+                touched.setdefault(spec.key, set()).add(int(written_id))
         session.commit()
     except Exception:
         session.rollback()
         raise
+    # ADR-0004 D6 guardrails 1 and 4: a separate, audited step after the import transaction
+    # has committed, whose count is returned so the recalculation is never silent.
+    resynced, resync_failures = _resync_entitlements(session, _projects_touched_by_import(session, touched))
+    applied["entitlement_reviews"] = resynced
+    applied["entitlement_reviews_failed"] = resync_failures
     return applied
 
 

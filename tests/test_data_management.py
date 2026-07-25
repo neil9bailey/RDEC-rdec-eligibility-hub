@@ -35,6 +35,7 @@ from app.models import (
     Contract,
     CostLine,
     Customer,
+    EntitlementAssessment,
     RDProject,
     Solution,
 )
@@ -163,7 +164,13 @@ def test_previewed_import_adds_and_updates_matching_records(session):
     result = apply_import(session, approved_datasets, mode)
 
     assert preview["summary"] == {"create": 1, "update": 1, "skip": 0, "error": 0}
-    assert result == {"created": 1, "updated": 1, "skipped": 0}
+    assert result == {
+        "created": 1,
+        "updated": 1,
+        "skipped": 0,
+        "entitlement_reviews": 0,
+        "entitlement_reviews_failed": 0,
+    }
     updated = session.get(Company, existing.id)
     assert updated.company_name == "Original Limited"
     assert updated.utr == "2222222222"
@@ -506,7 +513,7 @@ def test_a_preview_payload_can_only_be_applied_once(session):
 
     mode, approved = consume_import_payload(payload)
     first = apply_import(session, approved, mode)
-    assert first == {"created": 1, "updated": 0, "skipped": 0}
+    assert first["created"] == 1
 
     for _ in range(2):
         with pytest.raises(DataOperationError) as exc:
@@ -661,6 +668,72 @@ def test_restore_by_identifier_names_the_record_it_would_overwrite_when_enabled(
     assert row["existing_display"] == "Passenger Insight Framework - Work Order 7"
     assert row["display"] == "RESTORED CONTRACT"
     assert row["existing_display"] != row["display"]
+
+
+def project_for(session, customer_name, project_title):
+    customer = Customer(customer_name=customer_name, customer_type="transport authority")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    solution = Solution(solution_name=f"{project_title} Solution", customer_id=customer.id)
+    session.add(solution)
+    session.commit()
+    session.refresh(solution)
+    project = RDProject(project_title=project_title, solution_id=solution.id)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return customer, project
+
+
+def test_an_import_that_changes_the_facts_recalculates_the_entitlement_review(session):
+    """ADR-0004 D6: resync is required, and is confined to what the import touched."""
+    changed_customer, changed_project = project_for(session, "Resync Customer", "Resync Project")
+    _, untouched_project = project_for(session, "Untouched Customer", "Untouched Project")
+
+    preview = build_import_plan(
+        session,
+        {"customers": [{"customer_name": "Resync Customer", "corporation_tax_status": "no"}]},
+        "add_update",
+    )
+    mode, approved = consume_import_payload(encode_import_payload(preview))
+    result = apply_import(session, approved, mode)
+
+    assert result["updated"] == 1
+    assert result["entitlement_reviews"] == 1
+    assert result["entitlement_reviews_failed"] == 0
+
+    assessments = {
+        assessment.project_id: assessment for assessment in session.exec(select(EntitlementAssessment))
+    }
+    assert changed_project.id in assessments
+    assert assessments[changed_project.id].customer_corporation_tax_status == "no"
+    assert untouched_project.id not in assessments, "a project the import never touched was recalculated"
+
+    resync_events = list(
+        session.exec(select(AuditEvent).where(AuditEvent.action == "import_entitlement_resync"))
+    )
+    assert len(resync_events) == 1
+    assert "following previewed import" in resync_events[0].summary
+    assert "Resync Project" in resync_events[0].summary
+    assert session.get(Customer, changed_customer.id).corporation_tax_status == "no"
+
+
+def test_an_import_that_touches_no_entitlement_facts_recalculates_nothing(session):
+    """Guardrail 3, from the other side: no fact change, no recalculation."""
+    _, project = project_for(session, "Quiet Customer", "Quiet Project")
+
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Unrelated Limited", "utr": "1111111111"}]},
+        "add_only",
+    )
+    mode, approved = consume_import_payload(encode_import_payload(preview))
+    result = apply_import(session, approved, mode)
+
+    assert result["entitlement_reviews"] == 0
+    assert list(session.exec(select(EntitlementAssessment))) == []
+    assert list(session.exec(select(AuditEvent).where(AuditEvent.action == "import_entitlement_resync"))) == []
 
 
 def orphan_contracts(session):
