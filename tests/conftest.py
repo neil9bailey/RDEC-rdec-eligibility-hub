@@ -22,9 +22,10 @@ TEST_DATABASE_URL = f"sqlite:///{(TEST_DB_DIR / 'pytest_hub.db').as_posix()}"
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 import pytest  # noqa: E402
-from sqlmodel import Session, SQLModel, create_engine  # noqa: E402
+from sqlmodel import Session, SQLModel  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
+from app.database import make_engine  # noqa: E402
 from app.seed import seed_demo_data  # noqa: E402
 
 
@@ -36,7 +37,9 @@ def pytest_sessionfinish(session, exitstatus):
 
 @pytest.fixture()
 def session():
-    engine = create_engine(
+    # ADR-0005 D1.2: built through the same factory as the application engine, so the tests and
+    # production provably share one construction route.
+    engine = make_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,

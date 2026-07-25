@@ -40,6 +40,14 @@ class Settings:
         "true",
         "yes",
     }
+    # ADR-0005 D3.6. Operator escape hatch for link checking. Enforcement defaults on, but is only
+    # ever switched on after a clean orphan scan, so this turns off a control that may already be
+    # withheld. Setting it false is logged loudly at startup.
+    enforce_foreign_keys: bool = os.getenv("ENFORCE_FOREIGN_KEYS", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 @lru_cache

@@ -19,12 +19,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
-from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, SQLModel, select
 
 import app.database as database
 import app.main as main
 import app.seed as seed
-from app.models import AuditEvent, BusinessUnit, Company, Customer
+from app.models import AuditEvent, BusinessUnit, Company, Contract, Customer
 from app.settings import get_settings
 
 
@@ -245,6 +246,199 @@ def test_demo_seeding_is_not_guarded_by_the_reference_sentinel(session):
     units = {unit.name for unit in session.exec(select(BusinessUnit))}
     assert "Northstar Digital Services Ltd" in companies
     assert "Transport" in units
+
+
+# Link integrity: pragma installation, constraint presence, and the orphan pre-scan.
+# ADR-0005 D1, D2 and D3. Nothing here is wired into the lifespan yet, so FK_ENFORCEMENT is False
+# in production until a later increment calls apply_foreign_key_policy().
+
+
+FK_EVIDENCE_TABLES = (
+    "contract",
+    "solution",
+    "rdproject",
+    "accountingperiod",
+    "costline",
+    "evidenceitem",
+)
+
+
+@pytest.fixture()
+def fk_engine(tmp_path):
+    """A file-backed engine: the dispose test needs a database that survives pool disposal."""
+    engine = database.make_engine(f"sqlite:///{(tmp_path / 'fk.db').as_posix()}")
+    SQLModel.metadata.create_all(engine)
+    try:
+        yield engine
+    finally:
+        database.FK_ENFORCEMENT = False
+        database.INTEGRITY_REPORT = ()
+        database.INTEGRITY_WARNING = None
+        engine.dispose()
+
+
+def pragma_value(engine) -> int:
+    with engine.connect() as connection:
+        return connection.execute(text("PRAGMA foreign_keys")).scalar_one()
+
+
+def seed_minimum_parents(session) -> int:
+    unit = BusinessUnit(name="Transport", description="Test unit")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    customer = Customer(business_unit_id=unit.id, customer_name="Test Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    return int(customer.id)
+
+
+def test_the_pragma_listener_covers_an_engine_built_anywhere(fk_engine):
+    """D1.1: the listener is on the Engine class, so the tests' own engine is covered."""
+    assert database.FK_ENFORCEMENT is False
+    assert pragma_value(fk_engine) == 0
+
+    database.set_fk_enforcement(True, fk_engine)
+    assert pragma_value(fk_engine) == 1
+
+
+def test_flipping_the_flag_without_disposing_leaves_a_pooled_connection_unchanged(fk_engine):
+    """D1.3: this is the step that is easy to omit and silently defeats the whole control."""
+    connection = fk_engine.connect()
+    try:
+        assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 0
+        database.FK_ENFORCEMENT = True
+        assert connection.execute(text("PRAGMA foreign_keys")).scalar_one() == 0
+    finally:
+        connection.close()
+
+    fk_engine.dispose()
+    assert pragma_value(fk_engine) == 1
+
+
+def test_enforcement_off_accepts_a_child_row_with_no_parent(fk_engine):
+    """The behaviour in production today, recorded so the change is visible."""
+    with Session(fk_engine) as session:
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+        assert session.exec(select(Contract)).first().customer_id == 4242
+
+
+def test_enforcement_on_rejects_a_child_row_with_no_parent(fk_engine):
+    """ADR-0005 verification 3: proves a constraint exists in the DDL, not just that a flag is set."""
+    database.set_fk_enforcement(True, fk_engine)
+    with Session(fk_engine) as session:
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_a_fresh_schema_carries_every_foreign_key_the_scan_relies_on(fk_engine):
+    """ADR-0005 D2 precondition evidence, kept as a test so it cannot quietly stop being true."""
+    with fk_engine.connect() as connection:
+        for table in FK_EVIDENCE_TABLES:
+            constraints = connection.execute(text(f"PRAGMA foreign_key_list({table})")).fetchall()
+            assert constraints, f"{table} has no foreign key in the fresh schema"
+    assert database.missing_foreign_key_constraints(fk_engine) == {}
+
+
+def test_an_alter_added_column_is_reported_as_unenforced(fk_engine, monkeypatch):
+    """ADR-0005 Fact 2: the upgraded database the sponsor runs can differ from a fresh one."""
+    with fk_engine.begin() as connection:
+        ddl = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='customer'")
+        ).scalar_one()
+        legacy_ddl = re.sub(r",(\s*\))", r"\1", "\n".join(
+            line for line in ddl.splitlines() if "business_unit_id" not in line
+        ))
+        connection.execute(text("DROP TABLE customer"))
+        connection.execute(text(legacy_ddl))
+
+    monkeypatch.setattr(database, "engine", fk_engine)
+    database.apply_sqlite_schema_updates()
+
+    assert database.missing_foreign_key_constraints(fk_engine) == {"customer": ("business_unit_id",)}
+
+
+def test_scan_orphans_reports_the_orphan_and_changes_nothing(fk_engine):
+    with Session(fk_engine) as session:
+        customer_id = seed_minimum_parents(session)
+        session.add(Contract(contract_name="Kept contract", customer_id=customer_id))
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+        before = [
+            (contract.id, contract.contract_name, contract.customer_id)
+            for contract in session.exec(select(Contract))
+        ]
+
+        orphans = database.scan_orphans(session)
+
+        after = [
+            (contract.id, contract.contract_name, contract.customer_id)
+            for contract in session.exec(select(Contract))
+        ]
+
+    assert len(orphans) == 1
+    orphan = orphans[0]
+    assert orphan.child_dataset == "contracts"
+    assert orphan.child_display == "Orphan contract"
+    assert orphan.field == "customer_id"
+    assert orphan.parent_dataset == "customers"
+    assert orphan.missing_parent_id == 4242
+    assert after == before
+
+
+def test_scan_orphans_uses_the_import_paths_foreign_key_source_of_truth():
+    """D3.2: two consumers, one list. A second hand-maintained list would drift invisibly."""
+    from app.data_management import DATASET_BY_KEY, DATASETS
+
+    checked = [(spec.key, field, parent) for spec in DATASETS for field, parent in spec.foreign_keys]
+    assert checked, "the import path declares no foreign keys"
+    for _, _, parent_key in checked:
+        assert parent_key in DATASET_BY_KEY
+
+
+def test_an_orphan_withholds_enforcement_instead_of_repairing_anything(fk_engine):
+    """D3: the new control is what gets withheld; the operator's records are left alone."""
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+
+        result = database.apply_foreign_key_policy(session, fk_engine)
+
+        surviving = [contract.contract_name for contract in session.exec(select(Contract))]
+
+    assert result.enforcement_enabled is False
+    assert database.FK_ENFORCEMENT is False
+    assert pragma_value(fk_engine) == 0
+    assert len(result.orphans) == 1
+    assert "Orphan contract" in surviving
+    assert "link checking is switched off" in (result.warning or "")
+    assert database.INTEGRITY_WARNING == result.warning
+
+
+def test_a_clean_database_enables_enforcement_and_disposes_the_pool(fk_engine):
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        result = database.apply_foreign_key_policy(session, fk_engine)
+
+    assert result.enforcement_enabled is True
+    assert result.orphans == ()
+    assert result.warning is None
+    assert pragma_value(fk_engine) == 1
+
+
+def test_the_operator_escape_hatch_withholds_enforcement(fk_engine, monkeypatch):
+    """D3.6: ENFORCE_FOREIGN_KEYS=false, logged loudly, banner still shown."""
+    monkeypatch.setattr(database.settings, "enforce_foreign_keys", False)
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        result = database.apply_foreign_key_policy(session, fk_engine)
+
+    assert result.enforcement_enabled is False
+    assert pragma_value(fk_engine) == 0
 
 
 # Operator-documentation conformance. These live here because README.md is the runbook for the
