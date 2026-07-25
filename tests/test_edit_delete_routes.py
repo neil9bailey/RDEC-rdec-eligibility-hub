@@ -112,10 +112,10 @@ def test_delete_linked_customer_is_blocked(seeded_session):
 #   POST /projects/{missing}/competent-professional  303, one orphan opinion committed
 #   POST /claim-periods/{missing}/readiness          303, one orphan submission status committed
 #
-# Expected behaviour is the same as the delete routes: redirect (303) and write nothing. Every
-# case below therefore fails today and is marked strict xfail; each flips to a real pass when the
-# fix lands. Fix owner: the app/main.py serial-baton holder (Epic 3 bad-id handling). This wave's
-# Principal Engineer (tests) does not touch app/**.
+# Expected behaviour is the same as the delete routes: redirect (303) and write nothing.
+#
+# The read routes now look the record up and redirect (E3-D1), so their markers are gone. The four
+# POST routes still write first and check later, so they keep a strict xfail until E3-D2 lands.
 #
 # The row-count assertion is the load-bearing half: two of these cases already return the right
 # status code and are only detectable by counting rows.
@@ -164,18 +164,21 @@ MISSING_RECORD_ROUTES = [
     ("POST", f"/claim-periods/{MISSING_ID}/readiness", VALID_READINESS_FORM),
 ]
 
-MISSING_RECORD_XFAIL = (
-    "Project and claim-period routes raise (500) or commit orphan rows for a record id that does "
-    "not exist, instead of redirecting like the delete routes. Pending the app/main.py baton "
-    "owner's bad-id fix."
+ORPHAN_WRITE_XFAIL = (
+    "The POST routes build the child row from the posted form and save it before anything checks "
+    "that the parent exists, so a missing id commits an orphan. Pending the app/main.py baton "
+    "owner's E3-D2 fix."
 )
 
 
-@pytest.mark.xfail(strict=True, reason=MISSING_RECORD_XFAIL)
+def missing_record_case(method: str, path: str, form: dict | None):
+    marks = [pytest.mark.xfail(strict=True, reason=ORPHAN_WRITE_XFAIL)] if method == "POST" else []
+    return pytest.param(method, path, form, marks=marks, id=f"{method} {path}")
+
+
 @pytest.mark.parametrize(
     "method, path, form",
-    MISSING_RECORD_ROUTES,
-    ids=[f"{method} {path}" for method, path, _ in MISSING_RECORD_ROUTES],
+    [missing_record_case(*route) for route in MISSING_RECORD_ROUTES],
 )
 def test_routes_for_a_missing_record_redirect_and_write_nothing(seeded_session, method, path, form):
     def override_session():

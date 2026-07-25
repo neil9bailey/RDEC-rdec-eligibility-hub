@@ -2003,6 +2003,12 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
 
 @app.get("/projects/{project_id}", response_class=HTMLResponse)
 def project_detail(project_id: int, request: Request, session: Session = Depends(get_session)):
+    # get_project_context raises for a project id that is not in the database, which reaches the
+    # user as HTTP 500 on an ordinary journey: delete a project, press Back, click any of its tabs.
+    # Every project and claim-period page below therefore looks the record up first and redirects
+    # to the list, the same way the delete routes do (delete_or_block).
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
@@ -2014,6 +2020,8 @@ def project_detail(project_id: int, request: Request, session: Session = Depends
 
 @app.get("/projects/{project_id}/assessment", response_class=HTMLResponse)
 def project_assessment(project_id: int, request: Request, session: Session = Depends(get_session)):
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
@@ -2069,6 +2077,8 @@ async def update_project_assessment(project_id: int, request: Request, session: 
 
 @app.get("/projects/{project_id}/costs", response_class=HTMLResponse)
 def project_costs(project_id: int, request: Request, session: Session = Depends(get_session)):
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
@@ -2128,6 +2138,8 @@ def delete_cost_line(cost_id: int, session: Session = Depends(get_session)):
 
 @app.get("/projects/{project_id}/evidence", response_class=HTMLResponse)
 def project_evidence(project_id: int, request: Request, session: Session = Depends(get_session)):
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
@@ -2204,6 +2216,8 @@ def delete_evidence_item(evidence_id: int, session: Session = Depends(get_sessio
 
 @app.get("/projects/{project_id}/competent-professional", response_class=HTMLResponse)
 def project_competent_professional(project_id: int, request: Request, session: Session = Depends(get_session)):
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id)
     return templates.TemplateResponse(
@@ -2275,6 +2289,10 @@ def delete_competent_professional(opinion_id: int, session: Session = Depends(ge
 
 @app.get("/projects/{project_id}/report", response_class=HTMLResponse)
 def project_report(project_id: int, request: Request, format: str | None = None, session: Session = Depends(get_session)):
+    # Guarded ahead of the markdown build, which reads the project context itself, so the
+    # ?format=md download path is covered too.
+    if not session.get(RDProject, project_id):
+        return redirect("/projects")
     markdown = generate_project_memo_markdown(session, project_id)
     if format == "md":
         filename = f"project-{project_id}-eligibility-memo.md"
@@ -2294,6 +2312,10 @@ def project_report(project_id: int, request: Request, format: str | None = None,
 
 @app.get("/claim-periods/{period_id}/readiness", response_class=HTMLResponse)
 def claim_period_readiness(period_id: int, request: Request, session: Session = Depends(get_session)):
+    # Accounting periods are managed from the companies page, so that is the list to fall back to
+    # (the same target update_accounting_period and delete_accounting_period already use).
+    if not session.get(AccountingPeriod, period_id):
+        return redirect("/companies")
     readiness = aif_readiness_for_period(session, period_id)
     return templates.TemplateResponse(
         request,
@@ -2334,6 +2356,8 @@ async def update_claim_period_submission(period_id: int, request: Request, sessi
 
 @app.get("/claim-periods/{period_id}/pack", response_class=HTMLResponse)
 def claim_period_pack(period_id: int, request: Request, format: str | None = None, session: Session = Depends(get_session)):
+    if not session.get(AccountingPeriod, period_id):
+        return redirect("/companies")
     markdown = generate_claim_period_pack_markdown(session, period_id)
     if format == "md":
         filename = f"claim-period-{period_id}-pack.md"
