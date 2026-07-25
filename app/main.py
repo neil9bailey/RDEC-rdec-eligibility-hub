@@ -38,9 +38,11 @@ from app.data_management import (
 )
 from app.form_utils import (
     parse_bool as parse_form_bool,
+    parse_decimal_amount,
     parse_enum,
-    parse_float,
+    parse_money,
     parse_optional_date,
+    parse_percentage,
     parse_optional_int,
     parse_required_date,
     parse_required_int,
@@ -319,11 +321,18 @@ def cost_line_from_form(
     cost: CostLine | None = None,
     existing: CostLine | None = None,
 ) -> CostLine:
-    hours = parse_float(form.get("hours"), "Hours", errors)
-    hourly_rate = parse_float(form.get("hourly_rate"), "Hourly rate", errors)
-    days = parse_float(form.get("days"), "Days", errors)
-    day_rate = parse_float(form.get("day_rate"), "Day rate", errors)
-    gross_cost = parse_float(form.get("gross_cost"), "Gross cost", errors)
+    # Finding B1 (ADR-0002 Ruling R3): `parse_float` is frozen and admits nan, inf and
+    # underscore separators, which reached `CostLine` and then the qualifying amount,
+    # the report totals and the CSV exports. Proven before this change: gross 1000 at
+    # 500% stored a qualifying 5000; at -50% it stored -500; a gross of -1000 stored
+    # -1000; 1e308 stored inf; and "nan" returned HTTP 500. These value fields now use
+    # the bounded, finite parsers, so a nonsensical figure is refused at the form with
+    # a message instead of being written to the claim.
+    hours = parse_decimal_amount(form.get("hours"), "Hours", errors)
+    hourly_rate = parse_money(form.get("hourly_rate"), "Hourly rate", errors)
+    days = parse_decimal_amount(form.get("days"), "Days", errors)
+    day_rate = parse_money(form.get("day_rate"), "Day rate", errors)
+    gross_cost = parse_money(form.get("gross_cost"), "Gross cost", errors)
     cost_input_type = str(form.get("cost_input_type") or "direct_cost")
     if cost_input_type == "people_time":
         gross_cost = resolve_people_time_gross(gross_cost, hours, hourly_rate, days, day_rate, existing)
@@ -341,7 +350,11 @@ def cost_line_from_form(
     cost.days = days
     cost.day_rate = day_rate
     cost.gross_cost = gross_cost
-    cost.apportionment_percentage = parse_float(
+    # A percentage above 100 is now refused at the form. The stored-data flag
+    # `apportionment_over_100` in `app/services.py` deliberately stays: rows already in
+    # the database, and rows arriving through import, still have to be surfaced rather
+    # than silently accepted.
+    cost.apportionment_percentage = parse_percentage(
         form.get("apportionment_percentage"),
         "Apportionment percentage",
         errors,
@@ -877,7 +890,7 @@ async def create_watch_profile(request: Request, session: Session = Depends(get_
     errors: list[str] = []
     customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
     business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
-    minimum_value = parse_float(form.get("minimum_value"), "Minimum value", errors)
+    minimum_value = parse_money(form.get("minimum_value"), "Minimum value", errors)
     profile_name = str(form.get("profile_name") or "").strip()
     if not profile_name:
         errors.append("Watch profile name is required.")
@@ -914,7 +927,7 @@ async def update_watch_profile(profile_id: int, request: Request, session: Sessi
     errors: list[str] = []
     customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
     business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
-    minimum_value = parse_float(form.get("minimum_value"), "Minimum value", errors)
+    minimum_value = parse_money(form.get("minimum_value"), "Minimum value", errors)
     profile_name = str(form.get("profile_name") or "").strip()
     if not profile_name:
         errors.append("Watch profile name is required.")
