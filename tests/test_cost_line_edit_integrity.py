@@ -1,10 +1,16 @@
-"""Finding B2: a people-time cost line must survive its own edit form.
+"""Findings B2 and B3: a cost line must survive its own edit form.
 
-Runtime-proven before the fix, over HTTP: a people-time line created as 100h @
-GBP 40 stored ``gross_cost=4000``. Editing the hours to 50 stored ``hours=50``
-and left ``gross_cost=4000``, because ``cost_line_from_form`` recalculated only
-when the posted gross was 0 and the edit form pre-fills the stored gross. The
-stored line contradicted itself and overstated the claim two-fold.
+Runtime-proven before the fix, over HTTP:
+
+* B2 - a people-time line created as 100h @ GBP 40 stored ``gross_cost=4000``.
+  Editing the hours to 50 stored ``hours=50`` and left ``gross_cost=4000``,
+  because ``cost_line_from_form`` recalculated only when the posted gross was 0
+  and the edit form pre-fills the stored gross. The stored line contradicted
+  itself and overstated the claim two-fold.
+* B3 - editing any cost line cleared ``activity_id`` (1 before, None after),
+  because ``update_cost_line`` rebuilt the row from a blank ``CostLine``
+  candidate and the form posts no activity link. The free-text ``activity``
+  survived, so ``cost_validation_warnings`` never fired: the loss was invisible.
 """
 
 from fastapi.testclient import TestClient
@@ -12,7 +18,8 @@ from sqlmodel import select
 
 from app.database import get_session
 from app.main import app
-from app.models import CostLine, RDProject
+from app.models import Activity, CostLine, RDProject
+from app.services import cost_validation_warnings
 
 
 def client_for(session):
@@ -177,3 +184,38 @@ def test_a_direct_cost_gross_is_never_recalculated(seeded_session):
     seeded_session.refresh(cost)
     assert cost.cost_input_type == "direct_cost"
     assert cost.gross_cost == 1200
+
+
+def test_editing_a_cost_line_keeps_its_activity_link(seeded_session):
+    """B3: the form posts no activity link, so an edit must not clear the stored one."""
+    project = seeded_session.exec(select(RDProject)).first()
+    activity = Activity(project_id=project.id, activity_name="Linked prototype activity")
+    seeded_session.add(activity)
+    seeded_session.commit()
+    seeded_session.refresh(activity)
+
+    client = client_for(seeded_session)
+    try:
+        create_people_time_cost(client, project.id)
+        cost = latest_cost(seeded_session, project.id)
+        cost.activity_id = activity.id
+        seeded_session.add(cost)
+        seeded_session.commit()
+        seeded_session.refresh(cost)
+        assert cost.activity_id == activity.id
+
+        response = client.post(
+            f"/costs/{cost.id}/update",
+            data=edit_form(cost, hours="50"),
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    seeded_session.refresh(cost)
+    assert response.status_code == 303
+    assert cost.id is not None
+    assert cost.activity_id == activity.id
+    # The loss was invisible precisely because the free-text activity survived it,
+    # so the missing-activity-link flag stayed silent either way.
+    assert not any("activity link" in warning for warning in cost_validation_warnings(cost))

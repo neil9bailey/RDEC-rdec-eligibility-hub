@@ -256,6 +256,16 @@ def delete_with_audit(session: Session, item, summary: str) -> None:
     session.commit()
 
 
+# Finding B3: `update_cost_line` rebuilds the stored row from a blank `CostLine`
+# candidate, so every field the cost form does not post was silently overwritten with
+# the model default. `activity_id` is the one that matters: an activity link recorded
+# by an import or by seeded data (proven: 1 before an edit, None after) was cleared by
+# an unrelated edit, and because the free-text `activity` survived,
+# `cost_validation_warnings` never raised the missing-activity-link flag. The loss was
+# invisible in the UI and in the claim pack. These fields are carried over untouched.
+COST_FIELDS_NOT_ON_THE_COST_FORM = frozenset({"id", "activity_id"})
+
+
 def resolve_people_time_gross(
     submitted_gross: float,
     hours: float,
@@ -2064,8 +2074,9 @@ async def update_cost_line(cost_id: int, request: Request, session: Session = De
     if errors:
         return validation_error_response(errors, f"/projects/{cost.project_id}/costs")
     for field_name in CostLine.model_fields:
-        if field_name != "id":
-            setattr(cost, field_name, getattr(candidate, field_name))
+        if field_name in COST_FIELDS_NOT_ON_THE_COST_FORM:
+            continue
+        setattr(cost, field_name, getattr(candidate, field_name))
     save_with_audit(session, cost, "update", f"Updated cost line {cost.id}", before_snapshot)
     return redirect(f"/projects/{cost.project_id}/costs")
 
