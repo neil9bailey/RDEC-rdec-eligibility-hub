@@ -5,6 +5,8 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: sqlite:///./data/rdec_hub.db
+      SEED_REFERENCE_DATA: ${SEED_REFERENCE_DATA:-true}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
       DATA_IMPORT_ENABLED: ${DATA_IMPORT_ENABLED:-true}
       DATA_EXPORT_ENABLED: ${DATA_EXPORT_ENABLED:-true}
       DATA_CLEANUP_ENABLED: ${DATA_CLEANUP_ENABLED:-true}
