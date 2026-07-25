@@ -247,6 +247,41 @@ def test_demo_seeding_is_not_guarded_by_the_reference_sentinel(session):
     assert "Transport" in units
 
 
+# Operator-documentation conformance. These live here because README.md is the runbook for the
+# startup and seeding behaviour covered by this module, and each assertion pins a statement that
+# was proven false against the code or file it describes.
+
+
+def readme_text() -> str:
+    return (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def test_readme_describes_first_run_reference_seeding():
+    readme = readme_text()
+    assert "loaded once, on the first run against a database that has no reference-data seed marker" in readme
+    assert "loaded automatically when the SQLite database is empty" not in readme
+
+
+def test_readme_lists_the_utility_routes_that_exist():
+    readme = readme_text()
+    for path in ("/evidence-index", "/health", "/healthz"):
+        assert f"- `{path}`" in readme
+
+
+def test_readme_quotes_the_version_marker_that_the_version_file_holds():
+    version = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    readme = readme_text()
+    assert version in readme
+    assert "Current baseline: `live-demo-version 1.0`" not in readme
+
+
+def test_readme_states_the_actual_cleanup_coverage():
+    from app.data_management import CLEANUP_DATASET_KEYS, DATASETS
+
+    readme = readme_text()
+    assert f"{len(CLEANUP_DATASET_KEYS)} of the {len(DATASETS)} data areas" in readme
+
+
 def test_startup_never_touches_the_live_repository_database(startup_engine):
     before = live_db_fingerprint()
     with TestClient(main.app) as client:

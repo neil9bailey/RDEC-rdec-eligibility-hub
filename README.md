@@ -17,10 +17,10 @@ This is a decision-support and evidence-capture tool. It does not provide legal,
 - Applies configurable Additional Information Form project-selection logic.
 - Records local MVP audit events for key claim-data create, update, delete, and entitlement sync actions.
 - Exports selected local data as a JSON backup bundle or review-friendly CSV files, and previews controlled JSON/CSV additions and updates before applying them.
-- Identifies explicitly selected unused records for guarded cleanup. Whole-area purge is implemented but disabled by default.
+- Identifies explicitly selected unused records for guarded cleanup across 7 of the 30 data areas. Whole-area purge is implemented but disabled by default.
 - Generates HTML previews and downloadable Markdown for project memos, claim-period packs, and evidence indexes.
 - Generates exportable Markdown framework intelligence summaries for bid, engineering, Finance, and Ayming review discussions.
-- Seeds reference business units and a small set of non-demo reference customers by default, ready for live project entry after exact customer/legal-entity review.
+- Seeds reference business units and a small set of non-demo reference customers on first run by default, ready for live project entry after exact customer/legal-entity review.
 
 ## What It Does Not Do
 
@@ -41,18 +41,21 @@ This branch hardens the MVP without changing the Docker Desktop workflow or addi
 - Customer setup applies entitlement-rule defaults when Corporation Tax status is blank or unknown, while preserving explicit yes/no selections.
 - High-risk forms now return a friendly 400 validation page for malformed dates or numbers rather than raising server errors.
 - `/audit` shows the latest local audit events for key claim-data changes.
-- `/healthz` returns a simple JSON health check for local runtime verification.
+- `/healthz` returns a simple JSON health check for local runtime verification. `/health` returns the same status plus the loaded rule-file versions.
 
-## Live Demo Version 1.0 Baseline
+## Version Baseline
 
-Current baseline: `live-demo-version 1.0`  
-Release tag: `live-demo-version-1.0`
+The version marker in [`VERSION`](VERSION) is authoritative for this repository. It currently reads:
 
-This baseline is prepared for local Telent / M Group live demonstration and review. It includes the Telent-styled dashboard, clean reference business-unit and reference-customer setup, YAML-backed runtime rules, AIF top-10 fallback logic, local audit logging, Knowledge Agent source checks, Framework Intelligence Agent source tracking, and Markdown exports for Finance / Ayming handover discussions.
+```text
+intelligence-effectiveness 0.1
+```
 
-The full assessment record is in [`docs/live_demo_version_1_0_baseline.md`](docs/live_demo_version_1_0_baseline.md). The version marker is stored in [`VERSION`](VERSION), and release notes are in [`CHANGELOG.md`](CHANGELOG.md).
+`live-demo-version-1.0` is an earlier release tag, retained as history. It marked the local Telent / M Group demonstration baseline assessed in [`docs/live_demo_version_1_0_baseline.md`](docs/live_demo_version_1_0_baseline.md): the Telent-styled dashboard, reference business-unit and reference-customer setup, YAML-backed runtime rules, AIF top-10 fallback logic, local audit logging, Knowledge Agent source checks, Framework Intelligence Agent source tracking, and Markdown exports for Finance / Ayming handover discussions.
 
-The demo baseline remains a decision-support MVP. It is not legal, tax, accounting, HMRC submission, or bid/no-bid advice. Requires competent professional and tax review.
+Development has continued past that tag. `VERSION` was moved on to `intelligence-effectiveness 0.1`, and the current branch carries further unreleased changes that no tag covers. Read the demo baseline document as a record of that earlier review, not as a description of the code you are running. Release notes are in [`CHANGELOG.md`](CHANGELOG.md).
+
+This remains a decision-support MVP at every version. It is not legal, tax, accounting, HMRC submission, or bid/no-bid advice. Requires competent professional and tax review.
 
 ## Security And Data Governance Warning
 
@@ -102,7 +105,9 @@ docker compose down
 
 ## Reference Data
 
-Reference business units are loaded automatically when the SQLite database is empty:
+Reference business units and customers are loaded once, on the first run against a database that has no reference-data seed marker. If you rename or delete a seeded record afterwards, the Hub respects that and does not recreate it.
+
+The business units created by that first run are:
 
 - Transport
   - Highways
@@ -121,6 +126,15 @@ The default reference seed also creates customer records for common transport re
 - National Rail, assigned to SCADA
 
 These are reference labels for local workflow setup, not final legal contracting-entity determinations. Confirm the exact customer/legal entity before live evidence capture.
+
+The seed marker is a single audit event (`ReferenceData` / `seed_complete`) recorded in the local change history rather than a schema change or a file on disk. Audit history is preserved by purge, so a purge does not cause reference data to be re-created. Audit events are excluded from JSON import, so restoring a backup into an empty database does not restore the marker and that database is treated as a first run.
+
+Seeding is controlled by two environment variables, both forwarded to the container by `docker-compose.yml`:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `SEED_REFERENCE_DATA` | `true` | Runs the first-run reference business-unit and customer seed, and the framework source references. |
+| `SEED_DEMO_DATA` | `false` | Additionally seeds the demo company, contracts, solutions, projects, evidence, and costs. |
 
 Demo contracts, solutions, projects, evidence, and costs are not seeded by default. To opt into the original demo data in a throwaway local instance:
 
@@ -141,6 +155,8 @@ Use `/data-management` for normal local administration:
 - remove selected records only when the Hub confirms they have no current links
 - inspect purge scopes and record counts
 
+Unused-record cleanup does not cover every data area. It offers 7 of the 30 data areas: companies, customers, contracts, solutions, customer watch profiles, framework opportunities, and buyer portal instances. Records in the other 23 areas, including projects, cost lines, evidence items, and competent professional opinions, are never listed for cleanup and must be removed from their own edit pages. Within those 7 areas the list is narrower still: a record appears only when it has no dependent records, and seeded reference customers, active watch profiles, opportunities that are not archived or rejected, and portal instances that are not retired are all withheld.
+
 Import, export, and unused-record cleanup are enabled by default. Whole-area purge is disabled by default. To make purge available only in a controlled local session:
 
 ```powershell
@@ -156,7 +172,7 @@ The local data controls can be configured independently before startup:
 | --- | --- | --- |
 | `DATA_IMPORT_ENABLED` | `true` | Allows previewed JSON/CSV additions and updates. |
 | `DATA_EXPORT_ENABLED` | `true` | Allows selected JSON and CSV downloads. |
-| `DATA_CLEANUP_ENABLED` | `true` | Allows deletion of explicitly selected unused records. |
+| `DATA_CLEANUP_ENABLED` | `true` | Allows deletion of explicitly selected unused records in the 7 areas listed above. |
 | `DATA_PURGE_ENABLED` | `false` | Makes guarded whole-area purge controls available. |
 
 For a deliberate full local SQLite reset outside the UI:
@@ -167,7 +183,7 @@ Remove-Item -Recurse -Force .\data
 docker compose up --build
 ```
 
-The reference business units and reference customers will be recreated on the next startup.
+That deletes the database and its seed marker, so the reference business units and reference customers are treated as a first run again and are recreated on the next startup.
 
 ## Knowledge Agent
 
@@ -288,8 +304,10 @@ The AIF selection thresholds are loaded from `aif_rules.yml`. For more than 10 p
 - `/solutions`
 - `/projects`
 - `/costs`
+- `/evidence-index`
 - `/audit`
 - `/healthz`
+- `/health`
 - `/projects/{id}`
 - `/projects/{id}/assessment`
 - `/projects/{id}/costs`
