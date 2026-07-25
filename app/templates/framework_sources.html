@@ -31,24 +31,24 @@
           <details>
             <summary>View or edit source</summary>
             <form method="post" action="/framework-intelligence/sources/{{ source.id }}/update">
-              <div class="field"><label>Name</label><input name="name" value="{{ source.name }}" required></div>
+              <div class="field"><label for="name-f1-{{ source.id }}">Name</label><input id="name-f1-{{ source.id }}" name="name" value="{{ source.name }}" required></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Source type</label>
-                  <select name="source_type">
+                  <label for="source_type-f1-{{ source.id }}">Source type</label>
+                  <select id="source_type-f1-{{ source.id }}" name="source_type">
                     {% for item in framework_source_types %}<option {% if source.source_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
                   </select>
                 </div>
-                <div class="field"><label>Source family</label><input name="source_family" value="{{ source.source_family }}"></div>
-                <div class="field"><label>Review frequency</label><input name="review_frequency" value="{{ source.review_frequency }}"></div>
+                <div class="field"><label for="source_family-f1-{{ source.id }}">Source family</label><input id="source_family-f1-{{ source.id }}" name="source_family" value="{{ source.source_family }}"></div>
+                <div class="field"><label for="review_frequency-f1-{{ source.id }}">Review frequency</label><input id="review_frequency-f1-{{ source.id }}" name="review_frequency" value="{{ source.review_frequency }}"></div>
               </div>
-              <div class="field"><label>Base URL</label><input name="base_url" value="{{ source.base_url }}"></div>
-              <div class="field"><label>Query URL</label><input name="query_url" value="{{ source.query_url }}" required></div>
+              <div class="field"><label for="base_url-f1-{{ source.id }}">Base URL</label><input id="base_url-f1-{{ source.id }}" name="base_url" value="{{ source.base_url }}"></div>
+              <div class="field"><label for="query_url-f1-{{ source.id }}">Query URL</label><input id="query_url-f1-{{ source.id }}" name="query_url" value="{{ source.query_url }}" required></div>
               <div class="form-grid">
-                <div class="field"><label>Coverage</label><input name="coverage" value="{{ source.coverage }}"></div>
-                <div class="field"><label>Auth model</label><input name="auth_model" value="{{ source.auth_model }}"></div>
-                <div class="field"><label>Data format</label><input name="data_format" value="{{ source.data_format }}"></div>
-                <div class="field"><label>Dedupe strategy</label><input name="dedupe_strategy" value="{{ source.dedupe_strategy }}"></div>
+                <div class="field"><label for="coverage-f1-{{ source.id }}">Coverage</label><input id="coverage-f1-{{ source.id }}" name="coverage" value="{{ source.coverage }}"></div>
+                <div class="field"><label for="auth_model-f1-{{ source.id }}">Auth model</label><input id="auth_model-f1-{{ source.id }}" name="auth_model" value="{{ source.auth_model }}"></div>
+                <div class="field"><label for="data_format-f1-{{ source.id }}">Data format</label><input id="data_format-f1-{{ source.id }}" name="data_format" value="{{ source.data_format }}"></div>
+                <div class="field"><label for="dedupe_strategy-f1-{{ source.id }}">Dedupe strategy</label><input id="dedupe_strategy-f1-{{ source.id }}" name="dedupe_strategy" value="{{ source.dedupe_strategy }}"></div>
               </div>
               <div class="form-grid">
                 <label><input type="checkbox" name="official" {% if source.official %}checked{% endif %}> Official/public source</label>
@@ -56,8 +56,8 @@
                 <label><input type="checkbox" name="change_tracking_enabled" {% if source.change_tracking_enabled %}checked{% endif %}> Track changes</label>
                 <label><input type="checkbox" name="requires_human_approval" {% if source.requires_human_approval %}checked{% endif %}> Human approval required</label>
               </div>
-              <div class="field"><label>Connector status</label><input name="connector_status" value="{{ source.connector_status }}"></div>
-              <div class="field"><label>Notes</label><textarea name="notes">{{ source.notes }}</textarea></div>
+              <div class="field"><label for="connector_status-f1-{{ source.id }}">Connector status</label><input id="connector_status-f1-{{ source.id }}" name="connector_status" value="{{ source.connector_status }}"></div>
+              <div class="field"><label for="notes-f1-{{ source.id }}">Notes</label><textarea id="notes-f1-{{ source.id }}" name="notes">{{ source.notes }}</textarea></div>
               <button type="submit">Update source</button>
             </form>
             <form method="post" action="/framework-intelligence/sources/{{ source.id }}/delete" onsubmit="return confirm('Delete this source? This cannot be undone.');">
@@ -75,22 +75,22 @@
     <h2>Add Source</h2>
     <p class="hint">Query URLs may include placeholders such as {query}, {published_from}, and {published_to}. The MVP default is manual checked, not continuously polling.</p>
     <form method="post" action="/framework-intelligence/sources">
-      <div class="field"><label>Name</label><input name="name" required></div>
+      <div class="field"><label for="name-f3">Name</label><input id="name-f3" name="name" required></div>
       <div class="form-grid">
         <div class="field">
-          <label>Source type</label>
-          <select name="source_type">{% for item in framework_source_types %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="source_type-f3">Source type</label>
+          <select id="source_type-f3" name="source_type">{% for item in framework_source_types %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Source family</label><input name="source_family" value="official_notice"></div>
-        <div class="field"><label>Review frequency</label><input name="review_frequency" value="manual"></div>
+        <div class="field"><label for="source_family-f3">Source family</label><input id="source_family-f3" name="source_family" value="official_notice"></div>
+        <div class="field"><label for="review_frequency-f3">Review frequency</label><input id="review_frequency-f3" name="review_frequency" value="manual"></div>
       </div>
-      <div class="field"><label>Base URL</label><input name="base_url" placeholder="https://www.find-tender.service.gov.uk"></div>
-      <div class="field"><label>Query URL</label><input name="query_url" placeholder="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50" required></div>
+      <div class="field"><label for="base_url-f3">Base URL</label><input id="base_url-f3" name="base_url" placeholder="https://www.find-tender.service.gov.uk"></div>
+      <div class="field"><label for="query_url-f3">Query URL</label><input id="query_url-f3" name="query_url" placeholder="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=50" required></div>
       <div class="form-grid">
-        <div class="field"><label>Coverage</label><input name="coverage"></div>
-        <div class="field"><label>Auth model</label><input name="auth_model" value="none"></div>
-        <div class="field"><label>Data format</label><input name="data_format" value="REST OCDS JSON"></div>
-        <div class="field"><label>Dedupe strategy</label><input name="dedupe_strategy" value="ocid_or_reference"></div>
+        <div class="field"><label for="coverage-f3">Coverage</label><input id="coverage-f3" name="coverage"></div>
+        <div class="field"><label for="auth_model-f3">Auth model</label><input id="auth_model-f3" name="auth_model" value="none"></div>
+        <div class="field"><label for="data_format-f3">Data format</label><input id="data_format-f3" name="data_format" value="REST OCDS JSON"></div>
+        <div class="field"><label for="dedupe_strategy-f3">Dedupe strategy</label><input id="dedupe_strategy-f3" name="dedupe_strategy" value="ocid_or_reference"></div>
       </div>
       <div class="form-grid">
         <label><input type="checkbox" name="official" checked> Official/public source</label>
@@ -98,8 +98,8 @@
         <label><input type="checkbox" name="change_tracking_enabled" checked> Track changes</label>
         <label><input type="checkbox" name="requires_human_approval"> Human approval required</label>
       </div>
-      <div class="field"><label>Connector status</label><input name="connector_status" value="configured"></div>
-      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <div class="field"><label for="connector_status-f3">Connector status</label><input id="connector_status-f3" name="connector_status" value="configured"></div>
+      <div class="field"><label for="notes-f3">Notes</label><textarea id="notes-f3" name="notes"></textarea></div>
       <button type="submit">Save source</button>
     </form>
   </div>

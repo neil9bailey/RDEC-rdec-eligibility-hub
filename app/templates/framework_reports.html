@@ -31,25 +31,25 @@
   <div class="panel">
     <h2>Create Report</h2>
     <form method="post" action="/framework-intelligence/reports">
-      <div class="field"><label>Report name</label><input name="report_name" value="Public Sector Framework Intelligence Summary" required></div>
+      <div class="field"><label for="report_name-f1">Report name</label><input id="report_name-f1" name="report_name" value="Public Sector Framework Intelligence Summary" required></div>
       <div class="field">
-        <label>Report type</label>
-        <select name="report_type">
+        <label for="report_type-f1">Report type</label>
+        <select id="report_type-f1" name="report_type">
           <option value="framework_summary">framework_summary</option>
           <option value="customer_summary">customer_summary</option>
           <option value="business_unit_summary">business_unit_summary</option>
         </select>
       </div>
       <div class="field">
-        <label>Customer filter</label>
-        <select name="customer_id">
+        <label for="customer_id-f1">Customer filter</label>
+        <select id="customer_id-f1" name="customer_id">
           <option value="">All customers</option>
           {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}
         </select>
       </div>
       <div class="field">
-        <label>Business unit filter</label>
-        <select name="business_unit_id">
+        <label for="business_unit_id-f1">Business unit filter</label>
+        <select id="business_unit_id-f1" name="business_unit_id">
           <option value="">All business units</option>
           {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
         </select>

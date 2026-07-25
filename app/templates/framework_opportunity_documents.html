@@ -62,16 +62,16 @@
   <div class="panel">
     <h2>Add Document Or Extract</h2>
     <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">
-      <div class="field"><label>Title</label><input name="title" placeholder="ITT quality questions pack" required></div>
+      <div class="field"><label for="title-f1">Title</label><input id="title-f1" name="title" placeholder="ITT quality questions pack" required></div>
       <div class="form-grid">
-        <div class="field"><label>Document type</label><input name="document_type" value="itt_document"></div>
-        <div class="field"><label>Retrieval status</label><select name="retrieval_status">{% for item in document_retrieval_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="document_type-f1">Document type</label><input id="document_type-f1" name="document_type" value="itt_document"></div>
+        <div class="field"><label for="retrieval_status-f1">Retrieval status</label><select id="retrieval_status-f1" name="retrieval_status">{% for item in document_retrieval_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
       </div>
-      <div class="field"><label>URL or file path</label><input name="url_or_path"></div>
-      <div class="field"><label>Platform name</label><input name="platform_name" placeholder="ProContract, In-Tend, Jaggaer, Delta eSourcing"></div>
-      <div class="field"><label>Content summary</label><textarea name="content_summary" placeholder="Summarise document purpose, sections, evidence relevance and any bid requirement themes."></textarea></div>
-      <div class="field"><label>Document text for extraction</label><textarea name="document_text" placeholder="Optional: paste permitted ITT quality question text or weighting excerpts for local extraction."></textarea></div>
-      <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+      <div class="field"><label for="url_or_path-f1">URL or file path</label><input id="url_or_path-f1" name="url_or_path"></div>
+      <div class="field"><label for="platform_name-f1">Platform name</label><input id="platform_name-f1" name="platform_name" placeholder="ProContract, In-Tend, Jaggaer, Delta eSourcing"></div>
+      <div class="field"><label for="content_summary-f1">Content summary</label><textarea id="content_summary-f1" name="content_summary" placeholder="Summarise document purpose, sections, evidence relevance and any bid requirement themes."></textarea></div>
+      <div class="field"><label for="document_text-f1">Document text for extraction</label><textarea id="document_text-f1" name="document_text" placeholder="Optional: paste permitted ITT quality question text or weighting excerpts for local extraction."></textarea></div>
+      <div class="field"><label for="notes-f1">Notes</label><textarea id="notes-f1" name="notes"></textarea></div>
       <button type="submit">Save and extract</button>
     </form>
   </div>
@@ -92,13 +92,13 @@
     </div>
     <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/retrieval-runs" style="margin-top: 16px;">
       <div class="field">
-        <label>Portal instance</label>
-        <select name="portal_instance_id">
+        <label for="portal_instance_id-f2">Portal instance</label>
+        <select id="portal_instance_id-f2" name="portal_instance_id">
           <option value="">Not linked</option>
           {% for portal in portal_instances %}<option value="{{ portal.id }}">{{ portal.portal_name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="field"><label>Task notes</label><textarea name="notes" placeholder="What should a human retrieve or verify?"></textarea></div>
+      <div class="field"><label for="notes-f2">Task notes</label><textarea id="notes-f2" name="notes" placeholder="What should a human retrieve or verify?"></textarea></div>
       <button type="submit">Create manual retrieval task</button>
     </form>
   </div>

@@ -26,12 +26,12 @@
           <form method="post" action="/framework-intelligence/requirements/{{ requirement.id }}/review">
             <div class="form-grid">
               <div class="field">
-                <label>Human review status</label>
-                <select name="human_review_status">
+                <label for="human_review_status-f1-{{ requirement.id }}">Human review status</label>
+                <select id="human_review_status-f1-{{ requirement.id }}" name="human_review_status">
                   {% for item in framework_review_statuses %}<option {% if requirement.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
                 </select>
               </div>
-              <div class="field"><label>RDEC relevance note</label><input name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
+              <div class="field"><label for="rdec_relevance_note-f1-{{ requirement.id }}">RDEC relevance note</label><input id="rdec_relevance_note-f1-{{ requirement.id }}" name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
             </div>
             <button type="submit">Update requirement</button>
           </form>
@@ -56,12 +56,12 @@
           <div class="warning-panel">{{ signal.caveat }}</div>
           <form method="post" action="/framework-intelligence/signals/{{ signal.id }}/review" style="margin-top: 10px;">
             <div class="field">
-              <label>Human review status</label>
-              <select name="human_review_status">
+              <label for="human_review_status-f2-{{ signal.id }}">Human review status</label>
+              <select id="human_review_status-f2-{{ signal.id }}" name="human_review_status">
                 {% for item in framework_review_statuses %}<option {% if signal.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
               </select>
             </div>
-            <div class="field"><label>Recommended action</label><textarea name="recommended_action">{{ signal.recommended_action }}</textarea></div>
+            <div class="field"><label for="recommended_action-f2-{{ signal.id }}">Recommended action</label><textarea id="recommended_action-f2-{{ signal.id }}" name="recommended_action">{{ signal.recommended_action }}</textarea></div>
             <button type="submit">Update signal</button>
           </form>
         </article>

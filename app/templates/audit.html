@@ -11,8 +11,8 @@
 <section class="panel">
   <form method="get" action="/audit" class="form-grid">
     <div class="field">
-      <label>Entity type</label>
-      <select name="entity_type">
+      <label for="entity_type-f1">Entity type</label>
+      <select id="entity_type-f1" name="entity_type">
         <option value="">All entities</option>
         {% for item in entity_types %}
           <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
@@ -20,8 +20,8 @@
       </select>
     </div>
     <div class="field">
-      <label>Action</label>
-      <select name="action">
+      <label for="action-f1">Action</label>
+      <select id="action-f1" name="action">
         <option value="">All actions</option>
         {% for item in actions %}
           <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>

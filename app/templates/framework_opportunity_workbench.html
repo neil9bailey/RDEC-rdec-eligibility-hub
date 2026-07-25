@@ -78,8 +78,8 @@
       <input type="hidden" name="return_to" value="{{ return_to }}">
       <input type="hidden" name="relevance_rationale" value="{{ opportunity.relevance_rationale }}">
       <div class="field">
-        <label>Opportunity status</label>
-        <select name="status">
+        <label for="status-f1">Opportunity status</label>
+        <select id="status-f1" name="status">
           {% for item in framework_opportunity_statuses %}
             <option {% if opportunity.status == item %}selected{% endif %}>{{ item }}</option>
           {% endfor %}
@@ -124,12 +124,12 @@
           <form method="post" action="/framework-intelligence/requirements/{{ requirement.id }}/review">
             <input type="hidden" name="return_to" value="{{ return_to }}#requirement-{{ requirement.id }}">
             <div class="field">
-              <label>Human review status</label>
-              <select name="human_review_status">
+              <label for="human_review_status-f2-{{ requirement.id }}">Human review status</label>
+              <select id="human_review_status-f2-{{ requirement.id }}" name="human_review_status">
                 {% for item in framework_review_statuses %}<option {% if requirement.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
               </select>
             </div>
-            <div class="field"><label>RDEC relevance note</label><input name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
+            <div class="field"><label for="rdec_relevance_note-f2-{{ requirement.id }}">RDEC relevance note</label><input id="rdec_relevance_note-f2-{{ requirement.id }}" name="rdec_relevance_note" value="{{ requirement.rdec_relevance_note }}"></div>
             <button type="submit">Save requirement review</button>
           </form>
         </article>
@@ -155,12 +155,12 @@
           <form method="post" action="/framework-intelligence/signals/{{ signal.id }}/review" style="margin-top: 10px;">
             <input type="hidden" name="return_to" value="{{ return_to }}#signal-{{ signal.id }}">
             <div class="field">
-              <label>Human review status</label>
-              <select name="human_review_status">
+              <label for="human_review_status-f3-{{ signal.id }}">Human review status</label>
+              <select id="human_review_status-f3-{{ signal.id }}" name="human_review_status">
                 {% for item in framework_review_statuses %}<option {% if signal.human_review_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
               </select>
             </div>
-            <div class="field"><label>Recommended action</label><textarea name="recommended_action">{{ signal.recommended_action }}</textarea></div>
+            <div class="field"><label for="recommended_action-f3-{{ signal.id }}">Recommended action</label><textarea id="recommended_action-f3-{{ signal.id }}" name="recommended_action">{{ signal.recommended_action }}</textarea></div>
             <button type="submit">Save signal review</button>
           </form>
         </article>

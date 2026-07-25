@@ -51,19 +51,19 @@
           <details>
             <summary>View or edit buyer portal</summary>
             <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/update">
-              <div class="field"><label>Portal name</label><input name="portal_name" value="{{ portal.portal_name }}" required></div>
+              <div class="field"><label for="portal_name-f1-{{ portal.id }}">Portal name</label><input id="portal_name-f1-{{ portal.id }}" name="portal_name" value="{{ portal.portal_name }}" required></div>
               <div class="form-grid">
-                <div class="field"><label>Platform</label><select name="platform_id">{% for item in platforms %}<option value="{{ item.id }}" {% if portal.platform_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
-                <div class="field"><label>Access status</label><select name="access_status">{% for item in portal_access_statuses %}<option {% if portal.access_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="platform_id-f1-{{ portal.id }}">Platform</label><select id="platform_id-f1-{{ portal.id }}" name="platform_id">{% for item in platforms %}<option value="{{ item.id }}" {% if portal.platform_id == item.id %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="access_status-f1-{{ portal.id }}">Access status</label><select id="access_status-f1-{{ portal.id }}" name="access_status">{% for item in portal_access_statuses %}<option {% if portal.access_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
               </div>
               <div class="form-grid">
-                <div class="field"><label>Customer</label><select name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if portal.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select></div>
-                <div class="field"><label>Business unit</label><select name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}" {% if portal.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="customer_id-f1-{{ portal.id }}">Customer</label><select id="customer_id-f1-{{ portal.id }}" name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if portal.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select></div>
+                <div class="field"><label for="business_unit_id-f1-{{ portal.id }}">Business unit</label><select id="business_unit_id-f1-{{ portal.id }}" name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}" {% if portal.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}</select></div>
               </div>
-              <div class="field"><label>Portal URL</label><input name="portal_url" value="{{ portal.portal_url }}"></div>
-              <div class="field"><label>Account reference</label><input name="account_reference" value="{{ portal.account_reference }}"></div>
-              <div class="field"><label>Retrieval mode</label><input name="document_retrieval_mode" value="{{ portal.document_retrieval_mode }}"></div>
-              <div class="field"><label>Notes</label><textarea name="notes">{{ portal.notes }}</textarea></div>
+              <div class="field"><label for="portal_url-f1-{{ portal.id }}">Portal URL</label><input id="portal_url-f1-{{ portal.id }}" name="portal_url" value="{{ portal.portal_url }}"></div>
+              <div class="field"><label for="account_reference-f1-{{ portal.id }}">Account reference</label><input id="account_reference-f1-{{ portal.id }}" name="account_reference" value="{{ portal.account_reference }}"></div>
+              <div class="field"><label for="document_retrieval_mode-f1-{{ portal.id }}">Retrieval mode</label><input id="document_retrieval_mode-f1-{{ portal.id }}" name="document_retrieval_mode" value="{{ portal.document_retrieval_mode }}"></div>
+              <div class="field"><label for="notes-f1-{{ portal.id }}">Notes</label><textarea id="notes-f1-{{ portal.id }}" name="notes">{{ portal.notes }}</textarea></div>
               <button type="submit">Update portal</button>
             </form>
             <form method="post" action="/framework-intelligence/portal-instances/{{ portal.id }}/delete" onsubmit="return confirm('Delete this buyer portal? This cannot be undone.');">
@@ -82,20 +82,20 @@
   <h2>Add Buyer Portal Instance</h2>
   <form method="post" action="/framework-intelligence/portal-instances">
     <div class="form-grid">
-      <div class="field"><label>Portal name</label><input name="portal_name" placeholder="National Highways procurement portal" required></div>
-      <div class="field"><label>Platform</label><select name="platform_id">{% for platform in platforms %}<option value="{{ platform.id }}">{{ platform.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="portal_name-f3">Portal name</label><input id="portal_name-f3" name="portal_name" placeholder="National Highways procurement portal" required></div>
+      <div class="field"><label for="platform_id-f3">Platform</label><select id="platform_id-f3" name="platform_id">{% for platform in platforms %}<option value="{{ platform.id }}">{{ platform.name }}</option>{% endfor %}</select></div>
     </div>
     <div class="form-grid">
-      <div class="field"><label>Customer</label><select name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select></div>
-      <div class="field"><label>Business unit</label><select name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}</select></div>
-      <div class="field"><label>Access status</label><select name="access_status">{% for item in portal_access_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="customer_id-f3">Customer</label><select id="customer_id-f3" name="customer_id"><option value="">Not linked</option>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="business_unit_id-f3">Business unit</label><select id="business_unit_id-f3" name="business_unit_id"><option value="">Not linked</option>{% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="access_status-f3">Access status</label><select id="access_status-f3" name="access_status">{% for item in portal_access_statuses %}<option>{{ item }}</option>{% endfor %}</select></div>
     </div>
-    <div class="field"><label>Portal URL</label><input name="portal_url" placeholder="https://..."></div>
+    <div class="field"><label for="portal_url-f3">Portal URL</label><input id="portal_url-f3" name="portal_url" placeholder="https://..."></div>
     <div class="form-grid">
-      <div class="field"><label>Account reference</label><input name="account_reference" placeholder="Do not enter passwords or secrets"></div>
-      <div class="field"><label>Retrieval mode</label><input name="document_retrieval_mode" value="manual"></div>
+      <div class="field"><label for="account_reference-f3">Account reference</label><input id="account_reference-f3" name="account_reference" placeholder="Do not enter passwords or secrets"></div>
+      <div class="field"><label for="document_retrieval_mode-f3">Retrieval mode</label><input id="document_retrieval_mode-f3" name="document_retrieval_mode" value="manual"></div>
     </div>
-    <div class="field"><label>Notes</label><textarea name="notes"></textarea></div>
+    <div class="field"><label for="notes-f3">Notes</label><textarea id="notes-f3" name="notes"></textarea></div>
     <button type="submit">Save portal instance</button>
   </form>
 </section>

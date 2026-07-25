@@ -60,7 +60,7 @@
             <td><a href="/framework-intelligence/opportunities/{{ opportunity.id }}/documents">{{ document_counts.get(opportunity.id, 0) }} docs</a></td>
             <td>
               <form method="post" action="/framework-intelligence/opportunities/{{ opportunity.id }}/update">
-                <select name="status">
+                <select name="status" id="status-{{ opportunity.id }}" aria-label="Review status for {{ opportunity.title }}">
                   {% for item in framework_opportunity_statuses %}
                     <option {% if opportunity.status == item %}selected{% endif %}>{{ item }}</option>
                   {% endfor %}

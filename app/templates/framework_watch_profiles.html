@@ -34,34 +34,34 @@
           <details>
             <summary>View or edit saved search</summary>
             <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/update">
-              <div class="field"><label>Profile name</label><input name="profile_name" value="{{ profile.profile_name }}" required></div>
+              <div class="field"><label for="profile_name-f2-{{ profile.id }}">Profile name</label><input id="profile_name-f2-{{ profile.id }}" name="profile_name" value="{{ profile.profile_name }}" required></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Customer</label>
-                  <select name="customer_id">
+                  <label for="customer_id-f2-{{ profile.id }}">Customer</label>
+                  <select id="customer_id-f2-{{ profile.id }}" name="customer_id">
                     <option value="">No specific customer</option>
                     {% for customer in customers %}<option value="{{ customer.id }}" {% if profile.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}
                   </select>
                 </div>
                 <div class="field">
-                  <label>Business unit</label>
-                  <select name="business_unit_id">
+                  <label for="business_unit_id-f2-{{ profile.id }}">Business unit</label>
+                  <select id="business_unit_id-f2-{{ profile.id }}" name="business_unit_id">
                     <option value="">No specific BU</option>
                     {% for unit in business_units %}<option value="{{ unit.id }}" {% if profile.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}
                   </select>
                 </div>
               </div>
-              <div class="field"><label>Buyer aliases</label><textarea name="buyer_aliases">{{ profile.buyer_aliases }}</textarea></div>
-              <div class="field"><label>Keywords</label><textarea name="keywords">{{ profile.keywords }}</textarea></div>
-              <div class="field"><label>CPV codes</label><input name="cpv_codes" value="{{ profile.cpv_codes }}"></div>
-              <div class="field"><label>Domains</label><input name="domains" value="{{ profile.domains }}"></div>
-              <div class="field"><label>Minimum value</label><input name="minimum_value" type="number" step="0.01" value="{{ profile.minimum_value }}"></div>
+              <div class="field"><label for="buyer_aliases-f2-{{ profile.id }}">Buyer aliases</label><textarea id="buyer_aliases-f2-{{ profile.id }}" name="buyer_aliases">{{ profile.buyer_aliases }}</textarea></div>
+              <div class="field"><label for="keywords-f2-{{ profile.id }}">Keywords</label><textarea id="keywords-f2-{{ profile.id }}" name="keywords">{{ profile.keywords }}</textarea></div>
+              <div class="field"><label for="cpv_codes-f2-{{ profile.id }}">CPV codes</label><input id="cpv_codes-f2-{{ profile.id }}" name="cpv_codes" value="{{ profile.cpv_codes }}"></div>
+              <div class="field"><label for="domains-f2-{{ profile.id }}">Domains</label><input id="domains-f2-{{ profile.id }}" name="domains" value="{{ profile.domains }}"></div>
+              <div class="field"><label for="minimum_value-f2-{{ profile.id }}">Minimum value</label><input id="minimum_value-f2-{{ profile.id }}" name="minimum_value" type="number" step="0.01" value="{{ profile.minimum_value }}"></div>
               <div class="form-grid">
                 <label><input type="checkbox" name="include_awards" {% if profile.include_awards %}checked{% endif %}> Include awards</label>
                 <label><input type="checkbox" name="include_future_pipeline" {% if profile.include_future_pipeline %}checked{% endif %}> Include future pipeline</label>
                 <label><input type="checkbox" name="active" {% if profile.active %}checked{% endif %}> Active</label>
               </div>
-              <div class="field"><label>Review notes</label><textarea name="review_notes">{{ profile.review_notes }}</textarea></div>
+              <div class="field"><label for="review_notes-f2-{{ profile.id }}">Review notes</label><textarea id="review_notes-f2-{{ profile.id }}" name="review_notes">{{ profile.review_notes }}</textarea></div>
               <button type="submit">Update profile</button>
             </form>
             <form method="post" action="/framework-intelligence/watch-profiles/{{ profile.id }}/delete" onsubmit="return confirm('Delete this saved search? This cannot be undone.');">
@@ -79,34 +79,34 @@
     <h2>Add Watch Profile</h2>
     <p class="hint">Create profiles for National Highways, TfL, Network Services customers, HPC / Hinkley Point C, or sector-level themes such as SCADA and asset management.</p>
     <form method="post" action="/framework-intelligence/watch-profiles">
-      <div class="field"><label>Profile name</label><input name="profile_name" required></div>
+      <div class="field"><label for="profile_name-f4">Profile name</label><input id="profile_name-f4" name="profile_name" required></div>
       <div class="form-grid">
         <div class="field">
-          <label>Customer</label>
-          <select name="customer_id">
+          <label for="customer_id-f4">Customer</label>
+          <select id="customer_id-f4" name="customer_id">
             <option value="">No specific customer</option>
             {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}
           </select>
         </div>
         <div class="field">
-          <label>Business unit</label>
-          <select name="business_unit_id">
+          <label for="business_unit_id-f4">Business unit</label>
+          <select id="business_unit_id-f4" name="business_unit_id">
             <option value="">No specific BU</option>
             {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
           </select>
         </div>
       </div>
-      <div class="field"><label>Buyer aliases</label><textarea name="buyer_aliases" placeholder="National Highways; Highways England"></textarea></div>
-      <div class="field"><label>Keywords</label><textarea name="keywords" placeholder="NRTS, roadside technology, SCADA, cyber security, asset management"></textarea></div>
-      <div class="field"><label>CPV codes</label><input name="cpv_codes" placeholder="72000000, 32400000"></div>
-      <div class="field"><label>Domains</label><input name="domains" placeholder="highways, traffic, operational technology"></div>
-      <div class="field"><label>Minimum value</label><input name="minimum_value" type="number" step="0.01" value="0"></div>
+      <div class="field"><label for="buyer_aliases-f4">Buyer aliases</label><textarea id="buyer_aliases-f4" name="buyer_aliases" placeholder="National Highways; Highways England"></textarea></div>
+      <div class="field"><label for="keywords-f4">Keywords</label><textarea id="keywords-f4" name="keywords" placeholder="NRTS, roadside technology, SCADA, cyber security, asset management"></textarea></div>
+      <div class="field"><label for="cpv_codes-f4">CPV codes</label><input id="cpv_codes-f4" name="cpv_codes" placeholder="72000000, 32400000"></div>
+      <div class="field"><label for="domains-f4">Domains</label><input id="domains-f4" name="domains" placeholder="highways, traffic, operational technology"></div>
+      <div class="field"><label for="minimum_value-f4">Minimum value</label><input id="minimum_value-f4" name="minimum_value" type="number" step="0.01" value="0"></div>
       <div class="form-grid">
         <label><input type="checkbox" name="include_awards" checked> Include awards</label>
         <label><input type="checkbox" name="include_future_pipeline" checked> Include future pipeline</label>
         <label><input type="checkbox" name="active" checked> Active</label>
       </div>
-      <div class="field"><label>Review notes</label><textarea name="review_notes"></textarea></div>
+      <div class="field"><label for="review_notes-f4">Review notes</label><textarea id="review_notes-f4" name="review_notes"></textarea></div>
       <button type="submit">Save profile</button>
     </form>
   </div>
