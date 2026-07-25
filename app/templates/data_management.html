@@ -1,6 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Data management - {{ app_name }}{% endblock %}
 {% block content %}
+{#- ADR-0004 D1.4. Every field the import would move on the live record, before and after.
+    The arrow is decorative and hidden from assistive technology; the words "changes to"
+    carry the same meaning to a screen reader, so the direction of the change is never
+    conveyed by a glyph alone. Empty values are named rather than rendered as a gap. -#}
+{% macro change_list(changes, extra_class='') %}
+  <ul class="change-list{{ ' ' ~ extra_class if extra_class }}">
+    {% for change in changes %}
+      <li>
+        <span class="change-field">{{ change.field }}</span>
+        <span class="change-before">{{ change.before if change.before else 'blank' }}</span>
+        <span class="change-arrow" aria-hidden="true">&rarr;</span>
+        <span class="visually-hidden">changes to</span>
+        <span class="change-after">{{ change.after if change.after else 'blank' }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
 <div class="page-head">
   <div>
     <h1>Data management</h1>
@@ -129,15 +146,38 @@
           <span class="badge red">{{ import_preview.summary["error"] }} errors</span>
         </div>
       </div>
+      {#- ADR-0004 D1.3. A data area with no natural key can never be matched, so a default
+          import can only ever add to it and a second upload of the same file duplicates every
+          row. The operator has to be told that before they apply, not after. -#}
+      {% if import_preview.notices %}
+        <div class="warning-panel preview-notices" role="note">
+          <p class="preview-notices-title">Read this before you apply</p>
+          <ul>
+            {% for notice in import_preview.notices %}<li>{{ notice }}</li>{% endfor %}
+          </ul>
+        </div>
+      {% endif %}
       <div class="table-wrap compact-table">
-        <table>
-          <thead><tr><th>Data area</th><th>Record</th><th>Result</th><th>Details</th></tr></thead>
+        <table class="preview-table">
+          <thead><tr><th>Data area</th><th>Record in this file</th><th>Live record it would change</th><th>Result</th><th>What would happen</th></tr></thead>
           <tbody>
             {% for row in import_preview.rows[:100] %}
-              <tr>
+              {#- ADR-0004 D1.4. Finding C2 was destructive precisely because the preview showed
+                  the uploaded record's name and never the live record it was about to overwrite.
+                  ``row.display`` is the uploaded name; ``row.existing_display`` is computed from
+                  the live record. They are separate columns so a reviewer sees both at once. -#}
+              <tr{% if row.no_change %} class="preview-row-no-change"{% endif %}>
                 <td>{{ row.dataset_label }}</td>
                 <td>{{ row.display }}</td>
-                <td><span class="badge {{ 'green' if row.status == 'create' else 'amber' if row.status == 'update' else 'weak' if row.status == 'skip' else 'red' }}">{{ 'add' if row.status == 'create' else row.status }}</span></td>
+                <td class="existing-cell">
+                  {% if row.existing_id %}
+                    <strong>{{ row.existing_display }}</strong>
+                    <small>Hub reference {{ row.existing_id }}</small>
+                  {% else %}
+                    <span class="no-existing">No live record affected</span>
+                  {% endif %}
+                </td>
+                <td><span class="badge {{ 'green' if row.status == 'create' else 'amber' if row.status == 'update' else 'red' if row.status == 'error' else 'weak' }}">{{ 'add' if row.status == 'create' else 'no change' if row.no_change else 'not applied' if row.status == 'skip' else row.status }}</span></td>
                 {#- ADR-0004 D7. ``row.issues`` is the ratified shape: ``message`` is the only
                     thing a person reads, ``field`` and ``code`` shape the presentation and are
                     never shown as jargon. Sorting by field groups every problem with the same
@@ -146,13 +186,36 @@
                     attribute so verification can assert on it without the message text ever
                     being parsed. The derived ``row.errors`` mirror is no longer read. -#}
                 <td class="issue-cell">
-                  {% if row.issues %}
+                  {% if row.status == 'error' %}
                     <ul class="issue-list">
                       {% for issue in row.issues|sort(attribute='field') %}
                         <li data-issue-code="{{ issue.code }}" data-issue-field="{{ issue.field }}">{{ issue.message }}</li>
                       {% endfor %}
                     </ul>
-                  {% else %}Checks passed{% endif %}
+                  {% else %}
+                    {#- ADR-0004 D2.1 L3: which parent this row was linked to, by name, and
+                        whether that parent came from the uploaded file or from the Hub. -#}
+                    {% if row.links %}
+                      <ul class="link-list">
+                        {% for link in row.links %}
+                          <li>{{ link.label }}: <strong>{{ link.parent }}</strong> <span class="link-source">from {{ link.source }}</span></li>
+                        {% endfor %}
+                      </ul>
+                    {% endif %}
+                    {% if row.no_change %}
+                      <p class="change-none">Nothing would change. This record already matches the file.</p>
+                    {% elif row.status == 'update' %}
+                      {{ change_list(row.changed_fields) }}
+                    {% elif row.status == 'skip' %}
+                      <p>Left as it is. This record already exists and you chose to add new records only.</p>
+                      {% if row.changed_fields %}
+                        <p class="change-note">These differences would not be applied:</p>
+                        {{ change_list(row.changed_fields, 'not-applied') }}
+                      {% endif %}
+                    {% elif row.status == 'create' %}
+                      <p class="change-none">Added as a new record.</p>
+                    {% endif %}
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
