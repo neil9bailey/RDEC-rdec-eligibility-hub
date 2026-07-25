@@ -1,7 +1,27 @@
+import pytest
+from fastapi.testclient import TestClient
 from sqlmodel import select
 
-from app.models import BusinessUnit, Customer
+from app.database import get_session
+from app.main import app
+from app.models import AuditEvent, BusinessUnit, Customer
 from app.seed import seed_business_units
+
+
+def client_for(session):
+    def override_session():
+        yield session
+
+    app.dependency_overrides.clear()
+    app.dependency_overrides[get_session] = override_session
+    return TestClient(app)
+
+
+def business_unit_audit_events(session, unit_id: int | None = None) -> list[AuditEvent]:
+    events = list(session.exec(select(AuditEvent).where(AuditEvent.entity_type == "BusinessUnit")))
+    if unit_id is None:
+        return events
+    return [event for event in events if event.entity_id == unit_id]
 
 
 def test_reference_business_units_seed_cleanly(session):
@@ -57,3 +77,107 @@ def test_reference_business_units_rename_legacy_labels(session):
     assert "SCADA" in units
     assert "HPC / Hinkley Point C" in units
     assert len(national_rail_customers) == 2
+
+
+# --- Business-unit audit trail --------------------------------------------------------------
+# The business unit is the organisational key that customers, watch profiles, opportunities,
+# portal instances and intelligence reports hang off, so a rename or a new unit must leave a
+# record in change history (ADR-0002 line 21 keeps change history as a supporting tool, and the
+# rest of the app records create/update/delete through save_with_audit).
+#
+# app/main.py:1576 create_business_unit and :1594 update_business_unit call session.add and
+# session.commit directly and never call save_with_audit, so neither writes an AuditEvent. The
+# three tests below therefore fail today by design and are marked strict xfail: they flip to real
+# passes the moment the fix lands. Fix owner: the app/main.py serial-baton holder for
+# EPIC-RDEC-2026-07-VERIFIED-FIXES. Principal Engineer (tests) does not touch app/** in this wave.
+
+MISSING_BUSINESS_UNIT_AUDIT = (
+    "app/main.py create_business_unit/update_business_unit bypass save_with_audit, so business "
+    "unit create and update write no AuditEvent. Pending the app/main.py baton owner's fix."
+)
+
+
+def test_business_unit_delete_route_writes_an_audit_event(session):
+    """Positive control: the audit plumbing does reach BusinessUnit over HTTP.
+
+    Delete goes through delete_or_block -> delete_with_audit and is audited today, so this test
+    proves the three xfails below fail because of the product, not because of this harness.
+    """
+    unit = BusinessUnit(name="Deletable Unit", description="Unused business unit.")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    unit_id = unit.id
+    client = client_for(session)
+    try:
+        response = client.post(f"/business-units/{unit_id}/delete", follow_redirects=False)
+    finally:
+        app.dependency_overrides.clear()
+
+    events = business_unit_audit_events(session, unit_id)
+    assert response.status_code == 303
+    assert session.get(BusinessUnit, unit_id) is None
+    assert [event.action for event in events] == ["delete"]
+
+
+@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
+def test_business_unit_create_route_writes_an_audit_event(session):
+    client = client_for(session)
+    try:
+        response = client.post(
+            "/business-units",
+            data={"name": "Audited Unit", "description": "New business unit.", "active": "on"},
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    unit = session.exec(select(BusinessUnit).where(BusinessUnit.name == "Audited Unit")).first()
+    assert response.status_code == 303
+    assert unit is not None
+    assert [event.action for event in business_unit_audit_events(session, unit.id)] == ["create"]
+
+
+@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
+def test_business_unit_update_route_writes_an_audit_event(session):
+    unit = BusinessUnit(name="Renameable Unit", description="Original description.")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    client = client_for(session)
+    try:
+        response = client.post(
+            f"/business-units/{unit.id}/update",
+            data={"name": "Renamed Unit", "description": "Original description.", "active": "on"},
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    session.refresh(unit)
+    assert response.status_code == 303
+    assert unit.name == "Renamed Unit"
+    assert [event.action for event in business_unit_audit_events(session, unit.id)] == ["update"]
+
+
+@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
+def test_business_unit_rename_audit_event_records_the_previous_name(session):
+    """A rename audit that cannot say what the unit was called before is not a change record."""
+    unit = BusinessUnit(name="Previous Unit Name", description="Original description.")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    client = client_for(session)
+    try:
+        client.post(
+            f"/business-units/{unit.id}/update",
+            data={"name": "Later Unit Name", "description": "Original description.", "active": "on"},
+            follow_redirects=False,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    events = business_unit_audit_events(session, unit.id)
+    assert events, "no audit event was written for the rename"
+    assert "Previous Unit Name" in events[0].before_json
+    assert "Later Unit Name" in events[0].after_json
