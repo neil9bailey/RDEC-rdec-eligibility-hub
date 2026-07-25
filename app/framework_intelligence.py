@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.rule_loader import load_rule_file
 from app.services import CAVEAT, money
+from app.text_matching import find_matches
 
 
 FRAMEWORK_AGENT_CAVEAT = (
@@ -836,10 +837,14 @@ def upsert_opportunity(
 
 
 def requirement_themes_for_text(text: str) -> list[str]:
-    lower = f" {text.lower()} "
+    """Themes whose configured patterns appear in ``text`` as whole tokens.
+
+    Uses the one canonical matcher (ADR-0003 D4/D5.1) so that hyphen compounds
+    behave the same way here as they do in eligibility scoring.
+    """
     themes = []
     for theme, patterns in REQUIREMENT_PATTERNS.items():
-        if any(pattern in lower for pattern in patterns):
+        if find_matches(text, patterns):
             themes.append(theme)
     return themes
 

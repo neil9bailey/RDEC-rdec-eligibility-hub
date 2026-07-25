@@ -53,6 +53,36 @@ class Rules:
         label = self.blocker_definitions().get(code, code.replace("_", " ").title())
         return label if label.endswith(".") else f"{label}."
 
+    def review_flag_stop_phrases(self, kind: str) -> list[str]:
+        """Optional stop phrases that suppress a negative-term review flag.
+
+        Deliberately not in REQUIRED_RULE_KEYS: a missing, empty, or malformed
+        key degrades to "no stop phrases" rather than preventing startup
+        (ADR-0003 D6).
+        """
+        configured = self.eligibility.get("review_flag_stop_phrases")
+        if not isinstance(configured, dict):
+            return []
+        phrases = configured.get(kind)
+        if not isinstance(phrases, list):
+            return []
+        return [str(phrase) for phrase in phrases if str(phrase).strip()]
+
+    def review_flag_definitions(self) -> dict[str, str]:
+        definitions: dict[str, str] = {}
+        configured = self.blockers.get("review_flags")
+        if not isinstance(configured, list):
+            return definitions
+        for item in configured:
+            if isinstance(item, dict) and item.get("code"):
+                definitions[str(item["code"])] = str(item.get("label") or "")
+        return definitions
+
+    def review_flag_label(self, code: str) -> str:
+        """Label for a review flag, falling back to a generated label if unconfigured."""
+        label = self.review_flag_definitions().get(code) or code.replace("_", " ").title()
+        return label if label.endswith(".") else f"{label}."
+
     def aif_selection_rules(self) -> dict[str, Any]:
         return self.aif["project_selection"]
 

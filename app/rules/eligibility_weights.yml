@@ -1,6 +1,6 @@
-version: "2026-05-07"
+version: "2026-07-25"
 effective_from: "2024-04-01"
-review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07; term-matching precision and review-flag stop phrases added on 2026-07-25 under ADR-0003"
 caveat: "Decision support only. Requires competent professional and tax review."
 sources:
   - title: "CIRD81910 - DSIT Guidelines (2023)"
@@ -51,3 +51,20 @@ negative_uncertainty_terms:
   - resourcing
   - customer adoption
   - implementation planning
+# Optional. A negative term is suppressed when it sits inside one of these phrases,
+# because the phrase means the opposite ("no commercial solution existed").
+# This key may be removed or left empty: the matcher then simply applies no
+# suppression. It must never be required at startup (ADR-0003 D6).
+review_flag_stop_phrases:
+  advance:
+    - "no commercial"
+    - "not commercial"
+    - "beyond commercial"
+    - "beyond existing commercial"
+    - "no procurement"
+    - "beyond procurement"
+    - "not merely project management"
+  uncertainty:
+    - "not only commercial"
+    - "beyond commercial"
+    - "more than implementation planning"

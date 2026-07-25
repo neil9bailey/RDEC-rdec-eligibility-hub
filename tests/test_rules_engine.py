@@ -4,7 +4,7 @@ from sqlmodel import select
 
 from app import rule_loader
 from app.models import RDProject
-from app.rules_engine import clear_rules_cache, get_rules
+from app.rules_engine import clear_rules_cache, get_rules, validate_all_rules
 from app.services import (
     aif_project_selection,
     assess_entitlement,
@@ -46,6 +46,27 @@ def test_automatic_blockers_for_red_project(seeded_session):
     assert "No signed competent professional opinion." in score.blockers
     assert "No evidence linked to the project." in score.blockers
     assert "No linked costs for a claimed project." in score.blockers
+    # ADR-0003 D7/D8. Wording judgements are review flags, never blockers.
+    assert len(score.blockers) == 4
+    assert not any("Advance appears only" in b for b in score.blockers)
+    assert not any("Uncertainty appears only" in b for b in score.blockers)
+    assert any("internal learning" in w.lower() for w in score.warnings)
+    assert any("customer adoption" in w.lower() for w in score.warnings)
+    assert score.rating == "red"
+    assert score.score < 40
+    # The flag must name the terms that actually fired, and only those.
+    matched_detail = " ".join(
+        warning.split("Matched terms:", 1)[1]
+        for warning in score.warnings
+        if "Matched terms:" in warning
+    )
+    for term in ["internal learning", "commercial", "implementation planning", "resourcing", "customer adoption"]:
+        assert f'"{term}"' in matched_detail
+    assert '"budgetary"' not in matched_detail
+    assert "Explain more clearly why the advance is in the wider field, not only internal knowledge." in score.warnings
+    assert "Competent professional uncertainty explanation is thin." in score.warnings
+    assert "Experiments, prototypes, tests, or iterations are not yet described." in score.warnings
+    assert "Requires competent professional and tax review." in score.recommended_next_actions
 
 
 def test_claimant_entitlement_statuses():
@@ -229,6 +250,50 @@ def test_score_blocker_labels_are_read_from_yaml(tmp_path, monkeypatch, seeded_s
     finally:
         monkeypatch.setattr(rule_loader, "RULES_DIR", original_rules_dir)
         clear_rules_cache()
+
+
+def test_optional_review_flag_keys_are_not_required_at_startup(tmp_path, monkeypatch, seeded_session):
+    """An operator removing the optional ADR-0003 keys must not brick the app."""
+    original_rules_dir = rule_loader.RULES_DIR
+    for path in original_rules_dir.glob("*.yml"):
+        (tmp_path / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    weights_path = tmp_path / "eligibility_weights.yml"
+    weights_path.write_text(
+        weights_path.read_text(encoding="utf-8").split("review_flag_stop_phrases:")[0],
+        encoding="utf-8",
+    )
+    blockers_path = tmp_path / "blockers.yml"
+    blockers_path.write_text(
+        blockers_path.read_text(encoding="utf-8").split("review_flags:")[0],
+        encoding="utf-8",
+    )
+
+    red = project_by_title(seeded_session, "Dashboard Migration")
+    monkeypatch.setattr(rule_loader, "RULES_DIR", tmp_path)
+    clear_rules_cache()
+    try:
+        validate_all_rules()
+        rules = get_rules()
+        assert "review_flag_stop_phrases" not in rules.eligibility
+        assert "review_flags" not in rules.blockers
+        assert rules.review_flag_stop_phrases("advance") == []
+        assert rules.review_flag_label("non_technical_advance_review") == "Non Technical Advance Review."
+        score = calculate_project_score(seeded_session, red.id)
+        assert score.rating == "red"
+        assert any("Matched terms:" in warning for warning in score.warnings)
+    finally:
+        monkeypatch.setattr(rule_loader, "RULES_DIR", original_rules_dir)
+        clear_rules_cache()
+
+
+def test_review_flag_keys_are_not_startup_required_keys():
+    from app.rules_engine import REQUIRED_RULE_KEYS
+
+    assert "review_flag_stop_phrases" not in REQUIRED_RULE_KEYS["eligibility_weights.yml"]
+    assert "review_flags" not in REQUIRED_RULE_KEYS["blockers.yml"]
+    assert "negative_advance_terms" in REQUIRED_RULE_KEYS["eligibility_weights.yml"]
+    assert "negative_uncertainty_terms" in REQUIRED_RULE_KEYS["eligibility_weights.yml"]
 
 
 def test_claim_notification_warning_window_uses_yaml_value():

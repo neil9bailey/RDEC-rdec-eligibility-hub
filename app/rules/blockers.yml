@@ -1,17 +1,16 @@
-version: "2026-05-07"
-review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07"
+version: "2026-07-25"
+review_status: "verified against official GOV.UK/HMRC guidance on 2026-05-07; non-technical wording judgements demoted from blockers to review flags on 2026-07-25 under ADR-0003"
 caveat: "Decision support only. Requires competent professional and tax review."
+# A blocker may only assert an objective, machine-checkable fact about record
+# completeness. A blocker may never assert a judgement about the technical merit,
+# character, or wording of free text (ADR-0003 D1).
 automatic_blockers:
   - code: "missing_field"
     label: "No field of science or technology"
   - code: "missing_advance"
     label: "No advance sought"
-  - code: "non_technical_advance"
-    label: "Advance appears only commercial, aesthetic, project management, procurement, or internal learning"
   - code: "missing_uncertainty"
     label: "No scientific or technological uncertainty"
-  - code: "non_technical_uncertainty"
-    label: "Uncertainty appears only commercial, budgetary, resourcing, customer adoption, or implementation planning"
   - code: "missing_competent_professional_signoff"
     label: "No signed competent professional opinion"
   - code: "missing_evidence"
@@ -24,3 +23,12 @@ automatic_blockers:
     label: "Missing accounting period"
   - code: "aif_timing_risk"
     label: "Additional Information Form timing risk"
+# Optional. Review flags are judgements about wording. They are surfaced as
+# warnings for a reviewer to overrule with evidence; they never hard-block a
+# project. This key may be removed: a generated label is used instead and the
+# application still starts (ADR-0003 D6).
+review_flags:
+  - code: "non_technical_advance_review"
+    label: "Advance wording may describe commercial, aesthetic, project management, procurement, or internal-learning work. Review with a competent professional."
+  - code: "non_technical_uncertainty_review"
+    label: "Uncertainty wording may describe commercial, budgetary, resourcing, customer-adoption, or implementation-planning risk. Review with a competent professional."

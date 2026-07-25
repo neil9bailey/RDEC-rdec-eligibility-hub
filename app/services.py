@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.rules_engine import get_rules
 from app.schemas import AIFSelectionResult, EntitlementResult, ScoreResult
+from app.text_matching import TermMatch, find_matches
 
 
 CAVEAT = "Requires competent professional and tax review."
@@ -115,9 +116,23 @@ def has_text(value: str | None, minimum: int = 1) -> bool:
     return len((value or "").strip()) >= minimum
 
 
-def contains_any(value: str | None, terms: list[str]) -> bool:
-    lowered = (value or "").lower()
-    return any(term.lower() in lowered for term in terms)
+def review_flag_message(label: str, matches: list[TermMatch]) -> str:
+    """Render a review flag that names each matched term and quotes its excerpt.
+
+    ADR-0003 D3 Stage 3: a reviewer must be able to see which term fired and
+    where, so they can overrule it with evidence. A generic label listing every
+    configured term is not acceptable for a review flag.
+    """
+    seen: set[str] = set()
+    details: list[str] = []
+    for match in matches:
+        if match.term in seen:
+            continue
+        seen.add(match.term)
+        details.append(f'"{match.term}" in "{match.excerpt}"')
+    if not details:
+        return label
+    return f"{label} Matched terms: {'; '.join(details)}"
 
 
 def signed_opinion(opinions: list[CompetentProfessionalOpinion]) -> CompetentProfessionalOpinion | None:
@@ -272,6 +287,8 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
     weights = rules.eligibility_weights()
     negative_advance_terms = rules.negative_advance_terms()
     negative_uncertainty_terms = rules.negative_uncertainty_terms()
+    advance_stop_phrases = rules.review_flag_stop_phrases("advance")
+    uncertainty_stop_phrases = rules.review_flag_stop_phrases("uncertainty")
     context = get_project_context(session, project_id)
     project = context.project
     score = 0
@@ -303,9 +320,15 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
 
     if not has_text(project.advance_sought):
         blockers.append(rules.blocker_label("missing_advance"))
-    elif contains_any(project.advance_sought, negative_advance_terms):
-        blockers.append(rules.blocker_label("non_technical_advance"))
     else:
+        # ADR-0003 D1/D2: negative wording is a review flag, never a blocker. The
+        # narrative exists, so this branch awards its points as normal and the
+        # existing warning cap keeps the project below green.
+        advance_matches = find_matches(project.advance_sought, negative_advance_terms, advance_stop_phrases)
+        if advance_matches:
+            warnings.append(
+                review_flag_message(rules.review_flag_label("non_technical_advance_review"), advance_matches)
+            )
         advance_points = weights["advance_sought"] if has_text(project.wider_field_explanation, 80) else 10
         score += advance_points
         positives.append("Advance sought recorded beyond ordinary delivery language.")
@@ -314,9 +337,18 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
 
     if not has_text(project.scientific_or_technological_uncertainties):
         blockers.append(rules.blocker_label("missing_uncertainty"))
-    elif contains_any(project.scientific_or_technological_uncertainties, negative_uncertainty_terms):
-        blockers.append(rules.blocker_label("non_technical_uncertainty"))
     else:
+        uncertainty_matches = find_matches(
+            project.scientific_or_technological_uncertainties,
+            negative_uncertainty_terms,
+            uncertainty_stop_phrases,
+        )
+        if uncertainty_matches:
+            warnings.append(
+                review_flag_message(
+                    rules.review_flag_label("non_technical_uncertainty_review"), uncertainty_matches
+                )
+            )
         uncertainty_points = (
             weights["scientific_or_technological_uncertainty"]
             if has_text(project.competent_professionals_could_not_resolve, 70)
