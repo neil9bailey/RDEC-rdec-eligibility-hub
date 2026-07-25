@@ -190,6 +190,22 @@ def official_framework_source_allowed(url: str) -> bool:
     return parsed.scheme == "https" and parsed.netloc.lower() in approved_framework_domains()
 
 
+HUMAN_APPROVAL_BLOCK_REASON = (
+    "Blocked: this source is marked as requiring human approval before it is checked. "
+    "A person must approve and record the licence or authorisation first."
+)
+
+
+def human_approval_blocked(source: FrameworkSource) -> bool:
+    """Whether a source may not be fetched without a recorded human approval.
+
+    The flag was stored and displayed but never enforced, so a source such as the
+    seeded commercial aggregator (requires_human_approval: true, licence_required)
+    would have been fetched by any run that activated it.
+    """
+    return bool(source.requires_human_approval)
+
+
 def seed_framework_sources(session: Session) -> None:
     existing_names = {source.name for source in session.exec(select(FrameworkSource))}
     for item in framework_source_catalogue():
@@ -570,7 +586,9 @@ def run_single_source_check(
     if not source:
         raise ValueError(f"Framework source {source_id} not found")
     url = source_query_url(source, ["transport", "technology", "framework"], today=today)
-    if not official_framework_source_allowed(url):
+    if human_approval_blocked(source):
+        fetch = FetchResult(ok=False, status_code=0, url=url, text="", error=HUMAN_APPROVAL_BLOCK_REASON)
+    elif not official_framework_source_allowed(url):
         fetch = FetchResult(ok=False, status_code=0, url=url, text="", error="Blocked by approved-source allow-list.")
     else:
         fetch = fetcher(url)
@@ -1197,6 +1215,17 @@ def run_framework_agent_for_profile(
     for source in sources:
         run.sources_checked += 1
         url = source_query_url(source, terms, today=today)
+        if human_approval_blocked(source):
+            source.last_status = "blocked pending human approval"
+            session.add(source)
+            record_source_check_snapshot(
+                session,
+                source,
+                FetchResult(ok=False, status_code=0, url=url, text="", error=HUMAN_APPROVAL_BLOCK_REASON),
+                url,
+            )
+            errors.append(f"{source.name}: blocked pending human approval")
+            continue
         if not official_framework_source_allowed(url):
             source.last_status = "blocked by official-source allow-list"
             record_source_check_snapshot(

@@ -100,6 +100,85 @@ def test_source_change_snapshot_tracks_first_seen_unchanged_and_changed(session)
     assert third.detected_schema == "ocds_json"
 
 
+def test_seeded_source_requiring_human_approval_is_never_fetched(session):
+    """Finding E6-3: requires_human_approval was stored and displayed, never checked."""
+    seed_framework_sources(session)
+    tenders_direct = session.exec(
+        select(FrameworkSource).where(FrameworkSource.name == "Tenders Direct aggregator backup")
+    ).first()
+
+    assert tenders_direct is not None
+    assert tenders_direct.requires_human_approval is True
+
+    def refusing_fetcher(url):  # pragma: no cover - must never run
+        raise AssertionError(f"a source requiring human approval was fetched: {url}")
+
+    snapshot = run_single_source_check(session, tenders_direct.id, fetcher=refusing_fetcher)
+
+    assert snapshot.change_type == "failed"
+    assert "requiring human approval" in (snapshot.notes or "")
+    assert not snapshot.ok
+    events = list(session.exec(select(AuditEvent).where(AuditEvent.entity_type == "SourceCheckSnapshot")))
+    assert events, "the refusal must be recorded in audit history"
+
+
+def test_agent_run_skips_sources_requiring_human_approval(session):
+    customer = Customer(
+        customer_name="Transport Authority",
+        sector="Public sector transport",
+        transport_domain="rail",
+        customer_type="local authority",
+        corporation_tax_status="no",
+    )
+    approved_source = FrameworkSource(
+        name="Find a Tender approved source",
+        source_type="ocds_api",
+        base_url="https://www.find-tender.service.gov.uk",
+        query_url="https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?limit=1",
+        active=True,
+        requires_human_approval=False,
+    )
+    gated_source = FrameworkSource(
+        name="Licensed aggregator awaiting approval",
+        source_type="ocds_api",
+        base_url="https://www.contractsfinder.service.gov.uk",
+        query_url="https://www.contractsfinder.service.gov.uk/Published/Notices/OCDS/Search?limit=1",
+        active=True,
+        requires_human_approval=True,
+        connector_status="licence_required",
+    )
+    session.add_all([customer, approved_source, gated_source])
+    session.commit()
+    session.refresh(customer)
+    profile = CustomerWatchProfile(
+        profile_name="Rail watch",
+        customer_id=customer.id,
+        keywords="rail, transport",
+        active=True,
+    )
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+
+    fetched: list[str] = []
+
+    def fetcher(url):
+        fetched.append(url)
+        assert "contractsfinder" not in url, "the gated source must never be fetched"
+        return FetchResult(ok=True, status_code=200, url=url, text='{"releases":[]}', content_type="application/json")
+
+    run = run_framework_agent_for_profile(session, profile.id, fetcher=fetcher)
+
+    assert len(fetched) == 1
+    assert "find-tender.service.gov.uk" in fetched[0]
+    assert run.sources_checked == 2
+    assert "blocked pending human approval" in run.error_summary
+    assert run.status == "completed_with_warnings"
+    snapshots = list(session.exec(select(SourceCheckSnapshot).where(SourceCheckSnapshot.source_id == gated_source.id)))
+    assert len(snapshots) == 1
+    assert "requiring human approval" in (snapshots[0].notes or "")
+
+
 def test_framework_agent_run_extracts_opportunity_requirements_signals_and_audit(session):
     unit = BusinessUnit(name="Highways")
     customer = Customer(
