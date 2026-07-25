@@ -32,10 +32,10 @@
                       <details>
                         <summary>View or edit business unit</summary>
                         <form method="post" action="/business-units/{{ child.id }}/update">
-                          <div class="field"><label>Name</label><input name="name" value="{{ child.name }}" required></div>
+                          <div class="field"><label for="name-f1-{{ child.id }}">Name</label><input id="name-f1-{{ child.id }}" name="name" value="{{ child.name }}" required></div>
                           <div class="field">
-                            <label>Parent business unit</label>
-                            <select name="parent_id">
+                            <label for="parent_id-f1-{{ child.id }}">Parent business unit</label>
+                            <select id="parent_id-f1-{{ child.id }}" name="parent_id">
                               <option value="">Top level</option>
                               {% for candidate in units %}
                                 {% if candidate.id != child.id %}
@@ -44,7 +44,7 @@
                               {% endfor %}
                             </select>
                           </div>
-                          <div class="field"><label>Description</label><textarea name="description">{{ child.description }}</textarea></div>
+                          <div class="field"><label for="description-f1-{{ child.id }}">Description</label><textarea id="description-f1-{{ child.id }}" name="description">{{ child.description }}</textarea></div>
                           <label class="checkbox"><input type="checkbox" name="active" {% if child.active %}checked{% endif %}> Active</label>
                           <button type="submit">Update</button>
                         </form>
@@ -61,10 +61,10 @@
           <details>
             <summary>View or edit business unit</summary>
             <form method="post" action="/business-units/{{ unit.id }}/update">
-              <div class="field"><label>Name</label><input name="name" value="{{ unit.name }}" required></div>
+              <div class="field"><label for="name-f3-{{ unit.id }}">Name</label><input id="name-f3-{{ unit.id }}" name="name" value="{{ unit.name }}" required></div>
               <div class="field">
-                <label>Parent business unit</label>
-                <select name="parent_id">
+                <label for="parent_id-f3-{{ unit.id }}">Parent business unit</label>
+                <select id="parent_id-f3-{{ unit.id }}" name="parent_id">
                   <option value="">Top level</option>
                   {% for candidate in units %}
                     {% if candidate.id != unit.id %}
@@ -73,7 +73,7 @@
                   {% endfor %}
                 </select>
               </div>
-              <div class="field"><label>Description</label><textarea name="description">{{ unit.description }}</textarea></div>
+              <div class="field"><label for="description-f3-{{ unit.id }}">Description</label><textarea id="description-f3-{{ unit.id }}" name="description">{{ unit.description }}</textarea></div>
               <label class="checkbox"><input type="checkbox" name="active" {% if unit.active %}checked{% endif %}> Active</label>
               <div class="actions">
                 <button type="submit">Update</button>
@@ -91,10 +91,10 @@
   <div class="panel">
     <h2>Add Business Unit</h2>
     <form method="post" action="/business-units">
-      <div class="field"><label>Name</label><input name="name" required></div>
+      <div class="field"><label for="name-f5">Name</label><input id="name-f5" name="name" required></div>
       <div class="field">
-        <label>Parent business unit</label>
-        <select name="parent_id">
+        <label for="parent_id-f5">Parent business unit</label>
+        <select id="parent_id-f5" name="parent_id">
           <option value="">Top level</option>
           {% for unit in units %}
             <option value="{{ unit.id }}">{{ unit.name }}</option>
@@ -102,7 +102,7 @@
         </select>
         <p class="hint">Use this when Network Services or another BU needs local sub-units later.</p>
       </div>
-      <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+      <div class="field"><label for="description-f5">Description</label><textarea id="description-f5" name="description"></textarea></div>
       <label class="checkbox"><input type="checkbox" name="active" checked> Active</label>
       <button type="submit">Save business unit</button>
     </form>

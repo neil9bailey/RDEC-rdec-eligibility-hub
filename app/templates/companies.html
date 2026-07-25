@@ -73,33 +73,33 @@
       <fieldset class="form-section">
         <legend>Legal and registered details</legend>
         <div class="form-grid three">
-          <div class="field"><label>Legal company name</label><input name="company_name" required></div>
-          <div class="field"><label>Unique Taxpayer Reference (UTR)</label><input name="utr" inputmode="numeric" autocomplete="off" placeholder="10 digits"></div>
-          <div class="field"><label>PAYE reference</label><input name="paye_reference" autocomplete="off" placeholder="951/ABC123"></div>
-          <div class="field"><label>VAT number</label><input name="vat_number" autocomplete="off" placeholder="GB123456789"></div>
-          <div class="field"><label>Standard Industrial Classification (SIC) code</label><input name="sic_code" inputmode="numeric" autocomplete="off"></div>
-          <div class="field"><label>Registered office country</label><input name="registered_office_country" value="United Kingdom"></div>
-          <div class="field"><label>Registered office region</label><input name="registered_office_region" placeholder="England, Scotland, Wales or Northern Ireland"></div>
+          <div class="field"><label for="company_name-f1">Legal company name</label><input id="company_name-f1" name="company_name" required></div>
+          <div class="field"><label for="utr-f1">Unique Taxpayer Reference (UTR)</label><input id="utr-f1" name="utr" inputmode="numeric" autocomplete="off" placeholder="10 digits"></div>
+          <div class="field"><label for="paye_reference-f1">PAYE reference</label><input id="paye_reference-f1" name="paye_reference" autocomplete="off" placeholder="951/ABC123"></div>
+          <div class="field"><label for="vat_number-f1">VAT number</label><input id="vat_number-f1" name="vat_number" autocomplete="off" placeholder="GB123456789"></div>
+          <div class="field"><label for="sic_code-f1">Standard Industrial Classification (SIC) code</label><input id="sic_code-f1" name="sic_code" inputmode="numeric" autocomplete="off"></div>
+          <div class="field"><label for="registered_office_country-f1">Registered office country</label><input id="registered_office_country-f1" name="registered_office_country" value="United Kingdom"></div>
+          <div class="field"><label for="registered_office_region-f1">Registered office region</label><input id="registered_office_region-f1" name="registered_office_region" placeholder="England, Scotland, Wales or Northern Ireland"></div>
           <label class="checkbox"><input type="checkbox" name="northern_ireland_registered"> Registered in Northern Ireland</label>
         </div>
       </fieldset>
       <fieldset class="form-section">
         <legend>Senior R&D contact</legend>
         <div class="form-grid">
-          <div class="field"><label>Name</label><input name="senior_rd_contact_name"></div>
-          <div class="field"><label>Role</label><input name="senior_rd_contact_role"></div>
-          <div class="field"><label>Email</label><input name="senior_rd_contact_email" type="email"></div>
-          <div class="field"><label>Phone</label><input name="senior_rd_contact_phone"></div>
+          <div class="field"><label for="senior_rd_contact_name-f1">Name</label><input id="senior_rd_contact_name-f1" name="senior_rd_contact_name"></div>
+          <div class="field"><label for="senior_rd_contact_role-f1">Role</label><input id="senior_rd_contact_role-f1" name="senior_rd_contact_role"></div>
+          <div class="field"><label for="senior_rd_contact_email-f1">Email</label><input id="senior_rd_contact_email-f1" name="senior_rd_contact_email" type="email"></div>
+          <div class="field"><label for="senior_rd_contact_phone-f1">Phone</label><input id="senior_rd_contact_phone-f1" name="senior_rd_contact_phone"></div>
         </div>
       </fieldset>
       <fieldset class="form-section">
         <legend>Agent details (optional)</legend>
         <div class="form-grid three">
-          <div class="field"><label>Name</label><input name="agent_name"></div>
-          <div class="field"><label>Reference</label><input name="agent_reference"></div>
-          <div class="field"><label>Email</label><input name="agent_email" type="email"></div>
-          <div class="field"><label>Phone</label><input name="agent_phone"></div>
-          <div class="field"><label>Role</label><input name="agent_role"></div>
+          <div class="field"><label for="agent_name-f1">Name</label><input id="agent_name-f1" name="agent_name"></div>
+          <div class="field"><label for="agent_reference-f1">Reference</label><input id="agent_reference-f1" name="agent_reference"></div>
+          <div class="field"><label for="agent_email-f1">Email</label><input id="agent_email-f1" name="agent_email" type="email"></div>
+          <div class="field"><label for="agent_phone-f1">Phone</label><input id="agent_phone-f1" name="agent_phone"></div>
+          <div class="field"><label for="agent_role-f1">Role</label><input id="agent_role-f1" name="agent_role"></div>
         </div>
       </fieldset>
       <button type="submit">Save company</button>
@@ -128,33 +128,33 @@
             <fieldset class="form-section">
               <legend>Legal and registered details</legend>
               <div class="form-grid three">
-                <div class="field"><label>Legal company name</label><input name="company_name" value="{{ company.company_name }}" required></div>
-                <div class="field"><label>Unique Taxpayer Reference (UTR)</label><input name="utr" value="{{ company.utr }}" inputmode="numeric" autocomplete="off"></div>
-                <div class="field"><label>PAYE reference</label><input name="paye_reference" value="{{ company.paye_reference }}" autocomplete="off"></div>
-                <div class="field"><label>VAT number</label><input name="vat_number" value="{{ company.vat_number }}" autocomplete="off"></div>
-                <div class="field"><label>Standard Industrial Classification (SIC) code</label><input name="sic_code" value="{{ company.sic_code }}" inputmode="numeric" autocomplete="off"></div>
-                <div class="field"><label>Registered office country</label><input name="registered_office_country" value="{{ company.registered_office_country }}"></div>
-                <div class="field"><label>Registered office region</label><input name="registered_office_region" value="{{ company.registered_office_region }}"></div>
+                <div class="field"><label for="company_name-f2-{{ company.id }}">Legal company name</label><input id="company_name-f2-{{ company.id }}" name="company_name" value="{{ company.company_name }}" required></div>
+                <div class="field"><label for="utr-f2-{{ company.id }}">Unique Taxpayer Reference (UTR)</label><input id="utr-f2-{{ company.id }}" name="utr" value="{{ company.utr }}" inputmode="numeric" autocomplete="off"></div>
+                <div class="field"><label for="paye_reference-f2-{{ company.id }}">PAYE reference</label><input id="paye_reference-f2-{{ company.id }}" name="paye_reference" value="{{ company.paye_reference }}" autocomplete="off"></div>
+                <div class="field"><label for="vat_number-f2-{{ company.id }}">VAT number</label><input id="vat_number-f2-{{ company.id }}" name="vat_number" value="{{ company.vat_number }}" autocomplete="off"></div>
+                <div class="field"><label for="sic_code-f2-{{ company.id }}">Standard Industrial Classification (SIC) code</label><input id="sic_code-f2-{{ company.id }}" name="sic_code" value="{{ company.sic_code }}" inputmode="numeric" autocomplete="off"></div>
+                <div class="field"><label for="registered_office_country-f2-{{ company.id }}">Registered office country</label><input id="registered_office_country-f2-{{ company.id }}" name="registered_office_country" value="{{ company.registered_office_country }}"></div>
+                <div class="field"><label for="registered_office_region-f2-{{ company.id }}">Registered office region</label><input id="registered_office_region-f2-{{ company.id }}" name="registered_office_region" value="{{ company.registered_office_region }}"></div>
                 <label class="checkbox"><input type="checkbox" name="northern_ireland_registered" {% if company.northern_ireland_registered %}checked{% endif %}> Registered in Northern Ireland</label>
               </div>
             </fieldset>
             <fieldset class="form-section">
               <legend>Senior R&D contact</legend>
               <div class="form-grid">
-                <div class="field"><label>Name</label><input name="senior_rd_contact_name" value="{{ company.senior_rd_contact_name }}"></div>
-                <div class="field"><label>Role</label><input name="senior_rd_contact_role" value="{{ company.senior_rd_contact_role }}"></div>
-                <div class="field"><label>Email</label><input name="senior_rd_contact_email" value="{{ company.senior_rd_contact_email }}" type="email"></div>
-                <div class="field"><label>Phone</label><input name="senior_rd_contact_phone" value="{{ company.senior_rd_contact_phone }}"></div>
+                <div class="field"><label for="senior_rd_contact_name-f2-{{ company.id }}">Name</label><input id="senior_rd_contact_name-f2-{{ company.id }}" name="senior_rd_contact_name" value="{{ company.senior_rd_contact_name }}"></div>
+                <div class="field"><label for="senior_rd_contact_role-f2-{{ company.id }}">Role</label><input id="senior_rd_contact_role-f2-{{ company.id }}" name="senior_rd_contact_role" value="{{ company.senior_rd_contact_role }}"></div>
+                <div class="field"><label for="senior_rd_contact_email-f2-{{ company.id }}">Email</label><input id="senior_rd_contact_email-f2-{{ company.id }}" name="senior_rd_contact_email" value="{{ company.senior_rd_contact_email }}" type="email"></div>
+                <div class="field"><label for="senior_rd_contact_phone-f2-{{ company.id }}">Phone</label><input id="senior_rd_contact_phone-f2-{{ company.id }}" name="senior_rd_contact_phone" value="{{ company.senior_rd_contact_phone }}"></div>
               </div>
             </fieldset>
             <fieldset class="form-section">
               <legend>Agent details (optional)</legend>
               <div class="form-grid three">
-                <div class="field"><label>Name</label><input name="agent_name" value="{{ company.agent_name }}"></div>
-                <div class="field"><label>Reference</label><input name="agent_reference" value="{{ company.agent_reference }}"></div>
-                <div class="field"><label>Email</label><input name="agent_email" value="{{ company.agent_email }}" type="email"></div>
-                <div class="field"><label>Phone</label><input name="agent_phone" value="{{ company.agent_phone }}"></div>
-                <div class="field"><label>Role</label><input name="agent_role" value="{{ company.agent_role }}"></div>
+                <div class="field"><label for="agent_name-f2-{{ company.id }}">Name</label><input id="agent_name-f2-{{ company.id }}" name="agent_name" value="{{ company.agent_name }}"></div>
+                <div class="field"><label for="agent_reference-f2-{{ company.id }}">Reference</label><input id="agent_reference-f2-{{ company.id }}" name="agent_reference" value="{{ company.agent_reference }}"></div>
+                <div class="field"><label for="agent_email-f2-{{ company.id }}">Email</label><input id="agent_email-f2-{{ company.id }}" name="agent_email" value="{{ company.agent_email }}" type="email"></div>
+                <div class="field"><label for="agent_phone-f2-{{ company.id }}">Phone</label><input id="agent_phone-f2-{{ company.id }}" name="agent_phone" value="{{ company.agent_phone }}"></div>
+                <div class="field"><label for="agent_role-f2-{{ company.id }}">Role</label><input id="agent_role-f2-{{ company.id }}" name="agent_role" value="{{ company.agent_role }}"></div>
               </div>
             </fieldset>
             <button type="submit">Save changes</button>
@@ -187,22 +187,22 @@
     {% if companies %}
       <form method="post" action="/accounting-periods">
         <div class="field">
-          <label>Company</label>
-          <select name="company_id" required>{% for company in companies %}<option value="{{ company.id }}">{{ company.company_name }}</option>{% endfor %}</select>
+          <label for="company_id-f4">Company</label>
+          <select id="company_id-f4" name="company_id" required>{% for company in companies %}<option value="{{ company.id }}">{{ company.company_name }}</option>{% endfor %}</select>
         </div>
         <div class="form-grid three">
-          <div class="field"><label>Period label (optional)</label><input name="label" placeholder="Created automatically if blank"></div>
-          <div class="field"><label>Accounting period start</label><input name="start_date" type="date" required></div>
-          <div class="field"><label>Accounting period end</label><input name="end_date" type="date" required></div>
-          <div class="field"><label>Period of account start</label><input name="period_of_account_start" type="date" required></div>
-          <div class="field"><label>Period of account end</label><input name="period_of_account_end" type="date" required></div>
-          <div class="field"><label>Claim notification date</label><input name="claim_notification_date" type="date"></div>
+          <div class="field"><label for="label-f4">Period label (optional)</label><input id="label-f4" name="label" placeholder="Created automatically if blank"></div>
+          <div class="field"><label for="start_date-f4">Accounting period start</label><input id="start_date-f4" name="start_date" type="date" required></div>
+          <div class="field"><label for="end_date-f4">Accounting period end</label><input id="end_date-f4" name="end_date" type="date" required></div>
+          <div class="field"><label for="period_of_account_start-f4">Period of account start</label><input id="period_of_account_start-f4" name="period_of_account_start" type="date" required></div>
+          <div class="field"><label for="period_of_account_end-f4">Period of account end</label><input id="period_of_account_end-f4" name="period_of_account_end" type="date" required></div>
+          <div class="field"><label for="claim_notification_date-f4">Claim notification date</label><input id="claim_notification_date-f4" name="claim_notification_date" type="date"></div>
         </div>
         <div class="checkbox-row">
           <label class="checkbox"><input type="checkbox" name="claim_notification_submitted"> Claim notification submitted</label>
           <label class="checkbox"><input type="checkbox" name="prior_claim_within_3_years"> Prior claim within three years</label>
         </div>
-        <div class="field"><label>Review notes</label><textarea name="scheme_notes" placeholder="Record the current scheme and notification review position"></textarea></div>
+        <div class="field"><label for="scheme_notes-f4">Review notes</label><textarea id="scheme_notes-f4" name="scheme_notes" placeholder="Record the current scheme and notification review position"></textarea></div>
         <button type="submit">Save accounting period</button>
       </form>
     {% else %}
@@ -226,22 +226,22 @@
           <summary>Edit accounting period</summary>
           <form method="post" action="/accounting-periods/{{ period.id }}/update">
             <div class="field">
-              <label>Company</label>
-              <select name="company_id" required>{% for company in companies %}<option value="{{ company.id }}" {% if period.company_id == company.id %}selected{% endif %}>{{ company.company_name }}</option>{% endfor %}</select>
+              <label for="company_id-f5-{{ period.id }}">Company</label>
+              <select id="company_id-f5-{{ period.id }}" name="company_id" required>{% for company in companies %}<option value="{{ company.id }}" {% if period.company_id == company.id %}selected{% endif %}>{{ company.company_name }}</option>{% endfor %}</select>
             </div>
             <div class="form-grid three">
-              <div class="field"><label>Period label (optional)</label><input name="label" value="{{ period.label }}" placeholder="Created automatically if blank"></div>
-              <div class="field"><label>Accounting period start</label><input name="start_date" type="date" value="{{ period.start_date }}" required></div>
-              <div class="field"><label>Accounting period end</label><input name="end_date" type="date" value="{{ period.end_date }}" required></div>
-              <div class="field"><label>Period of account start</label><input name="period_of_account_start" type="date" value="{{ period.period_of_account_start }}" required></div>
-              <div class="field"><label>Period of account end</label><input name="period_of_account_end" type="date" value="{{ period.period_of_account_end }}" required></div>
-              <div class="field"><label>Claim notification date</label><input name="claim_notification_date" type="date" value="{{ period.claim_notification_date or '' }}"></div>
+              <div class="field"><label for="label-f5-{{ period.id }}">Period label (optional)</label><input id="label-f5-{{ period.id }}" name="label" value="{{ period.label }}" placeholder="Created automatically if blank"></div>
+              <div class="field"><label for="start_date-f5-{{ period.id }}">Accounting period start</label><input id="start_date-f5-{{ period.id }}" name="start_date" type="date" value="{{ period.start_date }}" required></div>
+              <div class="field"><label for="end_date-f5-{{ period.id }}">Accounting period end</label><input id="end_date-f5-{{ period.id }}" name="end_date" type="date" value="{{ period.end_date }}" required></div>
+              <div class="field"><label for="period_of_account_start-f5-{{ period.id }}">Period of account start</label><input id="period_of_account_start-f5-{{ period.id }}" name="period_of_account_start" type="date" value="{{ period.period_of_account_start }}" required></div>
+              <div class="field"><label for="period_of_account_end-f5-{{ period.id }}">Period of account end</label><input id="period_of_account_end-f5-{{ period.id }}" name="period_of_account_end" type="date" value="{{ period.period_of_account_end }}" required></div>
+              <div class="field"><label for="claim_notification_date-f5-{{ period.id }}">Claim notification date</label><input id="claim_notification_date-f5-{{ period.id }}" name="claim_notification_date" type="date" value="{{ period.claim_notification_date or '' }}"></div>
             </div>
             <div class="checkbox-row">
               <label class="checkbox"><input type="checkbox" name="claim_notification_submitted" {% if period.claim_notification_submitted %}checked{% endif %}> Claim notification submitted</label>
               <label class="checkbox"><input type="checkbox" name="prior_claim_within_3_years" {% if period.prior_claim_within_3_years %}checked{% endif %}> Prior claim within three years</label>
             </div>
-            <div class="field"><label>Review notes</label><textarea name="scheme_notes">{{ period.scheme_notes }}</textarea></div>
+            <div class="field"><label for="scheme_notes-f5-{{ period.id }}">Review notes</label><textarea id="scheme_notes-f5-{{ period.id }}" name="scheme_notes">{{ period.scheme_notes }}</textarea></div>
             <button type="submit">Save changes</button>
           </form>
           <div class="danger-zone">

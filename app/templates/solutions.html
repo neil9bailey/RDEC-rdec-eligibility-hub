@@ -24,27 +24,27 @@
           <details class="record-editor">
             <summary>View or edit solution</summary>
             <form method="post" action="/solutions/{{ solution.id }}/update">
-              <div class="field"><label>Solution name</label><input name="solution_name" value="{{ solution.solution_name }}" required></div>
+              <div class="field"><label for="solution_name-f1-{{ solution.id }}">Solution name</label><input id="solution_name-f1-{{ solution.id }}" name="solution_name" value="{{ solution.solution_name }}" required></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Customer</label>
-                  <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}" {% if solution.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select>
+                  <label for="customer_id-f1-{{ solution.id }}">Customer</label>
+                  <select id="customer_id-f1-{{ solution.id }}" name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}" {% if solution.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select>
                 </div>
                 <div class="field">
-                  <label>Contract</label>
-                  <select name="contract_id"><option value="">No contract linked</option>{% for contract in contracts %}<option value="{{ contract.id }}" {% if solution.contract_id == contract.id %}selected{% endif %}>{{ contract.contract_name }}</option>{% endfor %}</select>
+                  <label for="contract_id-f1-{{ solution.id }}">Contract</label>
+                  <select id="contract_id-f1-{{ solution.id }}" name="contract_id"><option value="">No contract linked</option>{% for contract in contracts %}<option value="{{ contract.id }}" {% if solution.contract_id == contract.id %}selected{% endif %}>{{ contract.contract_name }}</option>{% endfor %}</select>
                 </div>
               </div>
-              <div class="field"><label>Solution description</label><textarea name="solution_description">{{ solution.solution_description }}</textarea></div>
-              <div class="field"><label>Business problem</label><textarea name="business_problem">{{ solution.business_problem }}</textarea></div>
-              <div class="field"><label>Technical architecture summary</label><textarea name="technical_architecture_summary">{{ solution.technical_architecture_summary }}</textarea></div>
-              <div class="field"><label>Transport environment constraints</label><textarea name="transport_environment_constraints_text">{{ solution.transport_environment_constraints }}</textarea></div>
+              <div class="field"><label for="solution_description-f1-{{ solution.id }}">Solution description</label><textarea id="solution_description-f1-{{ solution.id }}" name="solution_description">{{ solution.solution_description }}</textarea></div>
+              <div class="field"><label for="business_problem-f1-{{ solution.id }}">Business problem</label><textarea id="business_problem-f1-{{ solution.id }}" name="business_problem">{{ solution.business_problem }}</textarea></div>
+              <div class="field"><label for="technical_architecture_summary-f1-{{ solution.id }}">Technical architecture summary</label><textarea id="technical_architecture_summary-f1-{{ solution.id }}" name="technical_architecture_summary">{{ solution.technical_architecture_summary }}</textarea></div>
+              <div class="field"><label for="transport_environment_constraints_text-f1-{{ solution.id }}">Transport environment constraints</label><textarea id="transport_environment_constraints_text-f1-{{ solution.id }}" name="transport_environment_constraints_text">{{ solution.transport_environment_constraints }}</textarea></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Initial R&D radar status</label>
-                  <select name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option {% if solution.initial_radar_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <label for="initial_radar_status-f1-{{ solution.id }}">Initial R&D radar status</label>
+                  <select id="initial_radar_status-f1-{{ solution.id }}" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option {% if solution.initial_radar_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                 </div>
-                <div class="field"><label>Reason for radar status</label><textarea name="radar_reason">{{ solution.radar_reason }}</textarea></div>
+                <div class="field"><label for="radar_reason-f1-{{ solution.id }}">Reason for radar status</label><textarea id="radar_reason-f1-{{ solution.id }}" name="radar_reason">{{ solution.radar_reason }}</textarea></div>
               </div>
               <button type="submit">Update solution</button>
             </form>
@@ -60,20 +60,20 @@
   <div class="panel">
     <h2>Add Solution</h2>
     <form method="post" action="/solutions">
-      <div class="field"><label>Solution name</label><input name="solution_name" required></div>
+      <div class="field"><label for="solution_name-f3">Solution name</label><input id="solution_name-f3" name="solution_name" required></div>
       <div class="form-grid">
         <div class="field">
-          <label>Customer</label>
-          <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
+          <label for="customer_id-f3">Customer</label>
+          <select id="customer_id-f3" name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Contract</label>
-          <select name="contract_id"><option value="">No contract linked</option>{% for contract in contracts %}<option value="{{ contract.id }}">{{ contract.contract_name }}</option>{% endfor %}</select>
+          <label for="contract_id-f3">Contract</label>
+          <select id="contract_id-f3" name="contract_id"><option value="">No contract linked</option>{% for contract in contracts %}<option value="{{ contract.id }}">{{ contract.contract_name }}</option>{% endfor %}</select>
         </div>
       </div>
-      <div class="field"><label>Solution description</label><textarea name="solution_description"></textarea></div>
-      <div class="field"><label>Business problem</label><textarea name="business_problem"></textarea></div>
-      <div class="field"><label>Technical architecture summary</label><textarea name="technical_architecture_summary"></textarea></div>
+      <div class="field"><label for="solution_description-f3">Solution description</label><textarea id="solution_description-f3" name="solution_description"></textarea></div>
+      <div class="field"><label for="business_problem-f3">Business problem</label><textarea id="business_problem-f3" name="business_problem"></textarea></div>
+      <div class="field"><label for="technical_architecture_summary-f3">Technical architecture summary</label><textarea id="technical_architecture_summary-f3" name="technical_architecture_summary"></textarea></div>
       <div class="field">
         <label>Transport environment constraints</label>
         <div class="checkbox-row">
@@ -84,10 +84,10 @@
       </div>
       <div class="form-grid">
         <div class="field">
-          <label>Initial R&D radar status</label>
-          <select name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="initial_radar_status-f3">Initial R&D radar status</label>
+          <select id="initial_radar_status-f3" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Reason for radar status</label><textarea name="radar_reason"></textarea></div>
+        <div class="field"><label for="radar_reason-f3">Reason for radar status</label><textarea id="radar_reason-f3" name="radar_reason"></textarea></div>
       </div>
       <button type="submit">Save solution</button>
     </form>

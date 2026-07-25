@@ -25,28 +25,28 @@
           <details class="record-editor">
             <summary>View or edit contract</summary>
             <form method="post" action="/contracts/{{ contract.id }}/update">
-              <div class="field"><label>Contract name</label><input name="contract_name" value="{{ contract.contract_name }}" required></div>
+              <div class="field"><label for="contract_name-f1-{{ contract.id }}">Contract name</label><input id="contract_name-f1-{{ contract.id }}" name="contract_name" value="{{ contract.contract_name }}" required></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Customer</label>
-                  <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}" {% if contract.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select>
+                  <label for="customer_id-f1-{{ contract.id }}">Customer</label>
+                  <select id="customer_id-f1-{{ contract.id }}" name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}" {% if contract.customer_id == customer.id %}selected{% endif %}>{{ customer.customer_name }}</option>{% endfor %}</select>
                 </div>
                 <div class="field">
-                  <label>Contract type</label>
-                  <select name="contract_type">{% for item in domain.CONTRACT_TYPES %}<option {% if contract.contract_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <label for="contract_type-f1-{{ contract.id }}">Contract type</label>
+                  <select id="contract_type-f1-{{ contract.id }}" name="contract_type">{% for item in domain.CONTRACT_TYPES %}<option {% if contract.contract_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                 </div>
-                <div class="field"><label>Start date</label><input name="start_date" type="date" value="{{ contract.start_date or '' }}"></div>
-                <div class="field"><label>End date</label><input name="end_date" type="date" value="{{ contract.end_date or '' }}"></div>
+                <div class="field"><label for="start_date-f1-{{ contract.id }}">Start date</label><input id="start_date-f1-{{ contract.id }}" name="start_date" type="date" value="{{ contract.start_date or '' }}"></div>
+                <div class="field"><label for="end_date-f1-{{ contract.id }}">End date</label><input id="end_date-f1-{{ contract.id }}" name="end_date" type="date" value="{{ contract.end_date or '' }}"></div>
               </div>
               <div class="checkbox-row">
                 <label class="checkbox"><input type="checkbox" name="customer_requested_rd" {% if contract.customer_requested_rd %}checked{% endif %}> Customer explicitly requested R&D</label>
                 <label class="checkbox"><input type="checkbox" name="customer_intended_or_contemplated_rd" {% if contract.customer_intended_or_contemplated_rd %}checked{% endif %}> Customer intended or contemplated R&D</label>
                 <label class="checkbox"><input type="checkbox" name="technical_uncertainty_described" {% if contract.technical_uncertainty_described %}checked{% endif %}> Technical uncertainty described</label>
               </div>
-              <div class="field"><label>IP / foreground knowledge owner</label><textarea name="ip_owner">{{ contract.ip_owner }}</textarea></div>
-              <div class="field"><label>Funding / grant notes</label><textarea name="funding_grant_notes">{{ contract.funding_grant_notes }}</textarea></div>
-              <div class="field"><label>Public sector procurement notes</label><textarea name="public_sector_procurement_notes">{{ contract.public_sector_procurement_notes }}</textarea></div>
-              <div class="field"><label>Contract evidence links</label><textarea name="contract_evidence_links">{{ contract.contract_evidence_links }}</textarea></div>
+              <div class="field"><label for="ip_owner-f1-{{ contract.id }}">IP / foreground knowledge owner</label><textarea id="ip_owner-f1-{{ contract.id }}" name="ip_owner">{{ contract.ip_owner }}</textarea></div>
+              <div class="field"><label for="funding_grant_notes-f1-{{ contract.id }}">Funding / grant notes</label><textarea id="funding_grant_notes-f1-{{ contract.id }}" name="funding_grant_notes">{{ contract.funding_grant_notes }}</textarea></div>
+              <div class="field"><label for="public_sector_procurement_notes-f1-{{ contract.id }}">Public sector procurement notes</label><textarea id="public_sector_procurement_notes-f1-{{ contract.id }}" name="public_sector_procurement_notes">{{ contract.public_sector_procurement_notes }}</textarea></div>
+              <div class="field"><label for="contract_evidence_links-f1-{{ contract.id }}">Contract evidence links</label><textarea id="contract_evidence_links-f1-{{ contract.id }}" name="contract_evidence_links">{{ contract.contract_evidence_links }}</textarea></div>
               <button type="submit">Update contract</button>
             </form>
             <form method="post" action="/contracts/{{ contract.id }}/delete" onsubmit="return confirm('Delete this contract? This cannot be undone.');">
@@ -61,28 +61,28 @@
   <div class="panel">
     <h2>Add Contract</h2>
     <form method="post" action="/contracts">
-      <div class="field"><label>Contract name</label><input name="contract_name" required></div>
+      <div class="field"><label for="contract_name-f3">Contract name</label><input id="contract_name-f3" name="contract_name" required></div>
       <div class="form-grid">
         <div class="field">
-          <label>Customer</label>
-          <select name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
+          <label for="customer_id-f3">Customer</label>
+          <select id="customer_id-f3" name="customer_id" required>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.customer_name }}</option>{% endfor %}</select>
         </div>
         <div class="field">
-          <label>Contract type</label>
-          <select name="contract_type">{% for item in domain.CONTRACT_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
+          <label for="contract_type-f3">Contract type</label>
+          <select id="contract_type-f3" name="contract_type">{% for item in domain.CONTRACT_TYPES %}<option>{{ item }}</option>{% endfor %}</select>
         </div>
-        <div class="field"><label>Start date</label><input name="start_date" type="date"></div>
-        <div class="field"><label>End date</label><input name="end_date" type="date"></div>
+        <div class="field"><label for="start_date-f3">Start date</label><input id="start_date-f3" name="start_date" type="date"></div>
+        <div class="field"><label for="end_date-f3">End date</label><input id="end_date-f3" name="end_date" type="date"></div>
       </div>
       <div class="checkbox-row">
         <label class="checkbox"><input type="checkbox" name="customer_requested_rd"> Customer explicitly requested R&D</label>
         <label class="checkbox"><input type="checkbox" name="customer_intended_or_contemplated_rd"> Customer intended or contemplated R&D</label>
         <label class="checkbox"><input type="checkbox" name="technical_uncertainty_described"> Technical uncertainty described in bid/contract/SOW/CR</label>
       </div>
-      <div class="field"><label>IP / foreground knowledge owner</label><textarea name="ip_owner"></textarea></div>
-      <div class="field"><label>Funding / grant notes</label><textarea name="funding_grant_notes"></textarea></div>
-      <div class="field"><label>Public sector procurement notes</label><textarea name="public_sector_procurement_notes"></textarea></div>
-      <div class="field"><label>Contract evidence links</label><textarea name="contract_evidence_links" placeholder="SharePoint path, file path, or reference"></textarea></div>
+      <div class="field"><label for="ip_owner-f3">IP / foreground knowledge owner</label><textarea id="ip_owner-f3" name="ip_owner"></textarea></div>
+      <div class="field"><label for="funding_grant_notes-f3">Funding / grant notes</label><textarea id="funding_grant_notes-f3" name="funding_grant_notes"></textarea></div>
+      <div class="field"><label for="public_sector_procurement_notes-f3">Public sector procurement notes</label><textarea id="public_sector_procurement_notes-f3" name="public_sector_procurement_notes"></textarea></div>
+      <div class="field"><label for="contract_evidence_links-f3">Contract evidence links</label><textarea id="contract_evidence_links-f3" name="contract_evidence_links" placeholder="SharePoint path, file path, or reference"></textarea></div>
       <button type="submit">Save contract</button>
     </form>
   </div>

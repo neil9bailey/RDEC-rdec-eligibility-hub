@@ -28,30 +28,30 @@
           <details class="record-editor">
             <summary>View or edit customer</summary>
             <form method="post" action="/customers/{{ customer.id }}/update">
-              <div class="field"><label>Customer name</label><input name="customer_name" value="{{ customer.customer_name }}" required></div>
+              <div class="field"><label for="customer_name-f1-{{ customer.id }}">Customer name</label><input id="customer_name-f1-{{ customer.id }}" name="customer_name" value="{{ customer.customer_name }}" required></div>
               <div class="field">
-                <label>Business unit</label>
-                <select name="business_unit_id">
+                <label for="business_unit_id-f1-{{ customer.id }}">Business unit</label>
+                <select id="business_unit_id-f1-{{ customer.id }}" name="business_unit_id">
                   <option value="">Unassigned</option>
                   {% for unit in business_units %}<option value="{{ unit.id }}" {% if customer.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}
                 </select>
               </div>
-              <div class="field"><label>Sector</label><input name="sector" value="{{ customer.sector }}"></div>
+              <div class="field"><label for="sector-f1-{{ customer.id }}">Sector</label><input id="sector-f1-{{ customer.id }}" name="sector" value="{{ customer.sector }}"></div>
               <div class="form-grid">
                 <div class="field">
-                  <label>Transport domain</label>
-                  <select name="transport_domain">{% for item in domain.TRANSPORT_DOMAINS %}<option {% if customer.transport_domain == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <label for="transport_domain-f1-{{ customer.id }}">Transport domain</label>
+                  <select id="transport_domain-f1-{{ customer.id }}" name="transport_domain">{% for item in domain.TRANSPORT_DOMAINS %}<option {% if customer.transport_domain == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                 </div>
                 <div class="field">
-                  <label>Customer type</label>
-                  <select name="customer_type">{% for item in domain.CUSTOMER_TYPES %}<option {% if customer.customer_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <label for="customer_type-f1-{{ customer.id }}">Customer type</label>
+                  <select id="customer_type-f1-{{ customer.id }}" name="customer_type">{% for item in domain.CUSTOMER_TYPES %}<option {% if customer.customer_type == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                 </div>
                 <div class="field">
-                  <label>Likely chargeable to Corporation Tax</label>
-                  <select name="corporation_tax_status">{% for item in domain.CORPORATION_TAX_STATUSES %}<option {% if customer.corporation_tax_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <label for="corporation_tax_status-f1-{{ customer.id }}">Likely chargeable to Corporation Tax</label>
+                  <select id="corporation_tax_status-f1-{{ customer.id }}" name="corporation_tax_status">{% for item in domain.CORPORATION_TAX_STATUSES %}<option {% if customer.corporation_tax_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
                 </div>
               </div>
-              <div class="field"><label>Notes</label><textarea name="notes">{{ customer.notes }}</textarea></div>
+              <div class="field"><label for="notes-f1-{{ customer.id }}">Notes</label><textarea id="notes-f1-{{ customer.id }}" name="notes">{{ customer.notes }}</textarea></div>
               <button type="submit">Update customer</button>
             </form>
             <form method="post" action="/customers/{{ customer.id }}/delete" onsubmit="return confirm('Delete this customer? This cannot be undone.');">
@@ -67,36 +67,36 @@
     <h2>Add Customer</h2>
     <p class="hint">If Corporation Tax status is left as unknown, the app applies the YAML entitlement-rule default for the customer type as a decision-support assumption. Requires competent professional and tax review.</p>
     <form method="post" action="/customers">
-      <div class="field"><label>Customer name</label><input name="customer_name" required></div>
+      <div class="field"><label for="customer_name-f3">Customer name</label><input id="customer_name-f3" name="customer_name" required></div>
       <div class="field">
-        <label>Business unit</label>
-        <select name="business_unit_id">
+        <label for="business_unit_id-f3">Business unit</label>
+        <select id="business_unit_id-f3" name="business_unit_id">
           <option value="">Unassigned</option>
           {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="field"><label>Sector</label><input name="sector" placeholder="Public sector transport"></div>
+      <div class="field"><label for="sector-f3">Sector</label><input id="sector-f3" name="sector" placeholder="Public sector transport"></div>
       <div class="form-grid">
         <div class="field">
-          <label>Transport domain</label>
-          <select name="transport_domain">
+          <label for="transport_domain-f3">Transport domain</label>
+          <select id="transport_domain-f3" name="transport_domain">
             {% for item in domain.TRANSPORT_DOMAINS %}<option>{{ item }}</option>{% endfor %}
           </select>
         </div>
         <div class="field">
-          <label>Customer type</label>
-          <select name="customer_type">
+          <label for="customer_type-f3">Customer type</label>
+          <select id="customer_type-f3" name="customer_type">
             {% for item in domain.CUSTOMER_TYPES %}<option>{{ item }}</option>{% endfor %}
           </select>
         </div>
         <div class="field">
-          <label>Likely chargeable to Corporation Tax</label>
-          <select name="corporation_tax_status">
+          <label for="corporation_tax_status-f3">Likely chargeable to Corporation Tax</label>
+          <select id="corporation_tax_status-f3" name="corporation_tax_status">
             {% for item in domain.CORPORATION_TAX_STATUSES %}<option>{{ item }}</option>{% endfor %}
           </select>
         </div>
       </div>
-      <div class="field"><label>Notes</label><textarea name="notes" placeholder="Capture public body, arm's-length company, or transport operator facts."></textarea></div>
+      <div class="field"><label for="notes-f3">Notes</label><textarea id="notes-f3" name="notes" placeholder="Capture public body, arm's-length company, or transport operator facts."></textarea></div>
       <button type="submit">Save customer</button>
     </form>
   </div>
