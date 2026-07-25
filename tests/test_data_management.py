@@ -1,12 +1,15 @@
+from base64 import urlsafe_b64encode
 import csv
 from io import BytesIO, StringIO
 import json
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.data_management import (
+    DataOperationError,
     ImportIssue,
     apply_import,
     build_import_plan,
@@ -16,6 +19,7 @@ from app.data_management import (
     delete_unused_records,
     encode_import_payload,
     json_export_bytes,
+    parse_import_file,
     purge_records,
 )
 from app.database import get_session
@@ -117,6 +121,92 @@ def test_import_preview_rejects_a_missing_parent_link(session):
 
     assert preview["has_errors"] is True
     assert "does not match a record in this file or in the Hub" in " ".join(preview["rows"][0]["errors"])
+
+
+def forged_payload(mode, datasets):
+    """Build an apply payload directly, exactly as the runtime finding did.
+
+    This deliberately bypasses parse_import_file and build_import_plan, which is the
+    whole point: it is the shape an operator can hand-craft and POST to the apply route.
+    """
+    body = json.dumps({"mode": mode, "datasets": datasets}, separators=(",", ":"))
+    return urlsafe_b64encode(body.encode("utf-8")).decode("ascii")
+
+
+FORGED_AUDIT_ROW = {
+    "entity_type": "Company",
+    "entity_id": 1,
+    "action": "forged",
+    "summary": "written by a forged import payload",
+    "before": "",
+    "after": "",
+}
+
+
+def test_a_non_importable_dataset_is_refused_at_the_parse_layer():
+    """ADR-0004 D5 layer 1."""
+    bundle = json.dumps({"datasets": {"audit_events": [FORGED_AUDIT_ROW]}}).encode("utf-8")
+    with pytest.raises(DataOperationError) as exc:
+        parse_import_file("bundle.json", bundle)
+    assert "Change history can be exported but not imported." in str(exc.value)
+
+
+def test_a_non_importable_dataset_is_refused_at_the_decode_layer():
+    """ADR-0004 D5 layer 2, called directly rather than through HTTP."""
+    with pytest.raises(DataOperationError) as exc:
+        decode_import_payload(forged_payload("add_only", {"audit_events": [FORGED_AUDIT_ROW]}))
+    assert "Change history can be exported but not imported." in str(exc.value)
+
+
+def test_a_mistyped_dataset_key_is_refused_at_the_decode_layer():
+    """ADR-0004 D5: a mistyped key used to import nothing and report success."""
+    with pytest.raises(DataOperationError) as exc:
+        decode_import_payload(forged_payload("add_only", {"companiez": [{"company_name": "Typo Ltd"}]}))
+    assert "companiez" in str(exc.value)
+
+
+def test_a_rejected_dataset_key_becomes_a_visible_preview_error_not_an_exception(session):
+    """ADR-0004 D5 layer 3: the preview shows the rejection instead of returning a 500."""
+    preview = build_import_plan(
+        session,
+        {"audit_events": [FORGED_AUDIT_ROW], "companiez": [{"company_name": "Typo Ltd"}]},
+        "add_only",
+    )
+
+    assert preview["has_errors"] is True
+    assert preview["summary"]["error"] == 2
+    codes = {issue.code for row in preview["rows"] for issue in row["issues"]}
+    assert codes == {"not_importable", "unknown_dataset"}
+    assert encode_import_payload(preview) == ""
+
+
+def test_apply_refuses_a_forged_non_importable_payload_and_writes_nothing(session):
+    """ADR-0004 D5 layer 4, plus the proven finding: audit_events is what purge preserves."""
+    before = len(list(session.exec(select(AuditEvent))))
+
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, {"audit_events": [FORGED_AUDIT_ROW]}, "add_only")
+
+    assert "Change history can be exported but not imported." in str(exc.value)
+    assert len(list(session.exec(select(AuditEvent)))) == before
+
+
+def test_the_apply_route_refuses_a_forged_non_importable_payload(session):
+    """The runtime-proven exploit: forged base64 posted straight to the apply route."""
+    before = len(list(session.exec(select(AuditEvent))))
+    client = client_for(session)
+    try:
+        response = client.post(
+            "/data-management/import/apply",
+            data={"import_payload": forged_payload("add_only", {"audit_events": [FORGED_AUDIT_ROW]})},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "can be exported but not imported" in response.text
+    assert len(list(session.exec(select(AuditEvent)))) == before
+    assert session.exec(select(AuditEvent).where(AuditEvent.action == "forged")).first() is None
 
 
 BANNED_ISSUE_TEXT = ("Input should be", "validation error", "Value error", "value_error", "pydantic")

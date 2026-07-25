@@ -621,6 +621,24 @@ def _known_ids(session: Session, datasets: dict[str, list[dict[str, Any]]]) -> d
     return ids
 
 
+def _rejected_dataset_issue(key: str) -> ImportIssue | None:
+    """ADR-0004 D5: the one place that decides whether a dataset key may be written."""
+    spec = DATASET_BY_KEY.get(key)
+    if spec is None:
+        return ImportIssue(
+            field="",
+            message=f"This file has a data area called '{key}' that the Hub does not use.",
+            code="unknown_dataset",
+        )
+    if not spec.importable:
+        return ImportIssue(
+            field="",
+            message=f"{spec.label} can be exported but not imported.",
+            code="not_importable",
+        )
+    return None
+
+
 def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]], mode: str) -> dict[str, Any]:
     if mode not in {"add_only", "add_update"}:
         raise DataOperationError("Choose whether to add only or add and update matching records.")
@@ -628,6 +646,11 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
     rows: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     for spec in DATASETS:
+        if not spec.importable:
+            # ADR-0004 D5 layer 3. Rows of a dataset that may not be written are never
+            # planned, so they can never surface as a "create" that hides the rejection.
+            # The dataset-level error row below is what the operator sees.
+            continue
         for row_number, raw_row in enumerate(datasets.get(spec.key, []), start=1):
             cleaned, issues = _clean_row(spec, raw_row)
             existing = _find_existing(session, spec, cleaned)
@@ -698,6 +721,30 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                     "values": values,
                 }
             )
+    # ADR-0004 D5 layer 3, and the defect it records: the loop above walks DATASETS, so a
+    # dataset key the Hub does not import -- or one the operator mistyped -- was previously
+    # dropped in silence and the import reported success having written nothing. Every key
+    # the payload actually carries is now accounted for, as a visible preview error rather
+    # than an exception, so the operator sees the rejection.
+    for key, raw_rows in datasets.items():
+        if not raw_rows:
+            continue
+        issue = _rejected_dataset_issue(key)
+        if issue is None:
+            continue
+        spec = DATASET_BY_KEY.get(key)
+        rows.append(
+            {
+                "dataset_key": key,
+                "dataset_label": spec.label if spec else str(key),
+                "row_number": 0,
+                "display": spec.label if spec else str(key),
+                "status": "error",
+                "issues": [issue],
+                "errors": [issue.message],
+                "values": {},
+            }
+        )
     summary = {status: sum(1 for row in rows if row["status"] == status) for status in ("create", "update", "skip", "error")}
     return {"mode": mode, "rows": rows, "summary": summary, "has_errors": bool(summary["error"])}
 
@@ -724,11 +771,29 @@ def decode_import_payload(encoded: str) -> tuple[str, dict[str, list[dict[str, A
     datasets = decoded.get("datasets")
     if mode not in {"add_only", "add_update"} or not isinstance(datasets, dict):
         raise DataOperationError("The import preview is not valid. Preview the file again.")
+    # ADR-0004 D5 layer 2. A payload posted straight to the apply route never passes through
+    # parse_import_file, so this boundary re-decides the dataset question itself rather than
+    # trusting that an earlier layer already did.
+    for key, rows in datasets.items():
+        issue = _rejected_dataset_issue(str(key))
+        if issue is not None:
+            raise DataOperationError(issue.message)
+        if not isinstance(rows, list):
+            raise DataOperationError("The import preview is not valid. Preview the file again.")
     return mode, datasets
 
 
 def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mode: str) -> dict[str, int]:
     plan = build_import_plan(session, datasets, mode)
+    # ADR-0004 D5 layer 4. Reaching this line with a rejected dataset key means layers 1 to 3
+    # were bypassed, so it fails loudly and specifically rather than behind the generic
+    # revalidation message below.
+    for key, rows in datasets.items():
+        if not rows:
+            continue
+        issue = _rejected_dataset_issue(str(key))
+        if issue is not None:
+            raise DataOperationError(issue.message)
     if plan["has_errors"]:
         raise DataOperationError("The data changed after preview or no longer passes validation. Preview the file again.")
     applied = {"created": 0, "updated": 0, "skipped": plan["summary"]["skip"]}
