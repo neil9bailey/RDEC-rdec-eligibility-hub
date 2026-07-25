@@ -172,6 +172,46 @@ def test_both_call_paths_produce_identical_match_spans():
     assert [(match.term, match.start, match.end) for match in via_services] == expected
 
 
+PROVEN_STATION_PLATFORM = "Station platform resurfacing and drainage works"
+
+
+def test_station_platform_resurfacing_is_not_corroborated_software_development():
+    """Finding E6-4, proven case: unanchored theme matching classified civil works as software.
+
+    ADR-0003 D5.3/D8 conformance outcome: the theme is still surfaced for a human,
+    at low confidence, with zero corroboration and therefore zero R&D signals.
+    """
+    themes = framework_intelligence.requirement_themes_for_text(PROVEN_STATION_PLATFORM)
+    matches = framework_intelligence.requirement_theme_matches(PROVEN_STATION_PLATFORM)
+
+    assert themes == ["software development"]
+    assert len(matches) == 1
+    assert matches[0].matched_patterns == ("platform",)
+    assert matches[0].corroborating_patterns == ()
+    assert matches[0].corroborated is False
+    assert matches[0].confidence == "low"
+
+
+def test_genuine_software_development_text_is_still_corroborated():
+    text = "Digital service platform for bespoke software development and application integration."
+
+    matches = {match.theme: match for match in framework_intelligence.requirement_theme_matches(text)}
+
+    assert matches["software development"].corroborated is True
+    assert matches["software development"].confidence == "medium"
+    assert len(matches["software development"].corroborating_patterns) > 1
+
+
+def test_a_lone_generic_pattern_never_corroborates_a_theme():
+    matches = {
+        match.theme: match
+        for match in framework_intelligence.requirement_theme_matches("A new data feed is required.")
+    }
+
+    assert matches["data and analytics"].matched_patterns == ("data",)
+    assert matches["data and analytics"].corroborated is False
+
+
 def test_contains_any_is_deleted_from_the_application_package():
     """ADR-0003 D4 conformance proof: no surviving private substring matcher."""
     app_dir = Path(services.__file__).resolve().parent

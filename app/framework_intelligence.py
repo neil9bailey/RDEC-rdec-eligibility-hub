@@ -31,7 +31,7 @@ from app.models import (
 )
 from app.rule_loader import load_rule_file
 from app.services import CAVEAT, money
-from app.text_matching import find_matches
+from app.text_matching import find_matches, matched_terms
 
 
 FRAMEWORK_AGENT_CAVEAT = (
@@ -79,6 +79,34 @@ QUESTION_START_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ADR-0003 D5.2. A pattern hit sitting inside one of these phrases is not
+# evidence for the theme, because the word is being used in a different sense:
+# "Station platform resurfacing" is civil engineering, not software.
+REQUIREMENT_THEME_STOP_PHRASES: dict[str, list[str]] = {
+    "software development": [
+        "station platform",
+        "platform resurfacing",
+        "platform edge",
+        "platform extension",
+        "passenger platform",
+        "platform lengthening",
+    ],
+}
+
+# ADR-0003 D5.3. Generic single-word patterns that cannot carry a theme on their
+# own. A theme whose only surviving evidence is one of these is reported at low
+# confidence and raises no R&D candidate signal.
+WEAK_PATTERNS = {
+    "platform",
+    "data",
+    "asset",
+    "security",
+    "network",
+    "incident",
+    "interface",
+    "transport",
+}
+
 RDEC_SIGNAL_THEMES = {
     "cyber security",
     "data and analytics",
@@ -113,6 +141,23 @@ class FetchResult:
     text: str
     content_type: str = ""
     error: str = ""
+
+
+@dataclass(frozen=True)
+class ThemeMatch:
+    """One requirement theme found in text, with the evidence that found it."""
+
+    theme: str
+    matched_patterns: tuple[str, ...] = ()
+    corroborating_patterns: tuple[str, ...] = ()
+
+    @property
+    def corroborated(self) -> bool:
+        return bool(self.corroborating_patterns)
+
+    @property
+    def confidence(self) -> str:
+        return "medium" if self.corroborated else "low"
 
 
 @dataclass
@@ -638,6 +683,14 @@ def textish(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _distinct_terms(matches) -> list[str]:
+    ordered: list[str] = []
+    for match in matches:
+        if match.term not in ordered:
+            ordered.append(match.term)
+    return ordered
+
+
 def strip_html(value: str) -> str:
     cleaned = re.sub(r"<script.*?</script>", " ", value or "", flags=re.IGNORECASE | re.DOTALL)
     cleaned = re.sub(r"<style.*?</style>", " ", cleaned, flags=re.IGNORECASE | re.DOTALL)
@@ -761,21 +814,29 @@ def parse_web_candidates(text: str, source: FrameworkSource, terms: list[str]) -
 
 
 def relevance_for_candidate(candidate: CandidateOpportunity, profile: CustomerWatchProfile, terms: list[str]) -> tuple[float, str]:
-    combined = " ".join(
+    """Score a notice against the watch profile's terms.
+
+    The notice text deliberately excludes ``profile.cpv_codes``. The watch terms
+    are derived from that same profile, so including the profile's own CPV codes
+    made the profile match itself and scored unrelated notices above zero.
+
+    Matching uses the one canonical matcher, so a term only counts when it appears
+    as a whole token in the notice.
+    """
+    notice_text = " ".join(
         [
             candidate.title,
             candidate.buyer_name,
             candidate.summary,
             candidate.cpv_codes,
             candidate.notice_type,
-            profile.cpv_codes,
         ]
-    ).lower()
-    matched = [term for term in terms if term and term in combined]
+    )
+    matched = matched_terms(notice_text, terms)
     if not matched:
         return 0, "No watch-profile terms matched the notice text."
     score = min(100, 20 + (len(matched) * 12))
-    if profile.customer_id and candidate.buyer_name and any(term in candidate.buyer_name.lower() for term in matched):
+    if profile.customer_id and candidate.buyer_name and matched_terms(candidate.buyer_name, matched):
         score = min(100, score + 15)
     if candidate.value_high and profile.minimum_value and candidate.value_high < profile.minimum_value:
         score = max(0, score - 30)
@@ -866,17 +927,51 @@ def upsert_opportunity(
     return opportunity, created
 
 
-def requirement_themes_for_text(text: str) -> list[str]:
-    """Themes whose configured patterns appear in ``text`` as whole tokens.
+def requirement_theme_matches(text: str) -> list[ThemeMatch]:
+    """Themes present in ``text``, with their evidence and whether it corroborates.
 
-    Uses the one canonical matcher (ADR-0003 D4/D5.1) so that hyphen compounds
-    behave the same way here as they do in eligibility scoring.
+    Uses the one canonical matcher (ADR-0003 D4/D5.1) so hyphen compounds behave
+    the same way here as they do in eligibility scoring.
+
+    Two independent things are reported, and they are deliberately not conflated:
+
+    * ``matched_patterns`` - the theme was mentioned at all, so it is surfaced for
+      a human to see.
+    * ``corroborating_patterns`` - the evidence is strong enough to raise an R&D
+      candidate signal. Evidence is discounted when it sits inside a theme stop
+      phrase (D5.2), and a lone generic pattern never corroborates on its own
+      (D5.3).
+
+    Reconciliation note: ADR-0003 D5.1 says theme matching uses matcher stages
+    0-2, while D5.3 and D8 both state the required conformance outcome for
+    "Station platform resurfacing and drainage works" as exactly one
+    low-confidence ``software development`` requirement and zero signals. Those
+    two readings conflict: applying the stop phrase as a hard suppression would
+    return no theme at all. The stop phrase is therefore applied to corroboration
+    rather than to theme presence, which satisfies the stated outcome and keeps
+    the stop-phrase list load-bearing. Raised for EA at G1.
     """
-    themes = []
+    matches: list[ThemeMatch] = []
     for theme, patterns in REQUIREMENT_PATTERNS.items():
-        if find_matches(text, patterns):
-            themes.append(theme)
-    return themes
+        mentioned = _distinct_terms(find_matches(text, patterns))
+        if not mentioned:
+            continue
+        stop_phrases = REQUIREMENT_THEME_STOP_PHRASES.get(theme, [])
+        corroborating = _distinct_terms(find_matches(text, patterns, stop_phrases))
+        if len(corroborating) == 1 and corroborating[0] in WEAK_PATTERNS:
+            corroborating = []
+        matches.append(
+            ThemeMatch(
+                theme=theme,
+                matched_patterns=tuple(mentioned),
+                corroborating_patterns=tuple(corroborating),
+            )
+        )
+    return matches
+
+
+def requirement_themes_for_text(text: str) -> list[str]:
+    return [match.theme for match in requirement_theme_matches(text)]
 
 
 def create_requirement_and_signal(
@@ -884,7 +979,14 @@ def create_requirement_and_signal(
     opportunity: FrameworkOpportunity,
     theme: str,
     source_text: str,
+    corroborated: bool = True,
 ) -> tuple[bool, bool]:
+    """Create the requirement, and a signal only when the theme is corroborated.
+
+    ADR-0003 D5.3: a theme matched only by a single generic pattern is recorded at
+    low confidence and raises no RDECOpportunitySignal. A false signal in a review
+    queue costs more trust than a missed one costs opportunity.
+    """
     existing = session.exec(
         select(ExtractedRequirement).where(
             ExtractedRequirement.opportunity_id == opportunity.id,
@@ -904,7 +1006,7 @@ def create_requirement_and_signal(
             requirement_theme=theme,
             requirement_text=source_text[:1200],
             requirement_source=opportunity.source_url,
-            confidence="medium",
+            confidence="medium" if corroborated else "low",
             rdec_relevance_note=rdec_note,
         )
         session.add(requirement)
@@ -920,7 +1022,7 @@ def create_requirement_and_signal(
         )
 
     signal_created = False
-    if theme in RDEC_SIGNAL_THEMES:
+    if theme in RDEC_SIGNAL_THEMES and corroborated:
         existing_signal = session.exec(
             select(RDECOpportunitySignal).where(
                 RDECOpportunitySignal.opportunity_id == opportunity.id,
@@ -958,13 +1060,16 @@ def create_requirement_and_signal(
 
 def extract_requirements_for_opportunity(session: Session, opportunity: FrameworkOpportunity) -> tuple[int, int]:
     source_text = textish(f"{opportunity.title}. {opportunity.summary}. {opportunity.cpv_codes}")
-    themes = requirement_themes_for_text(source_text)
-    if not themes:
-        themes = ["general framework fit"]
+    theme_matches = requirement_theme_matches(source_text)
+    if not theme_matches:
+        # No theme evidence at all, so the fallback carries no corroboration.
+        theme_matches = [ThemeMatch(theme="general framework fit")]
     requirement_count = 0
     signal_count = 0
-    for theme in themes:
-        requirement_created, signal_created = create_requirement_and_signal(session, opportunity, theme, source_text)
+    for match in theme_matches:
+        requirement_created, signal_created = create_requirement_and_signal(
+            session, opportunity, match.theme, source_text, corroborated=match.corroborated
+        )
         if requirement_created:
             requirement_count += 1
         if signal_created:
@@ -1105,8 +1210,10 @@ def extract_document_intelligence(
     document_body = normalise_document_lines(text)
     requirement_count = 0
     signal_count = 0
-    for theme in requirement_themes_for_text(source_text):
-        requirement_created, signal_created = create_requirement_and_signal(session, opportunity, theme, source_text)
+    for match in requirement_theme_matches(source_text):
+        requirement_created, signal_created = create_requirement_and_signal(
+            session, opportunity, match.theme, source_text, corroborated=match.corroborated
+        )
         if requirement_created:
             requirement_count += 1
         if signal_created:

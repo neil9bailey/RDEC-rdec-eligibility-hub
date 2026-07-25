@@ -5,6 +5,7 @@ from sqlmodel import select
 
 from app.database import get_session
 from app.framework_intelligence import (
+    CandidateOpportunity,
     FetchResult,
     QUESTION_TEXT_MAX_LENGTH,
     configured_framework_source_types,
@@ -12,9 +13,11 @@ from app.framework_intelligence import (
     create_intelligence_report,
     extract_document_intelligence,
     extract_quality_questions_from_text,
+    extract_requirements_for_opportunity,
     generate_framework_intelligence_report_markdown,
     normalise_document_lines,
     official_framework_source_allowed,
+    relevance_for_candidate,
     run_framework_agent_for_profile,
     run_single_source_check,
     seed_framework_sources,
@@ -273,6 +276,115 @@ def test_framework_agent_run_extracts_opportunity_requirements_signals_and_audit
     assert signals
     assert any("R&D candidate indicators" in signal.signal_text for signal in signals)
     assert any(event.entity_type == "FrameworkAgentRun" for event in events)
+
+
+def test_station_platform_notice_creates_no_rdec_signal(session):
+    """Finding E6-4: 'Station platform resurfacing' was classified as software development."""
+    opportunity = FrameworkOpportunity(
+        title="Station platform resurfacing and drainage works",
+        buyer_name="Regional Rail Authority",
+        summary="",
+        cpv_codes="",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+
+    requirement_count, signal_count = extract_requirements_for_opportunity(session, opportunity)
+    session.commit()
+
+    requirements = list(session.exec(select(ExtractedRequirement)))
+    signals = list(session.exec(select(RDECOpportunitySignal)))
+
+    assert requirement_count == 1
+    assert signal_count == 0
+    assert [requirement.requirement_theme for requirement in requirements] == ["software development"]
+    assert requirements[0].confidence == "low"
+    assert signals == []
+
+
+def test_corroborated_software_notice_still_creates_a_signal(session):
+    opportunity = FrameworkOpportunity(
+        title="Bespoke software development platform",
+        buyer_name="Transport Authority",
+        summary="Application development and digital service delivery for a new platform.",
+        cpv_codes="72000000 - software development services",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+
+    requirement_count, signal_count = extract_requirements_for_opportunity(session, opportunity)
+    session.commit()
+
+    requirements = {
+        requirement.requirement_theme: requirement for requirement in session.exec(select(ExtractedRequirement))
+    }
+
+    assert requirement_count >= 1
+    assert signal_count >= 1
+    assert requirements["software development"].confidence == "medium"
+
+
+def test_relevance_is_scored_against_the_notice_not_the_profiles_own_cpv_codes(session):
+    """Finding E6-4: profile.cpv_codes was in the scored text, so a profile matched itself."""
+    customer = Customer(
+        customer_name="Transport for London",
+        sector="Public sector transport",
+        transport_domain="rail",
+        customer_type="local authority",
+        corporation_tax_status="no",
+    )
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    profile = CustomerWatchProfile(
+        profile_name="TfL signalling watch",
+        customer_id=customer.id,
+        keywords="signalling, telemetry",
+        cpv_codes="34000000 - transport equipment; 72000000 - software and signalling services",
+        active=True,
+    )
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    terms = ["signalling", "telemetry"]
+
+    unrelated = CandidateOpportunity(
+        title="Grounds maintenance and hedge cutting",
+        buyer_name="Rural District Council",
+        summary="Seasonal grounds maintenance across council parks.",
+        cpv_codes="77300000 - horticultural services",
+    )
+    relevant = CandidateOpportunity(
+        title="Signalling telemetry upgrade",
+        buyer_name="Transport for London",
+        summary="Replacement signalling telemetry for the sub-surface lines.",
+    )
+
+    unrelated_score, unrelated_rationale = relevance_for_candidate(unrelated, profile, terms)
+    relevant_score, _ = relevance_for_candidate(relevant, profile, terms)
+
+    assert unrelated_score == 0
+    assert unrelated_rationale == "No watch-profile terms matched the notice text."
+    assert relevant_score > 0
+
+
+def test_relevance_matching_is_whole_token_not_substring(session):
+    profile = CustomerWatchProfile(profile_name="Rail watch", keywords="rail", active=True)
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+
+    guardrail = CandidateOpportunity(
+        title="Supply of guardrail and handrail components",
+        summary="Fabrication of guardrail sections for a footbridge.",
+    )
+
+    score, rationale = relevance_for_candidate(guardrail, profile, ["rail"])
+
+    assert score == 0
+    assert rationale == "No watch-profile terms matched the notice text."
 
 
 def test_framework_intelligence_report_contains_guardrails_and_finance_ayming_use(session):
