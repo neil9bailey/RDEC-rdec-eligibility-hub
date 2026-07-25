@@ -256,15 +256,67 @@ def delete_with_audit(session: Session, item, summary: str) -> None:
     session.commit()
 
 
-def cost_line_from_form(form, project_id: int, errors: list[str], cost: CostLine | None = None) -> CostLine:
+def resolve_people_time_gross(
+    submitted_gross: float,
+    hours: float,
+    hourly_rate: float,
+    days: float,
+    day_rate: float,
+    existing: CostLine | None = None,
+) -> float:
+    """Keep a people-time gross cost consistent with the hours and rates recorded on it.
+
+    Finding B2: the old rule recalculated the gross only when the posted value was
+    0, but the edit form pre-fills the stored gross, so on an edit it was never 0
+    and the recalculation never ran. Changing 100 hours to 50 stored ``hours=50``
+    beside ``gross_cost=4000``: a self-contradictory line that overstates the claim
+    two-fold, with nothing on screen to show it.
+
+    The rule below is explicit rather than a silent correction, and it still honours
+    the deliberate "Gross cost override" the form offers:
+
+    * nothing posted -> calculate from hours and rates (the create path, unchanged);
+    * no stored line to compare against -> a posted figure is a deliberate override
+      and is kept (the create path, unchanged);
+    * on an edit, where the stored gross was itself the calculated figure for the
+      stored hours and rates and the posted gross is still that same figure, the
+      user did not retype it. It is a stale pre-fill, so it follows the new hours
+      and rates;
+    * anything else -> the posted figure differs from the calculation the stored
+      row had, which is exactly what the override field is for, so it is kept.
+    """
+    calculated = calculate_people_time_gross(hours, hourly_rate, days, day_rate)
+    if submitted_gross == 0:
+        return calculated
+    if existing is None:
+        return submitted_gross
+    stored_gross = round(float(existing.gross_cost or 0), 2)
+    stored_calculated = calculate_people_time_gross(
+        existing.hours,
+        existing.hourly_rate,
+        existing.days,
+        existing.day_rate,
+    )
+    if round(submitted_gross, 2) == stored_gross == stored_calculated:
+        return calculated
+    return submitted_gross
+
+
+def cost_line_from_form(
+    form,
+    project_id: int,
+    errors: list[str],
+    cost: CostLine | None = None,
+    existing: CostLine | None = None,
+) -> CostLine:
     hours = parse_float(form.get("hours"), "Hours", errors)
     hourly_rate = parse_float(form.get("hourly_rate"), "Hourly rate", errors)
     days = parse_float(form.get("days"), "Days", errors)
     day_rate = parse_float(form.get("day_rate"), "Day rate", errors)
     gross_cost = parse_float(form.get("gross_cost"), "Gross cost", errors)
     cost_input_type = str(form.get("cost_input_type") or "direct_cost")
-    if cost_input_type == "people_time" and gross_cost == 0:
-        gross_cost = calculate_people_time_gross(hours, hourly_rate, days, day_rate)
+    if cost_input_type == "people_time":
+        gross_cost = resolve_people_time_gross(gross_cost, hours, hourly_rate, days, day_rate, existing)
     cost = cost or CostLine(project_id=project_id)
     cost.project_id = project_id
     cost.activity = str(form.get("activity") or "")
@@ -2002,7 +2054,13 @@ async def update_cost_line(cost_id: int, request: Request, session: Session = De
         return redirect("/costs")
     errors: list[str] = []
     before_snapshot = compact_snapshot(cost)
-    candidate = cost_line_from_form(form, cost.project_id, errors, CostLine(project_id=cost.project_id))
+    candidate = cost_line_from_form(
+        form,
+        cost.project_id,
+        errors,
+        CostLine(project_id=cost.project_id),
+        existing=cost,
+    )
     if errors:
         return validation_error_response(errors, f"/projects/{cost.project_id}/costs")
     for field_name in CostLine.model_fields:
