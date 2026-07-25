@@ -1661,8 +1661,12 @@ async def create_business_unit(request: Request, session: Session = Depends(get_
         description=str(form.get("description") or ""),
         active=parse_form_bool(form.get("active")) if form.get("active") is not None else True,
     )
-    session.add(unit)
-    session.commit()
+    # Finding E7-3: this route used to call session.add and session.commit directly, so
+    # creating or renaming a business unit left no record in change history. The business
+    # unit is the organisational key that customers, watch profiles, opportunities, buyer
+    # portals and intelligence reports hang off, so an unrecorded rename silently moves
+    # every one of them.
+    save_with_audit(session, unit, "create", f"Created business unit {unit.name}")
     return redirect("/business-units")
 
 
@@ -1676,12 +1680,14 @@ async def update_business_unit(unit_id: int, request: Request, session: Session 
     parent_id = parse_optional_int(form.get("parent_id"), "Parent business unit", errors)
     if errors:
         return validation_error_response(errors, "/business-units")
+    # The snapshot is taken before the fields change: a rename record that cannot say
+    # what the unit used to be called is not a change record.
+    before_snapshot = compact_snapshot(unit)
     unit.name = str(form.get("name") or "")
     unit.parent_id = parent_id
     unit.description = str(form.get("description") or "")
     unit.active = parse_form_bool(form.get("active"))
-    session.add(unit)
-    session.commit()
+    save_with_audit(session, unit, "update", f"Updated business unit {unit.name}", before_snapshot)
     return redirect("/business-units")
 
 
