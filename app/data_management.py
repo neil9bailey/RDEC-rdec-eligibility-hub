@@ -51,6 +51,17 @@ from app.services import CAVEAT
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 MAX_IMPORT_ROWS = 5000
 
+# ADR-0002 line 30 as amended by ADR-0004 D1. "restore_by_identifier" is the only mode that
+# treats an uploaded identifier as identity. It is disabled by default and every entry point
+# that accepts it requires an explicit operator enablement, exactly like purge.
+DEFAULT_IMPORT_MODES = ("add_only", "add_update")
+RESTORE_BY_IDENTIFIER_MODE = "restore_by_identifier"
+IMPORT_MODES = DEFAULT_IMPORT_MODES + (RESTORE_BY_IDENTIFIER_MODE,)
+CREATE_ONLY_NOTICE = (
+    "Records in this area are always added as new. Importing the same file twice will create duplicates."
+)
+CHANGED_VALUE_LIMIT = 120
+
 
 class DataOperationError(ValueError):
     pass
@@ -547,7 +558,9 @@ def _annotation_contains(annotation: Any, value_type: type) -> bool:
     return annotation is value_type or value_type in get_args(annotation)
 
 
-def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], list[ImportIssue]]:
+def _clean_row(
+    spec: DatasetSpec, row: dict[str, Any], keep_identifier: bool = False
+) -> tuple[dict[str, Any], list[ImportIssue]]:
     fields = spec.model.model_fields
     unknown = sorted(set(row).difference(fields))
     issues = [
@@ -561,6 +574,12 @@ def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], 
     cleaned: dict[str, Any] = {}
     for name, value in row.items():
         if name not in fields:
+            continue
+        if name == "id" and not keep_identifier:
+            # ADR-0004 D1.2. An identifier in an uploaded file asserts identity in the
+            # EXPORTING database's namespace and is read in the live one, so it is dropped
+            # here at source: it can then never reach model_validate, never reach
+            # session.add, and never be inserted as an explicit primary key.
             continue
         annotation = fields[name].annotation
         if isinstance(value, str) and value == "":
@@ -580,13 +599,22 @@ def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], 
     return cleaned, issues
 
 
-def _find_existing(session: Session, spec: DatasetSpec, values: dict[str, Any]) -> SQLModel | None:
-    item_id = values.get("id")
-    if item_id not in (None, ""):
-        try:
-            existing = session.get(spec.model, int(item_id))
-        except (TypeError, ValueError):
-            existing = None
+def _find_existing(
+    session: Session,
+    spec: DatasetSpec,
+    values: dict[str, Any],
+    *,
+    identifier: int | None = None,
+    allow_identifier_match: bool = False,
+) -> SQLModel | None:
+    """Select the live record an uploaded row refers to (ADR-0002 line 30 as amended).
+
+    Natural key first. The identifier branch below is the only place ``session.get`` may be
+    called on an uploaded identifier, and it is reachable only from the operator-enabled
+    restore-by-identifier mode.
+    """
+    if allow_identifier_match and identifier is not None:
+        existing = session.get(spec.model, identifier)
         if existing:
             return existing
     if not spec.natural_key or any(values.get(name) in (None, "") for name in spec.natural_key):
@@ -672,6 +700,36 @@ def _declared_identifier_index(datasets: dict[str, list[dict[str, Any]]]) -> dic
     return index
 
 
+def _readable_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    text = str(value)
+    return text if len(text) <= CHANGED_VALUE_LIMIT else text[: CHANGED_VALUE_LIMIT - 1] + "…"
+
+
+def _changed_fields(spec: DatasetSpec, existing: SQLModel, values: dict[str, Any]) -> list[dict[str, str]]:
+    """Every field that actually moves on the live record (ADR-0004 D1.4)."""
+    before_values = existing.model_dump(mode="json")
+    changed: list[dict[str, str]] = []
+    for name in spec.model.model_fields:
+        if name == "id" or name not in values:
+            continue
+        before = before_values.get(name)
+        after = values.get(name)
+        if before == after:
+            continue
+        changed.append(
+            {
+                "field": _field_label(spec, name),
+                "before": _readable_value(before),
+                "after": _readable_value(after),
+            }
+        )
+    return changed
+
+
 def _live_link_display(session: Session, target_key: str, target_id: int) -> str:
     spec = DATASET_BY_KEY[target_key]
     record = session.get(spec.model, target_id)
@@ -684,6 +742,7 @@ def _plan_links(
     values: dict[str, Any],
     declared_index: dict[tuple[str, int], list[str]],
     live_ids: dict[str, set[int]],
+    plan_remap: dict[tuple[str, int], int | None],
 ) -> tuple[list[dict[str, str]], list[ImportIssue]]:
     """Decide, and disclose, which parent every foreign key points at (ADR-0004 D2.1)."""
     links: list[dict[str, str]] = []
@@ -706,9 +765,18 @@ def _plan_links(
         declared_parents = declared_index.get((target_key, target_id), [])
         if len(declared_parents) == 1:
             # L1, and L3's precedence rule: an identifier declared in this file wins over a
-            # live record that happens to carry the same number.
+            # live record that happens to carry the same number. ``resolved`` is the parent's
+            # live identifier when the parent already matched one; empty while the parent is
+            # still to be created, in which case only apply time can complete the link.
+            resolved = plan_remap.get((target_key, target_id))
             links.append(
-                {"field": field_name, "label": label, "source": "this file", "parent": declared_parents[0]}
+                {
+                    "field": field_name,
+                    "label": label,
+                    "source": "this file",
+                    "parent": declared_parents[0],
+                    "resolved_id": "" if resolved is None else str(resolved),
+                }
             )
         elif len(declared_parents) > 1:
             issues.append(
@@ -726,6 +794,7 @@ def _plan_links(
                     "label": label,
                     "source": "the Hub",
                     "parent": _live_link_display(session, target_key, target_id),
+                    "resolved_id": str(target_id),
                 }
             )
         else:
@@ -759,7 +828,11 @@ def _resolve_links(
                 )
             resolved = id_remap[(target_key, declared)]
         else:
-            resolved = id_remap.get((target_key, declared), declared)
+            # L3: a live reference, or a value inherited from the record being updated. The
+            # remap must NOT apply here -- an unrelated in-file row may have declared this
+            # same number, and re-pointing a live link through it would silently move the
+            # record to a different parent.
+            resolved = declared
         if session.get(DATASET_BY_KEY[target_key].model, resolved) is None:
             raise DataOperationError(f"{label} could not be linked to a record that exists. Preview the file again.")
         values[field_name] = resolved
@@ -783,11 +856,29 @@ def _rejected_dataset_issue(key: str) -> ImportIssue | None:
     return None
 
 
-def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]], mode: str) -> dict[str, Any]:
-    if mode not in {"add_only", "add_update"}:
+def build_import_plan(
+    session: Session,
+    datasets: dict[str, list[dict[str, Any]]],
+    mode: str,
+    *,
+    restore_by_identifier_enabled: bool = False,
+) -> dict[str, Any]:
+    if mode not in IMPORT_MODES:
         raise DataOperationError("Choose whether to add only or add and update matching records.")
+    restore_by_identifier = mode == RESTORE_BY_IDENTIFIER_MODE
+    if restore_by_identifier and not restore_by_identifier_enabled:
+        raise DataOperationError(
+            "Restore by identifier is turned off. An operator must enable it before a file "
+            "can overwrite records by identifier."
+        )
     live_ids = _live_ids(session)
     declared_index = _declared_identifier_index(datasets)
+    # Parent rows are planned before their children (DATASETS is in dependency order), so by
+    # the time a child is planned its parent's live identifier is known when the parent
+    # matched one. That is what lets a child whose natural key contains a link column be
+    # matched against the right live record instead of against an exported identifier.
+    plan_remap: dict[tuple[str, int], int | None] = {}
+    notices: list[str] = []
     rows: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
     for spec in DATASETS:
@@ -796,9 +887,29 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
             # planned, so they can never surface as a "create" that hides the rejection.
             # The dataset-level error row below is what the operator sees.
             continue
-        for row_number, raw_row in enumerate(datasets.get(spec.key, []), start=1):
-            cleaned, issues = _clean_row(spec, raw_row)
-            existing = _find_existing(session, spec, cleaned)
+        spec_rows = datasets.get(spec.key, []) or []
+        if spec_rows and not spec.natural_key and not restore_by_identifier:
+            # ADR-0004 D1.3: no natural key means it can never be matched, so it is
+            # create-only and the operator must be told before applying.
+            notices.append(f"{spec.label}: {CREATE_ONLY_NOTICE}")
+        for row_number, raw_row in enumerate(spec_rows, start=1):
+            declared_id = _declared_identifier(raw_row)
+            cleaned, issues = _clean_row(spec, raw_row, keep_identifier=restore_by_identifier)
+
+            links, link_issues = _plan_links(session, spec, cleaned, declared_index, live_ids, plan_remap)
+            match_values = dict(cleaned)
+            for link in links:
+                if link.get("resolved_id"):
+                    match_values[link["field"]] = int(link["resolved_id"])
+            existing = _find_existing(
+                session,
+                spec,
+                match_values,
+                identifier=declared_id,
+                allow_identifier_match=restore_by_identifier,
+            )
+            plan_remap[(spec.key, declared_id)] = existing.id if existing is not None else None
+
             merged = existing.model_dump(mode="json") if existing else {}
             merged.update(cleaned)
             values: dict[str, Any] = cleaned
@@ -807,12 +918,16 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                 values = candidate.model_dump(mode="json")
             except ValidationError as exc:
                 issues.extend(_validation_issues(spec, exc))
+            if not restore_by_identifier:
+                # Belt and braces on D1.2: whatever the merge produced, no identifier from an
+                # uploaded file travels on in the values that get written or re-posted.
+                values.pop("id", None)
 
             identity: tuple[Any, ...] | None = None
-            if values.get("id") not in (None, ""):
-                identity = (spec.key, "id", values["id"])
-            elif spec.natural_key and all(values.get(name) not in (None, "") for name in spec.natural_key):
+            if spec.natural_key and all(values.get(name) not in (None, "") for name in spec.natural_key):
                 identity = (spec.key, "key", *(values.get(name) for name in spec.natural_key))
+            elif restore_by_identifier and declared_id is not None:
+                identity = (spec.key, "id", declared_id)
             if identity and identity in seen:
                 issues.append(
                     ImportIssue(
@@ -824,26 +939,29 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
             elif identity:
                 seen.add(identity)
 
-            links: list[dict[str, str]] = []
-            if not issues:
-                links, link_issues = _plan_links(session, spec, values, declared_index, live_ids)
-                issues.extend(link_issues)
+            issues.extend(link_issues)
 
+            changed_fields = _changed_fields(spec, existing, values) if existing is not None else []
             if issues:
                 status = "error"
-            elif existing and mode == "add_only":
-                status = "skip"
-            elif existing:
-                status = "update"
-            else:
+            elif existing is None:
                 status = "create"
+            elif mode == "add_only" or not changed_fields:
+                # ADR-0004 D1.4: an update that moves nothing is not an update.
+                status = "skip"
+            else:
+                status = "update"
             rows.append(
                 {
                     "dataset_key": spec.key,
                     "dataset_label": spec.label,
                     "row_number": row_number,
                     "display": _incoming_display(spec, values),
-                    "declared_id": _declared_identifier(raw_row),
+                    "existing_id": existing.id if existing is not None else None,
+                    "existing_display": _existing_display(spec, existing) if existing is not None else "",
+                    "changed_fields": changed_fields,
+                    "no_change": bool(existing is not None and not changed_fields),
+                    "declared_id": declared_id,
                     "links": links,
                     "status": status,
                     "issues": issues,
@@ -872,6 +990,10 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                 "dataset_label": spec.label if spec else str(key),
                 "row_number": 0,
                 "display": spec.label if spec else str(key),
+                "existing_id": None,
+                "existing_display": "",
+                "changed_fields": [],
+                "no_change": False,
                 "declared_id": None,
                 "links": [],
                 "status": "error",
@@ -881,7 +1003,13 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
             }
         )
     summary = {status: sum(1 for row in rows if row["status"] == status) for status in ("create", "update", "skip", "error")}
-    return {"mode": mode, "rows": rows, "summary": summary, "has_errors": bool(summary["error"])}
+    return {
+        "mode": mode,
+        "rows": rows,
+        "summary": summary,
+        "notices": notices,
+        "has_errors": bool(summary["error"]),
+    }
 
 
 def encode_import_payload(plan: dict[str, Any]) -> str:
@@ -890,12 +1018,41 @@ def encode_import_payload(plan: dict[str, Any]) -> str:
     datasets: dict[str, list[dict[str, Any]]] = {}
     for row in plan["rows"]:
         if row["status"] in {"create", "update", "skip"}:
-            datasets.setdefault(row["dataset_key"], []).append(row["values"])
+            # ADR-0004 D1.5: the identifier the operator was SHOWN travels with the row, so
+            # apply can refuse to write a record the preview never disclosed.
+            datasets.setdefault(row["dataset_key"], []).append(
+                {
+                    "values": row["values"],
+                    "declared_id": row["declared_id"],
+                    "existing_id": row["existing_id"],
+                }
+            )
     payload = json.dumps({"mode": plan["mode"], "datasets": datasets}, separators=(",", ":"), ensure_ascii=True)
     return urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
 
 
-def decode_import_payload(encoded: str) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+def _payload_entry(entry: Any) -> tuple[dict[str, Any], int | None, int | None]:
+    """Read one payload row as (values, declared identifier, disclosed existing identifier).
+
+    A hand-crafted payload of bare value dictionaries is still readable, and still fails
+    closed: with no disclosed identifier it can only ever create, never update.
+    """
+    if isinstance(entry, dict) and isinstance(entry.get("values"), dict):
+        declared = entry.get("declared_id")
+        existing = entry.get("existing_id")
+        return (
+            entry["values"],
+            int(declared) if isinstance(declared, int) else None,
+            int(existing) if isinstance(existing, int) else None,
+        )
+    if isinstance(entry, dict):
+        return entry, _declared_identifier(entry), None
+    raise DataOperationError("The import preview is not valid. Preview the file again.")
+
+
+def decode_import_payload(
+    encoded: str, *, restore_by_identifier_enabled: bool = False
+) -> tuple[str, dict[str, list[dict[str, Any]]]]:
     if not encoded or len(encoded) > MAX_IMPORT_BYTES * 2:
         raise DataOperationError("The import preview has expired or is too large. Preview the file again.")
     try:
@@ -904,8 +1061,13 @@ def decode_import_payload(encoded: str) -> tuple[str, dict[str, list[dict[str, A
         raise DataOperationError("The import preview could not be read. Preview the file again.") from exc
     mode = decoded.get("mode")
     datasets = decoded.get("datasets")
-    if mode not in {"add_only", "add_update"} or not isinstance(datasets, dict):
+    if mode not in IMPORT_MODES or not isinstance(datasets, dict):
         raise DataOperationError("The import preview is not valid. Preview the file again.")
+    if mode == RESTORE_BY_IDENTIFIER_MODE and not restore_by_identifier_enabled:
+        raise DataOperationError(
+            "Restore by identifier is turned off. An operator must enable it before a file "
+            "can overwrite records by identifier."
+        )
     # ADR-0004 D5 layer 2. A payload posted straight to the apply route never passes through
     # parse_import_file, so this boundary re-decides the dataset question itself rather than
     # trusting that an earlier layer already did.
@@ -918,8 +1080,33 @@ def decode_import_payload(encoded: str) -> tuple[str, dict[str, list[dict[str, A
     return mode, datasets
 
 
-def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mode: str) -> dict[str, int]:
-    plan = build_import_plan(session, datasets, mode)
+def apply_import(
+    session: Session,
+    datasets: dict[str, list[dict[str, Any]]],
+    mode: str,
+    *,
+    restore_by_identifier_enabled: bool = False,
+) -> dict[str, int]:
+    # The payload carries what the operator was shown. Re-planning uses the values only; the
+    # disclosed identifiers are held aside and checked against the fresh plan below.
+    plan_input: dict[str, list[dict[str, Any]]] = {}
+    disclosed: dict[str, list[int | None]] = {}
+    for key, entries in datasets.items():
+        if not isinstance(entries, list):
+            raise DataOperationError("The import preview is not valid. Preview the file again.")
+        plan_input[key] = []
+        disclosed[key] = []
+        for entry in entries:
+            values, declared_id, existing_id = _payload_entry(entry)
+            row = dict(values)
+            if declared_id is not None:
+                row["id"] = declared_id
+            plan_input[key].append(row)
+            disclosed[key].append(existing_id)
+    datasets = plan_input
+    plan = build_import_plan(
+        session, plan_input, mode, restore_by_identifier_enabled=restore_by_identifier_enabled
+    )
     # ADR-0004 D5 layer 4. Reaching this line with a rejected dataset key means layers 1 to 3
     # were bypassed, so it fails loudly and specifically rather than behind the generic
     # revalidation message below.
@@ -931,6 +1118,19 @@ def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mo
             raise DataOperationError(issue.message)
     if plan["has_errors"]:
         raise DataOperationError("The data changed after preview or no longer passes validation. Preview the file again.")
+    # ADR-0004 D1.5: disclosure is enforced, not merely displayed. A row may only update the
+    # record the preview named, so an undisclosed or changed target is refused outright.
+    for row in plan["rows"]:
+        if row["status"] != "update":
+            continue
+        shown = disclosed.get(row["dataset_key"], [])
+        index = row["row_number"] - 1
+        declared_target = shown[index] if 0 <= index < len(shown) else None
+        if declared_target is None or declared_target != row["existing_id"]:
+            raise DataOperationError(
+                "This import would change a record that the preview did not show. "
+                "Preview the file again and check the records listed before applying."
+            )
     applied = {"created": 0, "updated": 0, "skipped": plan["summary"]["skip"]}
     # ADR-0004 D2.1: (dataset key, identifier declared in the file) -> identifier in THIS
     # database. Built as rows are written, in dependency order, so a child's link resolves
@@ -940,16 +1140,17 @@ def apply_import(session: Session, datasets: dict[str, list[dict[str, Any]]], mo
         for row in plan["rows"]:
             spec = DATASET_BY_KEY[row["dataset_key"]]
             declared_id = row.get("declared_id")
+            existing_id = row.get("existing_id")
             if row["status"] == "skip":
                 # A skipped parent still resolves: it is the record the file matched.
-                matched = _find_existing(session, spec, row["values"])
-                if declared_id is not None and matched is not None and matched.id is not None:
-                    id_remap[(spec.key, int(declared_id))] = int(matched.id)
+                if declared_id is not None and existing_id is not None:
+                    id_remap[(spec.key, int(declared_id))] = int(existing_id)
                 continue
             values = dict(row["values"])
             _resolve_links(session, spec, values, row.get("links") or [], id_remap)
             candidate = spec.model.model_validate(values)
-            existing = _find_existing(session, spec, values)
+            # The record the preview named, and only that record.
+            existing = session.get(spec.model, existing_id) if existing_id is not None else None
             if existing:
                 before = compact_snapshot(existing)
                 for field_name in spec.model.model_fields:

@@ -58,13 +58,19 @@ def test_selected_json_and_csv_exports_are_review_safe(session):
 
 
 def test_previewed_import_adds_and_updates_matching_records(session):
+    """Matching is by natural key (ADR-0002 line 30 as amended by ADR-0004 D1).
+
+    This fixture previously identified the record to update with the uploaded ``id``. That
+    is the behaviour finding C2 proved destructive, so the fixture now matches the way the
+    amended line 30 requires: the company name is the natural key, and the other fields move.
+    """
     existing = Company(company_name="Original Limited", utr="1111111111")
     session.add(existing)
     session.commit()
     session.refresh(existing)
     datasets = {
         "companies": [
-            {"id": existing.id, "company_name": "Updated Limited", "utr": "2222222222"},
+            {"company_name": "Original Limited", "utr": "2222222222"},
             {"company_name": "New Limited", "utr": "3333333333"},
         ]
     }
@@ -76,7 +82,9 @@ def test_previewed_import_adds_and_updates_matching_records(session):
 
     assert preview["summary"] == {"create": 1, "update": 1, "skip": 0, "error": 0}
     assert result == {"created": 1, "updated": 1, "skipped": 0}
-    assert session.get(Company, existing.id).company_name == "Updated Limited"
+    updated = session.get(Company, existing.id)
+    assert updated.company_name == "Original Limited"
+    assert updated.utr == "2222222222"
     assert session.exec(select(Company).where(Company.company_name == "New Limited")).first() is not None
     actions = set(session.exec(select(AuditEvent.action)).all())
     assert {"import_create", "import_update"}.issubset(actions)
@@ -90,7 +98,7 @@ def test_add_only_import_leaves_a_matching_record_unchanged(session):
 
     preview = build_import_plan(
         session,
-        {"companies": [{"id": company.id, "company_name": "Changed Limited", "utr": "9999999999"}]},
+        {"companies": [{"company_name": "Keep Limited", "utr": "9999999999"}]},
         "add_only",
     )
     mode, approved_datasets = decode_import_payload(encode_import_payload(preview))
@@ -98,7 +106,7 @@ def test_add_only_import_leaves_a_matching_record_unchanged(session):
 
     assert preview["summary"]["skip"] == 1
     assert result["skipped"] == 1
-    assert session.get(Company, company.id).company_name == "Keep Limited"
+    assert session.get(Company, company.id).utr == "1111111111"
 
 
 def test_import_preview_rejects_a_missing_parent_link(session):
@@ -287,6 +295,168 @@ def test_an_uploaded_column_name_cannot_inject_html_into_the_preview(session):
     assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
 
 
+def test_an_uploaded_identifier_cannot_overwrite_an_unrelated_live_record(session):
+    """C2, the proven file: a CSV carrying id=1 and a different contract name.
+
+    ADR-0004 Verification 2 asserts on the live record, not on the preview.
+    """
+    customer = Customer(customer_name="Passenger Insight Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    victim = Contract(contract_name="Passenger Insight Framework - Work Order 7", customer_id=customer.id)
+    session.add(victim)
+    session.commit()
+    session.refresh(victim)
+    assert victim.id == 1
+
+    csv_row = {"id": "1", "contract_name": "TOTALLY DIFFERENT CONTRACT", "customer_id": str(customer.id)}
+    preview = build_import_plan(session, {"contracts": [csv_row]}, "add_update")
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    result = apply_import(session, approved, mode)
+
+    assert session.get(Contract, victim.id).contract_name == "Passenger Insight Framework - Work Order 7"
+    assert result["created"] == 1
+    created = session.exec(
+        select(Contract).where(Contract.contract_name == "TOTALLY DIFFERENT CONTRACT")
+    ).first()
+    assert created is not None and created.id != victim.id
+
+
+def test_the_preview_names_the_live_record_it_would_change(session):
+    """ADR-0004 D1.4: existing_display comes from the live record, never the upload."""
+    customer = Customer(customer_name="Disclosure Customer", sector="Rail", corporation_tax_status="unknown")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {"customers": [{"customer_name": "Disclosure Customer", "sector": "Bus", "corporation_tax_status": "yes"}]},
+        "add_update",
+    )
+    row = preview["rows"][0]
+
+    assert row["status"] == "update"
+    assert row["existing_id"] == customer.id
+    assert row["existing_display"] == "Disclosure Customer"
+    moved = {change["field"]: (change["before"], change["after"]) for change in row["changed_fields"]}
+    assert moved["Sector"] == ("Rail", "Bus")
+    assert moved["Corporation tax status"] == ("unknown", "yes")
+    assert "Customer name" not in moved
+
+
+def test_a_renaming_update_shows_the_victims_name_not_the_uploaded_one(session):
+    """The non-disclosure that made C2 silent, asserted directly (ADR-0004 Verification 3)."""
+    customer = Customer(customer_name="Rename Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    contract = Contract(contract_name="Original Work Order", customer_id=customer.id)
+    session.add(contract)
+    session.commit()
+    session.refresh(contract)
+
+    preview = build_import_plan(
+        session,
+        {
+            "contracts": [
+                {
+                    "id": contract.id,
+                    "contract_name": "Original Work Order",
+                    "customer_id": customer.id,
+                    "ip_owner": "Renamed Owner",
+                }
+            ]
+        },
+        "add_update",
+    )
+    row = preview["rows"][0]
+
+    assert row["status"] == "update"
+    assert row["existing_display"] == "Original Work Order"
+    assert row["existing_id"] == contract.id
+    assert [change["field"] for change in row["changed_fields"]] == ["IP owner"]
+
+
+def test_an_update_that_moves_nothing_is_not_counted_as_an_update(session):
+    """ADR-0004 D1.4: an update row with no changed fields renders as no change."""
+    session.add(Company(company_name="Static Limited", utr="1111111111"))
+    session.commit()
+
+    preview = build_import_plan(
+        session,
+        {"companies": [{"company_name": "Static Limited", "utr": "1111111111"}]},
+        "add_update",
+    )
+    row = preview["rows"][0]
+
+    assert row["changed_fields"] == []
+    assert row["no_change"] is True
+    assert row["status"] == "skip"
+    assert preview["summary"]["update"] == 0
+
+
+def test_apply_refuses_an_update_the_preview_never_disclosed(session):
+    """ADR-0004 D1.5: disclosure is enforced, not merely displayed."""
+    session.add(Company(company_name="Disclosed Limited", utr="1111111111"))
+    session.commit()
+
+    # A hand-crafted payload carrying no disclosed identifier: it matches a live record by
+    # natural key, so the re-plan wants to update, but the operator was shown nothing.
+    forged = forged_payload("add_update", {"companies": [{"company_name": "Disclosed Limited", "utr": "9999999999"}]})
+    mode, approved = decode_import_payload(forged)
+
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, approved, mode)
+
+    assert "the preview did not show" in str(exc.value)
+    assert session.exec(select(Company).where(Company.company_name == "Disclosed Limited")).first().utr == "1111111111"
+
+
+def test_restore_by_identifier_is_off_by_default_at_every_entry_point(session):
+    """ADR-0004 D1 and the ADR-0002 guardrail: never a release default."""
+    datasets = {"companies": [{"id": 1, "company_name": "Restored Limited", "utr": "1111111111"}]}
+
+    with pytest.raises(DataOperationError) as plan_exc:
+        build_import_plan(session, datasets, "restore_by_identifier")
+    assert "Restore by identifier is turned off" in str(plan_exc.value)
+
+    with pytest.raises(DataOperationError) as decode_exc:
+        decode_import_payload(forged_payload("restore_by_identifier", datasets))
+    assert "Restore by identifier is turned off" in str(decode_exc.value)
+
+    with pytest.raises(DataOperationError) as apply_exc:
+        apply_import(session, datasets, "restore_by_identifier")
+    assert "Restore by identifier is turned off" in str(apply_exc.value)
+
+
+def test_restore_by_identifier_names_the_record_it_would_overwrite_when_enabled(session):
+    """ADR-0004 D1: the mode survives, with mandatory disclosure."""
+    customer = Customer(customer_name="Restore Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    victim = Contract(contract_name="Passenger Insight Framework - Work Order 7", customer_id=customer.id)
+    session.add(victim)
+    session.commit()
+    session.refresh(victim)
+
+    preview = build_import_plan(
+        session,
+        {"contracts": [{"id": victim.id, "contract_name": "RESTORED CONTRACT", "customer_id": customer.id}]},
+        "restore_by_identifier",
+        restore_by_identifier_enabled=True,
+    )
+    row = preview["rows"][0]
+
+    assert row["status"] == "update"
+    assert row["existing_id"] == victim.id
+    assert row["existing_display"] == "Passenger Insight Framework - Work Order 7"
+    assert row["display"] == "RESTORED CONTRACT"
+    assert row["existing_display"] != row["display"]
+
+
 def orphan_contracts(session):
     """Contracts whose customer_id has no customer row. The invariant, asserted directly."""
     customer_ids = {customer.id for customer in session.exec(select(Customer))}
@@ -383,7 +553,13 @@ def test_a_live_parent_reference_is_disclosed_by_name(session):
 
     assert preview["has_errors"] is False
     assert preview["rows"][0]["links"] == [
-        {"field": "customer_id", "label": "Customer", "source": "the Hub", "parent": "Named Customer"}
+        {
+            "field": "customer_id",
+            "label": "Customer",
+            "source": "the Hub",
+            "parent": "Named Customer",
+            "resolved_id": str(live.id),
+        }
     ]
 
 
