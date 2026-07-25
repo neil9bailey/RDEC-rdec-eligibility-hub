@@ -570,6 +570,14 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
     selected_spend = round(sum(amount for _, amount in selected), 2)
     coverage = round((selected_spend / total) * 100, 2) if total else 0
     warnings: list[str] = []
+    if total <= 0:
+        # A period with no qualifying expenditure cannot evidence AIF coverage at
+        # any project count. Without this, 1-3 zero-spend projects reported
+        # ready=True at 0% coverage with no warning at all.
+        warnings.append(
+            "No qualifying expenditure is recorded against the projects in this period, "
+            "so AIF project selection and coverage cannot be evidenced."
+        )
     if count > 3 and len(selected_ids) < minimum_described:
         warnings.append("At least 3 projects must be described.")
     missing_descriptions = [project_id for project_id in selected_ids if project_id not in described_project_ids]

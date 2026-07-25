@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from sqlmodel import select
 
 from app import rule_loader
@@ -211,6 +212,26 @@ def test_aif_four_to_ten_not_ready_when_selected_projects_fail_50_percent():
     assert selection.coverage_percentage == 0
     assert not selection.ready
     assert any("50%" in warning for warning in selection.warnings)
+
+
+@pytest.mark.parametrize("project_count", [1, 2, 3, 4])
+def test_aif_zero_qualifying_expenditure_is_never_ready(project_count):
+    """Proven defect: 1-3 zero-spend projects returned ready=True at 0% coverage."""
+    spend = {index: 0.0 for index in range(1, project_count + 1)}
+
+    selection = aif_project_selection(spend, set(spend))
+
+    assert selection.total_qualifying_expenditure == 0
+    assert selection.coverage_percentage == 0
+    assert not selection.ready
+    assert any("No qualifying expenditure is recorded" in warning for warning in selection.warnings)
+
+
+def test_aif_zero_spend_warning_does_not_fire_for_a_funded_period():
+    selection = aif_project_selection({1: 100.0, 2: 75.0, 3: 25.0}, {1, 2, 3})
+
+    assert selection.ready
+    assert not any("No qualifying expenditure is recorded" in warning for warning in selection.warnings)
 
 
 def test_aif_one_to_three_require_all_descriptions():
