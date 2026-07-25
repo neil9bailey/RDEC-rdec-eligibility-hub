@@ -575,10 +575,6 @@ def _validation_issues(spec: DatasetSpec, error: ValidationError) -> list[Import
     return issues
 
 
-def _issue_messages(issues: list[ImportIssue]) -> list[str]:
-    return [issue.message for issue in issues]
-
-
 def _annotation_contains(annotation: Any, value_type: type) -> bool:
     return annotation is value_type or value_type in get_args(annotation)
 
@@ -991,6 +987,10 @@ def build_import_plan(
                 status = "skip"
             else:
                 status = "update"
+            # ADR-0004 D7 preview row shape. ``issues`` carries ImportIssue and is the single
+            # source of truth for what is wrong with a row: there is deliberately no parallel
+            # list of plain strings, because two shapes for one fact is how a caller ends up
+            # branching on display text instead of on the stable ``code``.
             rows.append(
                 {
                     "dataset_key": spec.key,
@@ -1005,10 +1005,6 @@ def build_import_plan(
                     "links": links,
                     "status": status,
                     "issues": issues,
-                    # Transitional mirror of ``issues`` so the preview template keeps rendering
-                    # readable text until app/main.py and data_management.html are wired to the
-                    # ratified shape. Derived, never authored: one source of truth.
-                    "errors": _issue_messages(issues),
                     "values": values,
                 }
             )
@@ -1038,7 +1034,6 @@ def build_import_plan(
                 "links": [],
                 "status": "error",
                 "issues": [issue],
-                "errors": [issue.message],
                 "values": {},
             }
         )

@@ -217,7 +217,9 @@ def test_import_preview_rejects_a_missing_parent_link(session):
     )
 
     assert preview["has_errors"] is True
-    assert "does not match a record in this file or in the Hub" in " ".join(preview["rows"][0]["errors"])
+    assert "does not match a record in this file or in the Hub" in " ".join(
+        issue.message for issue in preview["rows"][0]["issues"]
+    )
 
 
 def forged_payload(mode, datasets):
@@ -364,6 +366,38 @@ def test_import_issues_are_business_language_with_stable_codes(session):
     assert "Contract name is required." in messages
     assert "Gross cost must be a number." in messages
     assert {issue.code for issue in issues} >= {"invalid_value", "required_value", "unknown_column"}
+
+
+def test_every_preview_row_carries_issues_and_no_plain_string_mirror(session):
+    """ADR-0004 D7: ``issues`` is the ratified shape and the only one.
+
+    The preview briefly also emitted a derived ``errors`` list of plain strings, so an
+    un-wired template would not print dataclass reprs at an operator. The template now
+    reads ``row.issues`` exclusively, so the mirror is deleted: leaving a second shape in
+    place invites a caller to branch on display text instead of the stable ``code``, which
+    is exactly what D7 forbids. Both row producers are covered -- the per-row loop and the
+    dataset-level rejection row appended after it.
+    """
+    preview = build_import_plan(
+        session,
+        {
+            # A row-level failure inside the per-row loop.
+            "companies": [{"company_name": "Mirror Limited", "made_up_column": "x"}],
+            # A dataset-level rejection, produced by the separate append after the loop.
+            "audit_events": [{"entity_type": "Company", "action": "forged"}],
+        },
+        "add_only",
+    )
+
+    assert preview["has_errors"] is True
+    statuses = {row["dataset_key"]: row["status"] for row in preview["rows"]}
+    assert statuses == {"companies": "error", "audit_events": "error"}
+    for row in preview["rows"]:
+        assert "errors" not in row, f"the dead plain-string mirror is back on {row['dataset_key']}"
+        assert row["issues"], f"{row['dataset_key']} reported a problem with no issue to show"
+        for issue in row["issues"]:
+            assert isinstance(issue, ImportIssue)
+    assert not hasattr(data_management, "_issue_messages"), "the dead mirror helper is back"
 
 
 def test_an_uploaded_column_name_cannot_inject_html_into_the_preview(session):
@@ -807,7 +841,9 @@ def test_an_in_file_identifier_never_satisfies_a_foreign_key_on_its_own(session,
     }
 
     preview = build_import_plan(session, datasets, mode)
-    assert preview["has_errors"] is False, [row["errors"] for row in preview["rows"]]
+    assert preview["has_errors"] is False, [
+        [issue.message for issue in row["issues"]] for row in preview["rows"]
+    ]
 
     mode_out, approved = decode_import_payload(encode_import_payload(preview))
     apply_import(session, approved, mode_out)
