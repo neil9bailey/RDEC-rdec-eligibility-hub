@@ -1,0 +1,81 @@
+{# Business labels for values that are stored as internal identifiers.
+
+   ADR-0002 Ruling R2: the stored value is load-bearing (CSS class, dictionary
+   key, query-string filter value, database column), so only the DISPLAYED text
+   is derived here. Nothing in this file changes what is stored or submitted.
+
+   ADR-0002 line 59 and ADR-0001 line 72 bind the wording: no label may read as
+   an approval, a rejection or a verdict, and the controlled vocabulary
+   ("R&D candidate", "review required", "strong indicators", "blocked",
+   "pending competent professional and tax review") is not replaced with
+   invented terminology.
+
+   tests/test_template_accessibility.py asserts that RECORD_LABELS covers every
+   class in app/models.py and every literal entity_type written by the
+   application, so a new record type cannot silently leak its Python class name
+   into the change history. #}
+
+{% set RECORD_LABELS = {
+  "Company": "Company",
+  "AccountingPeriod": "Accounting period",
+  "BusinessUnit": "Business unit",
+  "Customer": "Customer",
+  "Contract": "Contract",
+  "Solution": "Solution",
+  "RDProject": "R&D project",
+  "TechnicalUncertainty": "Technical uncertainty",
+  "Activity": "Activity",
+  "CompetentProfessionalOpinion": "Competent professional opinion",
+  "EvidenceItem": "Evidence item",
+  "CostLine": "Cost line",
+  "EntitlementAssessment": "Entitlement review",
+  "ReviewDecision": "Review decision",
+  "ClaimPeriodSubmissionStatus": "Claim period submission status",
+  "KnowledgeSourceCheck": "Guidance source check",
+  "AuditEvent": "Change history entry",
+  "FrameworkSource": "Framework source",
+  "CustomerWatchProfile": "Watch profile",
+  "FrameworkOpportunity": "Opportunity",
+  "OpportunityDocument": "Opportunity document",
+  "ExtractedRequirement": "Extracted requirement",
+  "RDECOpportunitySignal": "RDEC opportunity signal",
+  "FrameworkAgentRun": "Source check run",
+  "SourceCheckSnapshot": "Source change snapshot",
+  "ProcurementPlatform": "Procurement platform",
+  "BuyerPortalInstance": "Buyer portal",
+  "PortalRetrievalRun": "Portal retrieval run",
+  "ExtractedQualityQuestion": "Extracted quality question",
+  "IntelligenceReport": "Intelligence report",
+  "DataExport": "Data export",
+  "DataPurge": "Data purge"
+} %}
+
+{% set ENTITLEMENT_LABELS = {
+  "blocked": "Blocked",
+  "supplier_likely": "Supplier indicators",
+  "customer_likely": "Customer indicators",
+  "ambiguous_tax_review": "Review required"
+} %}
+
+{# domain.RADAR_STATUSES is literally ["green", "amber", "red"], so the stored
+   value is a colour name. It is also the .badge CSS class and the value the
+   solution form submits, so it is preserved on both. Wording is the ADR-0001
+   line 72 vocabulary plus the "not currently supportable" phrasing ADR-0002
+   Ruling R2 states is acceptable. #}
+{% set RADAR_LABELS = {
+  "green": "R&D candidate",
+  "amber": "Review required",
+  "red": "Not currently supportable"
+} %}
+
+{% macro record_label(entity_type) -%}
+{{- RECORD_LABELS.get(entity_type, entity_type or "Record") -}}
+{%- endmacro %}
+
+{% macro entitlement_label(status) -%}
+{{- ENTITLEMENT_LABELS.get(status, "Review required") -}}
+{%- endmacro %}
+
+{% macro radar_label(status) -%}
+{{- RADAR_LABELS.get(status, status or "Review required") -}}
+{%- endmacro %}

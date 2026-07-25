@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_labels.html" as labels %}
 {% block title %}{{ context.project.project_title }} - {{ app_name }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -16,8 +17,9 @@
   <section class="panel">
     <h2>Entitlement Matrix</h2>
     {% if context.entitlement %}
-      <p><span class="badge {{ context.entitlement.status }}">{{ context.entitlement.status }}</span></p>
+      <p><span class="badge {{ context.entitlement.status }}">{{ labels.entitlement_label(context.entitlement.status) }}</span></p>
       <p>{{ context.entitlement.rationale }}</p>
+      <p class="hint">Indicator for review only. It is not an entitlement decision.</p>
     {% else %}
       <div class="warning-panel">Entitlement not assessed yet.</div>
     {% endif %}

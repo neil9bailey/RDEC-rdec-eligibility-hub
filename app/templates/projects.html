@@ -29,7 +29,9 @@
               <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
               <td>{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
               <td>{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
-              <td><span class="badge {{ score.rating }}">{{ score.rating }}</span></td>
+              {# ADR-0002 R2: the rating value stays in the class attribute; a
+                 colour name is not a status, so the text is rating_label. #}
+              <td><span class="badge {{ score.rating }}">{{ score.rating_label }}</span></td>
               <td>{{ score.score }}</td>
             </tr>
             <tr>

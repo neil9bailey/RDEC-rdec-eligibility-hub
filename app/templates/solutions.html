@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_labels.html" as labels %}
 {% block title %}Solutions - {{ app_name }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -16,7 +17,9 @@
         <article class="list-item">
           <h3>{{ solution.solution_name }}</h3>
           <p>
-            <span class="badge {{ solution.initial_radar_status }}">{{ solution.initial_radar_status }}</span>
+            {# ADR-0002 R2: the stored value is the CSS class and the submitted form
+               value, so only the visible text is derived. #}
+            <span class="badge {{ solution.initial_radar_status }}">{{ labels.radar_label(solution.initial_radar_status) }}</span>
             {{ customer_map.get(solution.customer_id).customer_name if customer_map.get(solution.customer_id) else "Unknown customer" }}
           </p>
           <p>{{ solution.solution_description }}</p>
@@ -42,7 +45,7 @@
               <div class="form-grid">
                 <div class="field">
                   <label for="initial_radar_status-f1-{{ solution.id }}">Initial R&D radar status</label>
-                  <select id="initial_radar_status-f1-{{ solution.id }}" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option {% if solution.initial_radar_status == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select>
+                  <select id="initial_radar_status-f1-{{ solution.id }}" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option value="{{ item }}" {% if solution.initial_radar_status == item %}selected{% endif %}>{{ labels.radar_label(item) }}</option>{% endfor %}</select>
                 </div>
                 <div class="field"><label for="radar_reason-f1-{{ solution.id }}">Reason for radar status</label><textarea id="radar_reason-f1-{{ solution.id }}" name="radar_reason">{{ solution.radar_reason }}</textarea></div>
               </div>
@@ -85,7 +88,7 @@
       <div class="form-grid">
         <div class="field">
           <label for="initial_radar_status-f3">Initial R&D radar status</label>
-          <select id="initial_radar_status-f3" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option>{{ item }}</option>{% endfor %}</select>
+          <select id="initial_radar_status-f3" name="initial_radar_status">{% for item in domain.RADAR_STATUSES %}<option value="{{ item }}">{{ labels.radar_label(item) }}</option>{% endfor %}</select>
         </div>
         <div class="field"><label for="radar_reason-f3">Reason for radar status</label><textarea id="radar_reason-f3" name="radar_reason"></textarea></div>
       </div>

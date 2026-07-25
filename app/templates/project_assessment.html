@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_labels.html" as labels %}
 {% block title %}Assessment - {{ context.project.project_title }}{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -70,8 +71,12 @@
     <section class="panel">
       <h2>Calculated Entitlement</h2>
       {% if context.entitlement %}
-        <p><span class="badge {{ context.entitlement.status }}">{{ context.entitlement.status }}</span></p>
+        {# ADR-0002 R2: entitlement.status stays in the class attribute -- it is
+           a CSS class (.badge.ambiguous_tax_review and siblings). Only the text
+           changes, so a reviewer does not read a raw enum. #}
+        <p><span class="badge {{ context.entitlement.status }}">{{ labels.entitlement_label(context.entitlement.status) }}</span></p>
         <p>{{ context.entitlement.rationale }}</p>
+        <p class="hint">Indicator for review only. It is not an entitlement decision.</p>
       {% endif %}
       <p class="hint">Customer type: {{ context.customer.customer_type if context.customer else "missing" }}. Customer Corporation Tax status: {{ context.customer.corporation_tax_status if context.customer else "unknown" }}.</p>
     </section>

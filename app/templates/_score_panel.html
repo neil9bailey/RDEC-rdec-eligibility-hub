@@ -1,6 +1,9 @@
 <section class="panel">
   <h2>Eligibility Score</h2>
-  <p><span class="badge {{ score.rating }}">{{ score.rating }}</span> <strong>{{ score.score }}/100</strong> {{ score.rating_label }}</p>
+  {# ADR-0002 R2: score.rating stays in the class attribute -- it is the CSS
+     class and the dashboard_metrics key. Only the badge TEXT changes, to the
+     ADR-0001 vocabulary already carried on score.rating_label. #}
+  <p><span class="badge {{ score.rating }}">{{ score.rating_label }}</span> <strong>{{ score.score }}/100</strong></p>
   {% if score.blockers %}
     <div class="danger-panel">
       <strong>Blockers</strong>
