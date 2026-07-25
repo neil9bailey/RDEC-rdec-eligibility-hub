@@ -10,6 +10,7 @@
   </head>
   <body>
     <div class="app-shell">
+      <a class="skip-link" href="#main-content">Skip to main content</a>
       <header class="topbar">
         <div class="topbar-inner">
           <a class="brand-lockup" href="/" aria-label="Open review overview">
@@ -61,7 +62,7 @@
           </details>
         </nav>
       </header>
-      <main class="container">
+      <main class="container" id="main-content" tabindex="-1">
         {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}
         {% if flash_notice %}<div class="flash-message success" role="status">{{ flash_notice }}</div>{% endif %}
         {% block content %}{% endblock %}

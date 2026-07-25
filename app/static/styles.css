@@ -18,6 +18,13 @@
   --red-bg: #ffe0e4;
   --weak: #5e3e8f;
   --weak-bg: #eee7f5;
+  /* WCAG 2.2 SC 1.4.11 requires a focus indicator of at least 3:1 against
+     adjacent colours. The previous rgba(0, 160, 181, 0.18) composited to
+     rgb(205, 235, 239) and measured 1.21:1. This darkened Telent cyan measures
+     6.36:1 against #ffffff, 6.14:1 against the panel background and 3.62:1
+     against the #c8c0d3 control border. Asserted numerically in
+     tests/test_template_accessibility.py. */
+  --focus-ring: #00697a;
   --shadow: 0 12px 28px rgba(24, 33, 43, 0.09);
   --soft-shadow: 0 4px 14px rgba(24, 33, 43, 0.06);
 }
@@ -26,9 +33,13 @@
   box-sizing: border-box;
 }
 
+/* ADR-0002 Ruling R1: overflow-x: hidden was removed from html and body. It hid
+   horizontal overflow rather than preventing it, so ADR-0002 line 70 was never
+   genuinely satisfied, and it disabled position: sticky on the workflow nav.
+   Line 70 is now proven by scrollWidth measurement, and wide content uses a
+   local .table-scroll container instead. */
 html {
   scroll-padding-top: 126px;
-  overflow-x: hidden;
 }
 
 body {
@@ -38,7 +49,13 @@ body {
   font-family: "Aptos", "Segoe UI", Tahoma, sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  overflow-x: hidden;
+}
+
+/* Local horizontal scroll container for wide content (ADR-0002 R1 remedy).
+   A local scroll container does not break position: sticky on ancestors. */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 a {
@@ -48,6 +65,41 @@ a {
 
 a:hover {
   text-decoration: underline;
+}
+
+/* Links, buttons and disclosure summaries previously relied on the user-agent
+   default focus ring, which is not guaranteed to meet SC 1.4.11 against this
+   palette. Same token, same measured ratio, as the form-control ring. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+details:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Skip link: the first focusable element on every page, so a keyboard or screen
+   reader user can reach <main> without tabbing the 17 header controls. */
+.skip-link {
+  /* fixed, not absolute: the link stays reachable and visible wherever the page
+     is scrolled, and no ancestor overflow can clip it. */
+  position: fixed;
+  left: 8px;
+  top: -100px;
+  z-index: 200;
+  padding: 11px 16px;
+  border: 2px solid var(--telent-purple);
+  border-radius: 0 0 6px 6px;
+  color: var(--telent-purple);
+  background: #fff;
+  font-weight: 800;
+  text-decoration: none;
+  transition: top 120ms ease-out;
+}
+
+.skip-link:focus {
+  top: 0;
 }
 
 .app-shell {
@@ -1010,8 +1062,9 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 3px solid rgba(0, 160, 181, 0.18);
-  border-color: var(--telent-cyan);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--focus-ring);
 }
 
 textarea {
@@ -1390,8 +1443,14 @@ pre {
   background: var(--telent-purple);
 }
 
+/* The panel is positioned against .topbar, not against .nav-menu. .nav-menu is
+   a child of .workflow-nav, which is an overflow-x: auto scroll container, so a
+   panel whose containing block is inside it would be clipped -- that is why the
+   panel was position: fixed with a hard-coded top: 132px. Overflow only clips a
+   positioned descendant whose containing block is the overflow element or below
+   it, so anchoring to the sticky .topbar escapes the clip AND tracks the real
+   header height at every viewport width. */
 .nav-menu {
-  position: relative;
   margin: 0 0 0 auto;
   flex: 0 0 auto;
 }
@@ -1413,11 +1472,11 @@ pre {
 }
 
 .nav-menu-panel {
-  position: fixed;
+  position: absolute;
   z-index: 90;
-  top: 132px;
-  right: max(22px, calc((100vw - 1480px) / 2 + 22px));
-  width: 230px;
+  top: calc(100% + 6px);
+  right: max(22px, calc((100% - 1480px) / 2 + 22px));
+  width: min(230px, calc(100vw - 44px));
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2239,8 +2298,9 @@ button.danger-button:hover {
     font-size: 12px;
   }
 
+  /* top is inherited from the base rule (calc(100% + 6px) against .topbar), so
+     the panel tracks the wrapped header height instead of a hard-coded 164px. */
   .nav-menu-panel {
-    top: 164px;
     right: 16px;
     left: 16px;
     width: auto;

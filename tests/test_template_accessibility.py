@@ -252,3 +252,296 @@ def test_duplicate_id_detector_fires_on_the_naive_row_fix() -> None:
     assert ids_in_repeated_context(
         NAIVE_DUPLICATE_ID_ROW.replace('"hours"', '"hours-{{ cost.id }}"')
     ) == []
+
+
+# ==========================================================================
+# E5-2: focus indicator, skip link, sticky navigation, dropdown anchoring
+# ==========================================================================
+
+STYLESHEET = Path(__file__).resolve().parent.parent / "app" / "static" / "styles.css"
+BASE_TEMPLATE = TEMPLATE_DIR / "base.html"
+
+#: Colours the focus ring is drawn against in this palette.
+ADJACENT_COLOURS = {
+    "page white": "#ffffff",
+    "panel background": "#fafbfc",
+    "paper background": "#f3f5f7",
+    "control border": "#c8c0d3",
+}
+#: WCAG 2.2 SC 1.4.11 Non-text Contrast.
+MINIMUM_FOCUS_CONTRAST = 3.0
+
+
+def parse_hex(colour: str) -> tuple[float, float, float]:
+    value = colour.strip().lstrip("#")
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+    return tuple(int(value[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+
+
+def relative_luminance(rgb) -> float:
+    """WCAG 2.x relative luminance."""
+
+    def channel(raw: float) -> float:
+        srgb = raw / 255.0
+        return srgb / 12.92 if srgb <= 0.03928 else ((srgb + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (channel(c) for c in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(a, b) -> float:
+    la, lb = relative_luminance(a), relative_luminance(b)
+    lighter, darker = max(la, lb), min(la, lb)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def css_custom_property(name: str, stylesheet: str) -> str:
+    match = re.search(rf"--{re.escape(name)}\s*:\s*([^;]+);", stylesheet)
+    assert match, f"custom property --{name} is not defined in styles.css"
+    return match.group(1).strip()
+
+
+@pytest.fixture(scope="module")
+def stylesheet() -> str:
+    return STYLESHEET.read_text(encoding="utf-8")
+
+
+def test_focus_ring_token_meets_wcag_non_text_contrast(stylesheet: str) -> None:
+    """SC 1.4.11: the ratio is computed from the token, never eyeballed."""
+    token = css_custom_property("focus-ring", stylesheet)
+    assert re.fullmatch(r"#[0-9a-fA-F]{3,6}", token), (
+        f"--focus-ring must be an opaque hex colour so its contrast is "
+        f"computable without compositing; got {token!r}"
+    )
+    ring = parse_hex(token)
+    measured = {
+        name: round(contrast_ratio(ring, parse_hex(bg)), 2)
+        for name, bg in ADJACENT_COLOURS.items()
+    }
+    failing = {n: r for n, r in measured.items() if r < MINIMUM_FOCUS_CONTRAST}
+    assert not failing, (
+        f"--focus-ring {token} fails WCAG 2.2 SC 1.4.11 (>= {MINIMUM_FOCUS_CONTRAST}:1) "
+        f"against {failing}; all measurements: {measured}"
+    )
+
+
+def test_form_controls_use_the_focus_ring_token(stylesheet: str) -> None:
+    rule = re.search(
+        r"input:focus,\s*select:focus,\s*textarea:focus\s*\{([^}]*)\}", stylesheet
+    )
+    assert rule, "the form-control focus rule is missing from styles.css"
+    body = rule.group(1)
+    assert "var(--focus-ring)" in body, (
+        "the form-control focus outline must use --focus-ring so the asserted "
+        f"contrast ratio is the one actually rendered; got: {body.strip()!r}"
+    )
+    assert "rgba(" not in body, (
+        "a translucent outline composites against the background and loses "
+        f"contrast; that is the pre-fix defect. Got: {body.strip()!r}"
+    )
+
+
+#: The pre-fix focus outline at tag ``pre-fix-baseline``, styles.css:1013.
+PRE_FIX_FOCUS_OUTLINE = ((0, 160, 181), 0.18)
+
+
+def composite_over(rgb, alpha: float, backdrop):
+    """Alpha-composite ``rgb`` at ``alpha`` over an opaque ``backdrop``."""
+    return tuple(rgb[i] * alpha + backdrop[i] * (1 - alpha) for i in range(3))
+
+
+def test_pre_fix_focus_colour_fails_the_same_assertion() -> None:
+    """Non-vacuity: the pinned pre-fix outline colour must fail this check.
+
+    A translucent outline is composited by the browser before it is seen, so the
+    declared colour is not the rendered one. This is exactly why the defect was
+    invisible to inspection of the stylesheet alone.
+    """
+    rgb, alpha = PRE_FIX_FOCUS_OUTLINE
+    for name, backdrop in ADJACENT_COLOURS.items():
+        rendered = composite_over(rgb, alpha, parse_hex(backdrop))
+        ratio = contrast_ratio(rendered, parse_hex(backdrop))
+        assert ratio < MINIMUM_FOCUS_CONTRAST, (
+            f"the pre-fix focus colour is expected to fail SC 1.4.11 against "
+            f"{name}; measured {ratio:.2f}:1. If this passes, the contrast "
+            f"maths is wrong and the positive assertion proves nothing."
+        )
+
+
+def test_overflow_x_hidden_is_not_reinstated_on_html_or_body(stylesheet: str) -> None:
+    """ADR-0002 Ruling R1.
+
+    ``overflow-x: hidden`` on html/body hides overflow instead of preventing it
+    and disables ``position: sticky`` on the workflow navigation.
+    """
+    offenders = []
+    for selector in ("html", "body"):
+        rule = re.search(rf"(?m)^{selector}\s*\{{([^}}]*)\}}", stylesheet)
+        assert rule, f"no top-level {selector} rule found in styles.css"
+        if re.search(r"overflow(-x)?\s*:\s*hidden", rule.group(1)):
+            offenders.append(selector)
+    assert not offenders, (
+        f"{offenders} still set overflow-x: hidden; ADR-0002 R1 removed it and "
+        f"line 70 is now proven by scrollWidth measurement instead"
+    )
+
+
+def test_local_scroll_container_exists_for_wide_content(stylesheet: str) -> None:
+    """R1's permitted remedy: wide content scrolls locally, the page does not."""
+    rule = re.search(r"\.table-scroll\s*\{([^}]*)\}", stylesheet)
+    assert rule, ".table-scroll container is missing from styles.css"
+    assert re.search(r"overflow-x\s*:\s*auto", rule.group(1)), rule.group(1)
+
+
+def test_sticky_topbar_is_not_disabled_by_an_ancestor_overflow(stylesheet: str) -> None:
+    """position: sticky is inert if any scrollable ancestor clips it."""
+    topbar = re.search(r"(?m)^\.topbar\s*\{([^}]*)\}", stylesheet)
+    assert topbar and "position: sticky" in topbar.group(1)
+    for ancestor in (".app-shell",):
+        rule = re.search(rf"(?m)^{re.escape(ancestor)}\s*\{{([^}}]*)\}}", stylesheet)
+        if rule:
+            assert not re.search(r"overflow[^:]*:\s*(hidden|auto|scroll)", rule.group(1)), (
+                f"{ancestor} clips its overflow, which disables sticky on .topbar"
+            )
+
+
+def test_dropdown_panel_is_anchored_to_the_header_not_a_fixed_offset(
+    stylesheet: str,
+) -> None:
+    """The panel detached from its button between 681px and 1100px.
+
+    ``position: fixed; top: 132px`` assumed one header height. The header wraps
+    to 225px in that band, so the panel rendered 93px *above* its own button.
+    """
+    rule = re.search(r"\.nav-menu-panel\s*\{([^}]*)\}", stylesheet)
+    assert rule, ".nav-menu-panel rule is missing"
+    body = rule.group(1)
+    assert "position: absolute" in body, (
+        f"the panel must be anchored to the sticky header, not the viewport: {body.strip()!r}"
+    )
+    top = re.search(r"top\s*:\s*([^;]+);", body)
+    assert top and "%" in top.group(1), (
+        f"top must track the real header height, not a hard-coded pixel offset; got {top}"
+    )
+    assert not re.search(r"top\s*:\s*\d+px", stylesheet[rule.start() : rule.end()])
+    # ...and no media query may reinstate a hard-coded top for the panel.
+    for extra in re.finditer(r"\.nav-menu-panel\s*\{([^}]*)\}", stylesheet):
+        assert not re.search(r"top\s*:\s*\d+px", extra.group(1)), (
+            f"a hard-coded panel top survives: {extra.group(1).strip()!r}"
+        )
+
+
+# --------------------------------------------------------------------------
+# Skip link
+# --------------------------------------------------------------------------
+
+
+class FocusableCollector(HTMLParser):
+    """Focusable elements, in document order, and where <main> starts."""
+
+    FOCUSABLE = {"a", "button", "select", "textarea", "summary", "input"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.focusables: list[tuple[str, dict]] = []
+        self.main_index: int | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        attr_map = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "main" and self.main_index is None:
+            self.main_index = len(self.focusables)
+            return
+        if "disabled" in attr_map:
+            return
+        if attr_map.get("tabindex", "").strip() == "-1":
+            return
+        if tag == "input" and attr_map.get("type", "").lower() == "hidden":
+            return
+        if tag == "a" and "href" not in attr_map:
+            return
+        if tag in self.FOCUSABLE or attr_map.get("tabindex", "").strip() not in ("", "-1"):
+            self.focusables.append((tag, attr_map))
+
+
+def focusables_before_main(source: str):
+    parser = FocusableCollector()
+    parser.feed(source)
+    assert parser.main_index is not None, "template has no <main> element"
+    return parser.focusables[: parser.main_index]
+
+
+def tab_stops_to_reach_main(source: str) -> int:
+    """Tab presses a keyboard user needs before they can enter <main>.
+
+    A skip link as the first focusable element makes this 1 regardless of how
+    many header controls sit in front of <main> in the DOM. Reordering the DOM
+    so that <main> literally precedes the header would make the raw count 1 too,
+    but it decouples focus order from visual order (CSS ``order`` does not move
+    tab order), which breaks WCAG SC 2.4.3 Focus Order. So the metric under test
+    is the traversal cost, not the DOM position.
+    """
+    preceding = focusables_before_main(source)
+    if not preceding:
+        return 0
+    tag, attrs = preceding[0]
+    main = re.search(r"<main\b([^>]*)>", source)
+    target = attrs.get("href", "").lstrip("#")
+    if tag == "a" and target and main and f'id="{target}"' in main.group(1):
+        return 1
+    return len(preceding)
+
+
+def test_one_tab_stop_is_enough_to_reach_the_main_landmark() -> None:
+    """Was 17: brand link, 2 header actions, 6 workflow steps, More, 7 menu items.
+
+    A keyboard or screen-reader user had to traverse every one of them, on every
+    page, before reaching the content.
+    """
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    assert tab_stops_to_reach_main(source) == 1, (
+        "the first focusable element must be a skip link that targets <main>"
+    )
+    preceding = focusables_before_main(source)
+    tag, attrs = preceding[0]
+    assert tag == "a" and "skip-link" in attrs.get("class", ""), preceding[:1]
+
+
+def test_skip_link_metric_is_not_vacuous() -> None:
+    """Without the skip link the same metric reports the full header traversal."""
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    without_skip_link = re.sub(r'\s*<a class="skip-link".*?</a>', "", source, flags=re.S)
+    assert 'class="skip-link"' not in without_skip_link
+    assert tab_stops_to_reach_main(without_skip_link) == 17, (
+        "the pre-fix header is expected to cost 17 tab stops; if this number "
+        "changes, update it deliberately rather than weakening the assertion"
+    )
+
+
+def test_skip_link_targets_the_main_landmark() -> None:
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    link = re.search(r'<a class="skip-link" href="#([^"]+)"', source)
+    assert link, "no skip link found as the first element of the app shell"
+    target = link.group(1)
+    main = re.search(r"<main\b([^>]*)>", source)
+    assert main, "base.html has no <main> element"
+    assert f'id="{target}"' in main.group(1), (
+        f"skip link points at #{target} but <main> is {main.group(1).strip()!r}"
+    )
+    assert 'tabindex="-1"' in main.group(1), (
+        "<main> needs tabindex=-1 so the skip link moves focus, not just scroll "
+        "position; tabindex=-1 keeps it out of the tab order"
+    )
+
+
+def test_skip_link_is_visible_when_focused(stylesheet: str) -> None:
+    """A skip link that never becomes visible is a trap for sighted keyboard users."""
+    hidden = re.search(r"\.skip-link\s*\{([^}]*)\}", stylesheet)
+    shown = re.search(r"\.skip-link:focus\s*\{([^}]*)\}", stylesheet)
+    assert hidden and shown, "skip link needs both a resting and a :focus rule"
+    assert "display: none" not in hidden.group(1), (
+        "display: none removes the skip link from the tab order entirely"
+    )
+    assert re.search(r"top\s*:\s*-?\d", hidden.group(1)), hidden.group(1)
+    assert re.search(r"top\s*:\s*0", shown.group(1)), shown.group(1)
