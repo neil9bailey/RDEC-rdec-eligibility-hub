@@ -105,6 +105,8 @@ from app.seed import seed_business_units, seed_demo_data
 from app.services import (
     CAVEAT,
     aif_readiness_for_period,
+    bulk_aif_readiness,
+    bulk_project_scores,
     calculate_project_score,
     calculate_people_time_gross,
     calculate_qualifying_amount,
@@ -613,7 +615,8 @@ async def purge_data(request: Request, session: Session = Depends(get_session)):
 @app.get("/final-review", response_class=HTMLResponse)
 def final_review(request: Request, session: Session = Depends(get_session)):
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
-    reviews = [aif_readiness_for_period(session, period.id or 0) for period in periods]
+    readiness_by_period = bulk_aif_readiness(session, periods)
+    reviews = [readiness_by_period[period.id or 0] for period in periods]
     return templates.TemplateResponse(
         request,
         "final_review.html",
@@ -1873,7 +1876,7 @@ def projects(request: Request, session: Session = Depends(get_session)):
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
     solution_map = {solution.id: solution for solution in solutions}
     period_map = {period.id: period for period in periods}
-    scores = {project.id: calculate_project_score(session, project.id or 0) for project in projects}
+    scores = bulk_project_scores(session, projects)
     return templates.TemplateResponse(
         request,
         "projects.html",

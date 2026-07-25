@@ -3,15 +3,29 @@
 This module is a benchmark harness only. It contains no optimisation: the N+1 work it measures
 belongs to another increment, across app/main.py, app/services.py and app/reports.py.
 
-Every budget here is EXPECTED TO FAIL today and is marked xfail so the suite stays green. They are
-pending budgets, not regressions: when the N+1 fix lands they turn into XPASS and the marker can be
-removed. To see the measured numbers rather than an 'x', run:
+To see the measured numbers rather than an 'x', run:
 
     docker compose run --rm --no-deps app pytest -q tests/test_performance.py --runxfail
 
-Measured before any fix, at 120 projects: GET / 5.42s, GET /claim-periods/{id}/pack 2.09s.
-Per ADR-0002 Ruling R4 the cost is in app/services.py dashboard_metrics, which scores every project
-in turn; app/company_setup.py and app/review_cockpit.py are not the hot path and stay frozen.
+Per ADR-0002 Ruling R4 the cost was in app/services.py dashboard_metrics, which scored every
+project in turn; app/company_setup.py and app/review_cockpit.py are not the hot path and stay
+frozen.
+
+State after Epic 7 E7-1a/E7-1b, at 120 projects and 1440 cost lines:
+
+* ``GET /`` is inside budget and its marker is gone. Batched loading took it from ~1500 queries to
+  45, and ADR-0005 D6 removed the writes.
+* ``GET /claim-periods/{id}/pack`` is NOT inside budget and keeps its marker. The remaining cost is
+  not N+1 reads -- it is the write-on-GET that D6 did not cover: the pack still calls
+  ``calculate_project_score`` with the default ``sync=True``, so a first render of a period whose
+  projects have no EntitlementAssessment creates one per project, committing each time. Every
+  commit expires the session's identity map, so the batch-loaded rows are then re-read one
+  attribute at a time. Removing that write is a decision about when an auditable record comes into
+  existence AND about the pack's own content, so it is EA's call, not an implementation detail.
+
+A caveat on the pack's pre-fix number, which QA should not read as a regression: this module shares
+one module-scoped dataset, and before D6 the dashboard test ran first and created all 120
+assessments, so the pack test never paid for them. It now measures a genuine cold first render.
 """
 
 from __future__ import annotations
@@ -43,8 +57,12 @@ COST_LINE_COUNT = PROJECT_COUNT * COST_LINES_PER_PROJECT
 
 DASHBOARD_BUDGET_SECONDS = 1.0
 PACK_BUDGET_SECONDS = 0.7
+DASHBOARD_QUERY_CEILING = 80
 
-PENDING_BUDGET = "pending Epic 7 budget: the N+1 fix is a separate increment"
+PACK_BUDGET_BLOCKED = (
+    "pending EA decision: the pack's remaining cost is the write-on-GET that ADR-0005 D6 scoped to "
+    "the dashboard only. Measured 8.07s cold / 0.96s warm after batching."
+)
 
 
 def build_dataset(session: Session, project_count: int = PROJECT_COUNT) -> int:
@@ -180,7 +198,6 @@ def test_the_benchmark_dataset_is_the_size_the_budgets_assume(benchmark):
     assert cost_lines == COST_LINE_COUNT
 
 
-@pytest.mark.xfail(reason=PENDING_BUDGET, strict=False)
 def test_dashboard_renders_within_budget(benchmark):
     client, _, _ = benchmark
     elapsed, status = measure(client, "/")
@@ -191,7 +208,34 @@ def test_dashboard_renders_within_budget(benchmark):
     )
 
 
-@pytest.mark.xfail(reason=PENDING_BUDGET, strict=False)
+def test_the_dashboard_does_not_issue_per_project_queries(benchmark):
+    """The durable half of the budget: a wall clock is machine-dependent, a query count is not.
+
+    Before E7-1b the dashboard issued roughly 1,500 statements at this dataset size, about a dozen
+    per project. The ceiling is well above the measured 45 and well below anything per-row, so it
+    fails loudly if per-project loading comes back, on any machine, however fast.
+    """
+    client, engine, _ = benchmark
+    statements = 0
+
+    def count_statement(connection, cursor, statement, parameters, context, executemany):
+        nonlocal statements
+        statements += 1
+
+    event.listen(engine, "before_cursor_execute", count_statement)
+    try:
+        _, status = measure(client, "/")
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statement)
+
+    assert status == 200
+    assert statements < DASHBOARD_QUERY_CEILING, (
+        f"GET / issued {statements} statements at {PROJECT_COUNT} projects "
+        f"(ceiling {DASHBOARD_QUERY_CEILING}); per-project loading has returned"
+    )
+
+
+@pytest.mark.xfail(reason=PACK_BUDGET_BLOCKED, strict=False)
 def test_claim_period_pack_renders_within_budget(benchmark):
     client, _, period_id = benchmark
     elapsed, status = measure(client, f"/claim-periods/{period_id}/pack")

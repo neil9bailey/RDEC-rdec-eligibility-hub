@@ -8,12 +8,14 @@ from app.models import CostLine, EvidenceItem, ReviewDecision, RDProject
 from app.services import (
     CAVEAT,
     aif_readiness_for_period,
+    bulk_project_contexts,
     calculate_project_score,
     cost_summary_by_category,
     cost_validation_warnings,
     get_project_context,
     money,
     project_qualifying_spend,
+    score_project_context,
     signed_opinion,
 )
 from app.rule_loader import rules_version_summary
@@ -227,9 +229,14 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
     cost_warnings: list[str] = []
     project_readiness_lines: list[str] = []
 
+    # One batched load for every project in the period, instead of ~10 queries per project.
+    # Contexts are built before any score is computed, exactly as the per-project loop did, so a
+    # project whose entitlement assessment is created while scoring still reports no entitlement
+    # note on this render -- the pack's content is unchanged by the batching.
+    contexts = bulk_project_contexts(session, projects)
     for project in projects:
-        context = get_project_context(session, project.id or 0)
-        score = calculate_project_score(session, project.id or 0)
+        context = contexts[project.id or 0]
+        score = score_project_context(session, context)
         all_costs.extend(context.costs)
         if not context.evidence:
             evidence_gaps.append(f"{project.project_title}: no evidence linked")

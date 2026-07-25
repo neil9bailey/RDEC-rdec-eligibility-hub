@@ -37,8 +37,10 @@ from app.schemas import AIFSelectionResult, ScoreResult
 from app.services import (
     CAVEAT,
     aif_readiness_for_period,
+    bulk_project_contexts,
     calculate_project_score,
     dashboard_metrics,
+    get_project_context,
 )
 
 
@@ -295,6 +297,42 @@ def test_scoring_is_stable_when_repeated_within_a_session(seeded_session):
     first_readiness = canonical_json(aif_readiness_payload(seeded_session))
     second_readiness = canonical_json(aif_readiness_payload(seeded_session))
     assert first_readiness == second_readiness
+
+
+def test_the_batched_context_loader_matches_the_per_project_loader(seeded_session):
+    """The batching in E7-1b must be a pure query optimisation, not a change of shape.
+
+    Compared field by field, including the ORDER of every related-row list and the identity of the
+    single-row lookups, because a reordered cost line or a different ``.first()`` winner would
+    change a published score with nothing else failing.
+    """
+    projects = ordered_projects(seeded_session)
+    batched = bulk_project_contexts(seeded_session, projects)
+    assert sorted(batched) == sorted(project.id or 0 for project in projects)
+
+    populated: dict[str, int] = {"activities": 0, "opinions": 0, "evidence": 0, "costs": 0}
+    for project in projects:
+        project_id = project.id or 0
+        one = get_project_context(seeded_session, project_id)
+        many = batched[project_id]
+        assert many.project is one.project
+        assert many.solution is one.solution
+        assert many.customer is one.customer
+        assert many.contract is one.contract
+        assert many.period is one.period
+        assert many.company is one.company
+        assert many.submission_status is one.submission_status
+        assert many.entitlement is one.entitlement
+        for field in populated:
+            batched_rows = [row.id for row in getattr(many, field)]
+            single_rows = [row.id for row in getattr(one, field)]
+            assert batched_rows == single_rows, f"{field} differs for project {project_id}"
+            populated[field] += len(batched_rows)
+
+    # Guard against a vacuous comparison: empty lists match empty lists. Every related-row type
+    # must actually carry rows somewhere in the dataset for the ordering check above to mean
+    # anything. (Individual projects legitimately have none -- that is what a red rating is made of.)
+    assert all(count > 0 for count in populated.values()), f"nothing to compare: {populated}"
 
 
 def test_a_project_with_no_stored_entitlement_scores_the_same_on_both_read_paths(seeded_session):

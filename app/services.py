@@ -147,6 +147,109 @@ def get_project_context(session: Session, project_id: int) -> ProjectContext:
     )
 
 
+# SQLite caps the number of bound variables in one statement. Chunking the IN lists keeps the bulk
+# loaders correct on datasets far larger than the ones benchmarked, instead of failing at a size
+# nobody tested.
+IN_CLAUSE_CHUNK = 400
+
+
+def chunked(values: list[int]) -> Iterable[list[int]]:
+    for start in range(0, len(values), IN_CLAUSE_CHUNK):
+        yield values[start : start + IN_CLAUSE_CHUNK]
+
+
+def load_by_ids(session: Session, model, ids: set[int]) -> dict[int, object]:
+    """Rows of ``model`` by primary key. Missing ids are simply absent, as ``session.get`` returns
+    None for them."""
+    wanted = sorted(value for value in ids if value)
+    loaded: dict[int, object] = {}
+    for chunk in chunked(wanted):
+        for row in session.exec(select(model).where(col(model.id).in_(chunk))):
+            loaded[row.id] = row
+    return loaded
+
+
+def group_by_owner(session: Session, model, owner_field: str, owner_ids: list[int]) -> dict[int, list]:
+    """Child rows grouped by their owner id, ordered by primary key within each group.
+
+    The per-row equivalents in ``get_project_context`` and ``aif_readiness_for_period`` select
+    without an ORDER BY, which SQLite answers in rowid order. Ordering explicitly by id reproduces
+    that same order and removes the dependence on the query plan, so a grouped read can never
+    quietly reorder a project's cost lines, evidence or warnings.
+    """
+    grouped: dict[int, list] = {owner_id: [] for owner_id in owner_ids}
+    for chunk in chunked(owner_ids):
+        rows = session.exec(
+            select(model).where(col(getattr(model, owner_field)).in_(chunk)).order_by(col(model.id))
+        )
+        for row in rows:
+            grouped.setdefault(getattr(row, owner_field), []).append(row)
+    return grouped
+
+
+def first_by_owner(session: Session, model, owner_field: str, owner_ids: list[int]) -> dict[int, object]:
+    """The row a per-row ``.first()`` would have returned for each owner: the lowest primary key."""
+    return {
+        owner_id: rows[0]
+        for owner_id, rows in group_by_owner(session, model, owner_field, owner_ids).items()
+        if rows
+    }
+
+
+def bulk_project_contexts(session: Session, projects: list[RDProject]) -> dict[int, ProjectContext]:
+    """``get_project_context`` for many projects in a fixed number of queries.
+
+    Content and ordering are identical to calling ``get_project_context`` once per project; that
+    equivalence is asserted directly in tests/test_scoring_golden_output.py rather than assumed,
+    because a batched loader that silently reordered or dropped a related row would change
+    published scores with nothing else in the suite failing.
+
+    ``get_project_context`` keeps its signature and its per-project behaviour: 17 call sites across
+    three modules depend on it, so this is a new route alongside it, not a replacement.
+    """
+    if not projects:
+        return {}
+    project_ids = [project.id or 0 for project in projects]
+    solutions = load_by_ids(session, Solution, {project.solution_id for project in projects})
+    customers = load_by_ids(session, Customer, {solution.customer_id for solution in solutions.values()})
+    contracts = load_by_ids(
+        session, Contract, {solution.contract_id for solution in solutions.values() if solution.contract_id}
+    )
+    periods = load_by_ids(
+        session, AccountingPeriod, {project.accounting_period_id for project in projects if project.accounting_period_id}
+    )
+    companies = load_by_ids(session, Company, {period.company_id for period in periods.values()})
+    submissions = first_by_owner(
+        session, ClaimPeriodSubmissionStatus, "accounting_period_id", sorted(periods)
+    )
+    activities = group_by_owner(session, Activity, "project_id", project_ids)
+    opinions = group_by_owner(session, CompetentProfessionalOpinion, "project_id", project_ids)
+    evidence = group_by_owner(session, EvidenceItem, "project_id", project_ids)
+    costs = group_by_owner(session, CostLine, "project_id", project_ids)
+    entitlements = first_by_owner(session, EntitlementAssessment, "project_id", project_ids)
+
+    contexts: dict[int, ProjectContext] = {}
+    for project in projects:
+        project_id = project.id or 0
+        solution = solutions.get(project.solution_id)
+        period = periods.get(project.accounting_period_id) if project.accounting_period_id else None
+        contexts[project_id] = ProjectContext(
+            project=project,
+            solution=solution,
+            customer=customers.get(solution.customer_id) if solution else None,
+            contract=contracts.get(solution.contract_id) if solution and solution.contract_id else None,
+            period=period,
+            company=companies.get(period.company_id) if period else None,
+            submission_status=submissions.get(period.id) if period else None,
+            activities=activities.get(project_id, []),
+            opinions=opinions.get(project_id, []),
+            evidence=evidence.get(project_id, []),
+            costs=costs.get(project_id, []),
+            entitlement=entitlements.get(project_id),
+        )
+    return contexts
+
+
 def has_text(value: str | None, minimum: int = 1) -> bool:
     return len((value or "").strip()) >= minimum
 
@@ -371,13 +474,23 @@ def entitlement_status_for_scoring(session: Session, context: ProjectContext, *,
 
 
 def calculate_project_score(session: Session, project_id: int, *, sync: bool = True) -> ScoreResult:
+    """Score one project, loading its context. Signature unchanged: 17 call sites depend on it."""
+    return score_project_context(session, get_project_context(session, project_id), sync=sync)
+
+
+def score_project_context(session: Session, context: ProjectContext, *, sync: bool = True) -> ScoreResult:
+    """The scoring model itself, over an already-loaded context.
+
+    Split out so a batched caller can score many projects without re-reading each context. This is
+    the single implementation of the model -- ``calculate_project_score`` is a thin wrapper over it,
+    so a per-project score and a batched score cannot diverge.
+    """
     rules = get_rules()
     weights = rules.eligibility_weights()
     negative_advance_terms = rules.negative_advance_terms()
     negative_uncertainty_terms = rules.negative_uncertainty_terms()
     advance_stop_phrases = rules.review_flag_stop_phrases("advance")
     uncertainty_stop_phrases = rules.review_flag_stop_phrases("uncertainty")
-    context = get_project_context(session, project_id)
     project = context.project
     score = 0
     blockers: list[str] = []
@@ -549,6 +662,17 @@ def calculate_project_score(session: Session, project_id: int, *, sync: bool = T
     )
 
 
+def bulk_project_scores(
+    session: Session, projects: list[RDProject], *, sync: bool = True
+) -> dict[int, ScoreResult]:
+    """Scores for many projects, keyed by project id, in the order given."""
+    contexts = bulk_project_contexts(session, projects)
+    return {
+        project.id or 0: score_project_context(session, contexts[project.id or 0], sync=sync)
+        for project in projects
+    }
+
+
 def dedupe(items: list[str]) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
@@ -689,20 +813,38 @@ def aif_project_selection(project_spend: dict[int, float], described_project_ids
 
 
 def aif_readiness_for_period(session: Session, period_id: int) -> dict:
+    """Readiness for one period. Signature unchanged: call sites in three modules depend on it."""
     period = session.get(AccountingPeriod, period_id)
     if not period:
         raise ValueError(f"Accounting period {period_id} not found")
     company = session.get(Company, period.company_id)
     projects = list(session.exec(select(RDProject).where(RDProject.accounting_period_id == period.id)))
-    spend: dict[int, float] = {}
-    for project in projects:
-        costs = list(session.exec(select(CostLine).where(CostLine.project_id == project.id)))
-        spend[project.id or 0] = project_qualifying_spend(costs)
-    described_ids = {p.id or 0 for p in projects if p.described_in_aif}
-    selection = aif_project_selection(spend, described_ids)
+    costs_by_project = group_by_owner(
+        session, CostLine, "project_id", [project.id or 0 for project in projects]
+    )
     submission = session.exec(
         select(ClaimPeriodSubmissionStatus).where(ClaimPeriodSubmissionStatus.accounting_period_id == period.id)
     ).first()
+    return build_aif_readiness(period, company, projects, costs_by_project, submission)
+
+
+def build_aif_readiness(
+    period: AccountingPeriod,
+    company: Company | None,
+    projects: list[RDProject],
+    costs_by_project: dict[int, list[CostLine]],
+    submission: ClaimPeriodSubmissionStatus | None,
+) -> dict:
+    """Assemble the readiness result from already-loaded parts.
+
+    Both ``aif_readiness_for_period`` and ``bulk_aif_readiness`` funnel through here, so the single
+    and batched routes are the same computation over the same shapes and cannot drift apart.
+    """
+    spend: dict[int, float] = {}
+    for project in projects:
+        spend[project.id or 0] = project_qualifying_spend(costs_by_project.get(project.id or 0, []))
+    described_ids = {p.id or 0 for p in projects if p.described_in_aif}
+    selection = aif_project_selection(spend, described_ids)
     warnings = list(selection.warnings)
     if not company or not company.utr or not company.senior_rd_contact_name:
         warnings.append("Company details or senior R&D contact details are incomplete.")
@@ -722,13 +864,36 @@ def aif_readiness_for_period(session: Session, period_id: int) -> dict:
     }
 
 
+def bulk_aif_readiness(session: Session, periods: list[AccountingPeriod]) -> dict[int, dict]:
+    """``aif_readiness_for_period`` for many periods in a fixed number of queries."""
+    if not periods:
+        return {}
+    period_ids = [period.id or 0 for period in periods]
+    companies = load_by_ids(session, Company, {period.company_id for period in periods})
+    projects_by_period = group_by_owner(session, RDProject, "accounting_period_id", period_ids)
+    all_project_ids = [project.id or 0 for projects in projects_by_period.values() for project in projects]
+    costs_by_project = group_by_owner(session, CostLine, "project_id", all_project_ids)
+    submissions = first_by_owner(session, ClaimPeriodSubmissionStatus, "accounting_period_id", period_ids)
+    return {
+        period.id or 0: build_aif_readiness(
+            period,
+            companies.get(period.company_id),
+            projects_by_period.get(period.id or 0, []),
+            costs_by_project,
+            submissions.get(period.id or 0),
+        )
+        for period in periods
+    }
+
+
 def dashboard_metrics(session: Session) -> dict:
     solutions = list(session.exec(select(Solution)))
     projects = list(session.exec(select(RDProject)))
     periods = list(session.exec(select(AccountingPeriod)))
+    contexts = bulk_project_contexts(session, projects)
     # ADR-0005 D6: the dashboard is a read. It must not bring an EntitlementAssessment into
     # existence, so it scores with sync=False and never commits during a GET.
-    scores = [calculate_project_score(session, project.id or 0, sync=False) for project in projects]
+    scores = [score_project_context(session, contexts[project.id or 0], sync=False) for project in projects]
     rating_counts = defaultdict(int)
     for score in scores:
         rating_counts[score.rating] += 1
@@ -736,14 +901,14 @@ def dashboard_metrics(session: Session) -> dict:
     missing_cp = 0
     missing_evidence = 0
     for project in projects:
-        opinions = list(session.exec(select(CompetentProfessionalOpinion).where(CompetentProfessionalOpinion.project_id == project.id)))
-        evidence = list(session.exec(select(EvidenceItem).where(EvidenceItem.project_id == project.id)))
-        if not signed_opinion(opinions):
+        context = contexts[project.id or 0]
+        if not signed_opinion(context.opinions):
             missing_cp += 1
-        if not evidence:
+        if not context.evidence:
             missing_evidence += 1
 
-    readiness = [aif_readiness_for_period(session, period.id or 0) for period in periods]
+    readiness_by_period = bulk_aif_readiness(session, periods)
+    readiness = [readiness_by_period[period.id or 0] for period in periods]
     warnings = [warning for period in periods if (warning := deadline_warning(period))]
     return {
         "total_solutions": len(solutions),
