@@ -1,28 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Audit - {{ app_name }}{% endblock %}
+{% import "_labels.html" as labels %}
+{% block title %}Change history - {{ app_name }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Audit Events</h1>
-    <p>Latest local MVP audit events for claim-data changes. This is not an immutable production audit store.</p>
+    <h1>Change history</h1>
+    <p>Recent local changes to claim data. This is a local working record, not an immutable production audit store.</p>
   </div>
 </div>
 
 <section class="panel">
   <form method="get" action="/audit" class="form-grid">
     <div class="field">
-      <label for="entity_type-f1">Entity type</label>
+      <label for="entity_type-f1">Record type</label>
+      {# The option value stays the stored identifier: it is the query-string
+         filter the route matches on. Only the label is translated. #}
       <select id="entity_type-f1" name="entity_type">
-        <option value="">All entities</option>
+        <option value="">All record types</option>
         {% for item in entity_types %}
-          <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ item }}</option>
+          <option value="{{ item }}" {% if selected_entity_type == item %}selected{% endif %}>{{ labels.record_label(item) }}</option>
         {% endfor %}
       </select>
     </div>
     <div class="field">
-      <label for="action-f1">Action</label>
+      <label for="action-f1">Change</label>
       <select id="action-f1" name="action">
-        <option value="">All actions</option>
+        <option value="">All changes</option>
         {% for item in actions %}
           <option value="{{ item }}" {% if selected_action == item %}selected{% endif %}>{{ item }}</option>
         {% endfor %}
@@ -36,15 +39,15 @@
 </section>
 
 <section class="panel">
-  <h2>Latest Events</h2>
+  <h2>Recent changes</h2>
   <div class="table-scroll">
     <table>
       <thead>
         <tr>
-          <th>Timestamp</th>
-          <th>Actor</th>
-          <th>Entity</th>
-          <th>Action</th>
+          <th>When</th>
+          <th>Changed by</th>
+          <th>Record</th>
+          <th>Change</th>
           <th>Summary</th>
         </tr>
       </thead>
@@ -53,13 +56,16 @@
           <tr>
             <td>{{ event.created_at }}</td>
             <td>{{ event.actor }}</td>
-            <td>{{ event.entity_type }} #{{ event.entity_id or "-" }}</td>
-            <td><span class="badge amber">{{ event.action }}</span></td>
+            <td>
+              {{ labels.record_label(event.entity_type) }}
+              {%- if event.entity_id %} <span class="muted">(reference {{ event.entity_id }})</span>{% endif %}
+            </td>
+            <td><span class="badge weak">{{ event.action }}</span></td>
             <td>{{ event.summary }}</td>
           </tr>
         {% else %}
           <tr>
-            <td colspan="5">No audit events recorded yet.</td>
+            <td colspan="5">No changes have been recorded yet.</td>
           </tr>
         {% endfor %}
       </tbody>

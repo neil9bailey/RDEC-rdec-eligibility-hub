@@ -545,3 +545,206 @@ def test_skip_link_is_visible_when_focused(stylesheet: str) -> None:
     )
     assert re.search(r"top\s*:\s*-?\d", hidden.group(1)), hidden.group(1)
     assert re.search(r"top\s*:\s*0", shown.group(1)), shown.group(1)
+
+
+# ==========================================================================
+# E5-3: no internal terminology reaches a Finance or Ayming reviewer
+# ==========================================================================
+
+APP_DIR = Path(__file__).resolve().parent.parent / "app"
+LABELS_TEMPLATE = TEMPLATE_DIR / "_labels.html"
+
+#: ADR-0002 line 59: replacement copy must not read as an approval, a rejection
+#: or a verdict. "not currently supportable" is explicitly acceptable.
+FORBIDDEN_VERDICT_WORDS = ("not eligible", "rejected", "fails", "approved", "qualifies")
+
+#: ADR-0002 line 58 preserve-clause. Ruling R2 confirms it protects exactly this
+#: one string and the mechanism that renders it.
+CAVEAT = "Requires competent professional and tax review."
+
+
+@pytest.fixture(scope="module")
+def labels_source() -> str:
+    return LABELS_TEMPLATE.read_text(encoding="utf-8")
+
+
+def label_map(name: str, source: str) -> dict[str, str]:
+    block = re.search(rf"{name}\s*=\s*\{{(.*?)\}}\s*%\}}", source, re.S)
+    assert block, f"{name} is not defined in _labels.html"
+    return dict(re.findall(r'"([^"]+)"\s*:\s*"([^"]*)"', block.group(1)))
+
+
+def test_record_labels_cover_every_audited_record_type(labels_source: str) -> None:
+    """A new model must not be able to leak its Python class name silently."""
+    mapping = label_map("RECORD_LABELS", labels_source)
+    models = set(
+        re.findall(r"^class (\w+)\(", (APP_DIR / "models.py").read_text(encoding="utf-8"), re.M)
+    )
+    literals = set()
+    for module in APP_DIR.glob("*.py"):
+        literals.update(
+            re.findall(r'entity_type\s*=\s*["\']([A-Za-z]\w*)["\']', module.read_text(encoding="utf-8"))
+        )
+    required = (models | literals) - {"AuditEvent"} | {"AuditEvent"}
+    missing = sorted(required - set(mapping))
+    assert not missing, (
+        f"these record types would render their Python class name in the change "
+        f"history: {missing}. Add them to RECORD_LABELS in app/templates/_labels.html."
+    )
+
+
+def test_no_label_reads_as_a_verdict(labels_source: str) -> None:
+    """ADR-0002 line 59: indicators, never approvals or rejections."""
+    offenders = []
+    for map_name in ("RECORD_LABELS", "ENTITLEMENT_LABELS"):
+        for key, value in label_map(map_name, labels_source).items():
+            for word in FORBIDDEN_VERDICT_WORDS:
+                if word in value.lower():
+                    offenders.append(f"{map_name}[{key}] = {value!r} contains {word!r}")
+    assert not offenders, offenders
+
+
+def test_audit_page_shows_business_labels_but_submits_stored_values() -> None:
+    """The filter value is the query parameter the route matches on.
+
+    Translating the *value* would silently break the filter; only the option
+    text may change.
+    """
+    source = (TEMPLATE_DIR / "audit.html").read_text(encoding="utf-8")
+    assert '{% import "_labels.html" as labels %}' in source
+    option = re.search(r"<option value=\"\{\{ item \}\}\"[^>]*>([^<]*)</option>", source)
+    assert option, "the record-type filter option was not found"
+    assert "labels.record_label(item)" in option.group(1), (
+        f"option text must be the business label; got {option.group(1)!r}"
+    )
+    assert 'value="{{ item }}"' in source, "the stored value must still be submitted"
+    assert not re.search(r"\{\{ event\.entity_type \}\}", source), (
+        "the change-history table still renders the raw Python class name"
+    )
+    assert "labels.record_label(event.entity_type)" in source
+
+
+@pytest.mark.parametrize(
+    "template", ["_score_panel.html", "projects.html", "project_report.html"], ids=lambda n: n
+)
+def test_rating_colour_name_is_never_the_displayed_status(template: str) -> None:
+    """ADR-0002 R2: a colour is not a status, but the value is load-bearing.
+
+    ``score.rating`` must survive in the class attribute (CSS class and
+    ``dashboard_metrics`` key) while the visible text uses ``rating_label``.
+    """
+    source = (TEMPLATE_DIR / template).read_text(encoding="utf-8")
+    assert 'class="badge {{ score.rating }}"' in source, (
+        f"{template} must keep score.rating as the CSS class; changing the value "
+        f"would break the score-band lookup, the rating counts and the stylesheet"
+    )
+    displayed = re.findall(r'class="badge \{\{ score\.rating \}\}"\s*>\s*\{\{ ([^}]+) \}\}', source)
+    assert displayed, f"no rating badge found in {template}"
+    for expression in displayed:
+        assert expression.strip() == "score.rating_label", (
+            f"{template} displays {expression.strip()!r} as the rating; it must be "
+            f"score.rating_label"
+        )
+
+
+@pytest.mark.parametrize(
+    "template", ["project_assessment.html", "project_detail.html"], ids=lambda n: n
+)
+def test_entitlement_enum_is_never_displayed_raw(template: str) -> None:
+    source = (TEMPLATE_DIR / template).read_text(encoding="utf-8")
+    assert 'class="badge {{ context.entitlement.status }}"' in source, (
+        "the status value must stay in the class attribute: .badge.ambiguous_tax_review "
+        "and its siblings are real CSS classes"
+    )
+    assert not re.search(
+        r'class="badge \{\{ context\.entitlement\.status \}\}"\s*>\s*\{\{ context\.entitlement\.status \}\}',
+        source,
+    ), f"{template} still renders the raw entitlement enum as the badge text"
+    assert "labels.entitlement_label(context.entitlement.status)" in source
+    assert '{% import "_labels.html" as labels %}' in source
+
+
+def test_relabelled_options_still_submit_the_stored_value() -> None:
+    """An <option> with no value= submits its own text.
+
+    Relabelling such an option silently changes what the form writes to the
+    database. Every option whose text is a derived label must therefore carry an
+    explicit value attribute.
+    """
+    offenders = []
+    for template in template_files():
+        source = template.read_text(encoding="utf-8")
+        for match in re.finditer(r"<option\b([^>]*)>\s*\{\{([^}]+)\}\}", source):
+            attrs, text = match.group(1), match.group(2).strip()
+            if "labels." not in text:
+                continue
+            if not re.search(r'\bvalue="', attrs):
+                line = source.count("\n", 0, match.start()) + 1
+                offenders.append(f"{template.name}:{line} <option{attrs}> renders {text}")
+    assert not offenders, (
+        "these relabelled options would submit the label instead of the stored "
+        "value:\n" + "\n".join(offenders)
+    )
+
+
+def test_no_internal_abbreviation_reaches_the_user() -> None:
+    """"BU" is internal shorthand a Finance or Ayming reviewer will not know."""
+    offenders = []
+    for template in template_files():
+        source = template.read_text(encoding="utf-8")
+        # Jinja comments are not rendered, so they are not user-facing.
+        rendered = re.sub(r"\{#.*?#\}", "", source, flags=re.S)
+        for match in re.finditer(r"\bBU\b", rendered):
+            offenders.append(f"{template.name}:{rendered.count(chr(10), 0, match.start()) + 1}")
+    assert not offenders, f"internal abbreviation 'BU' is still shown to users at {offenders}"
+
+
+def test_raw_enum_shapes_are_not_displayed_as_badge_text() -> None:
+    """Guard against the general shape, not just the four reported instances.
+
+    A badge whose visible text is the same expression as its CSS class is
+    rendering a stored identifier, which is the defect class E5-3 fixes.
+    """
+    offenders = []
+    for template in template_files():
+        source = template.read_text(encoding="utf-8")
+        for match in re.finditer(
+            r'class="badge \{\{ ([^}]+?) \}\}"\s*>\s*\{\{ ([^}]+?) \}\}', source
+        ):
+            css_expression, text_expression = (g.strip() for g in match.groups())
+            if css_expression == text_expression:
+                line = source.count("\n", 0, match.start()) + 1
+                offenders.append(f"{template.name}:{line} renders {css_expression} as its own label")
+    assert not offenders, "\n".join(offenders)
+
+
+# --------------------------------------------------------------------------
+# Regression guards for the states verified good before this increment
+# --------------------------------------------------------------------------
+
+
+def test_compliance_caveat_mechanism_is_intact() -> None:
+    """ADR-0002 line 58, as narrowed by Ruling R2.
+
+    R2 leaves Epic 5's copy changes unconstrained by the preserve clause but
+    protects the caveat string and its render site, which is in base.html and
+    therefore on every page.
+    """
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    assert "{{ caveat }}" in source, (
+        "base.html no longer renders the caveat, so it would disappear from every page"
+    )
+    services = (APP_DIR / "services.py").read_text(encoding="utf-8")
+    assert f'CAVEAT = "{CAVEAT}"' in services or f"CAVEAT = '{CAVEAT}'" in services, (
+        "app/services.py CAVEAT must stay byte-identical to the preserved string"
+    )
+
+
+def test_no_template_disables_autoescaping() -> None:
+    """Confirmed-good before this increment: no |safe anywhere. Keep it that way."""
+    offenders = []
+    for template in template_files():
+        source = template.read_text(encoding="utf-8")
+        for match in re.finditer(r"\|\s*(safe|e\s*\(\s*false\s*\))|\{%\s*autoescape\s+false", source):
+            offenders.append(f"{template.name}:{source.count(chr(10), 0, match.start()) + 1}")
+    assert not offenders, f"autoescaping is bypassed at {offenders}"

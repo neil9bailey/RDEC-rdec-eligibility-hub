@@ -46,7 +46,7 @@
                 <div class="field">
                   <label for="business_unit_id-f2-{{ profile.id }}">Business unit</label>
                   <select id="business_unit_id-f2-{{ profile.id }}" name="business_unit_id">
-                    <option value="">No specific BU</option>
+                    <option value="">No specific business unit</option>
                     {% for unit in business_units %}<option value="{{ unit.id }}" {% if profile.business_unit_id == unit.id %}selected{% endif %}>{{ unit.name }}</option>{% endfor %}
                   </select>
                 </div>
@@ -91,7 +91,7 @@
         <div class="field">
           <label for="business_unit_id-f4">Business unit</label>
           <select id="business_unit_id-f4" name="business_unit_id">
-            <option value="">No specific BU</option>
+            <option value="">No specific business unit</option>
             {% for unit in business_units %}<option value="{{ unit.id }}">{{ unit.name }}</option>{% endfor %}
           </select>
         </div>

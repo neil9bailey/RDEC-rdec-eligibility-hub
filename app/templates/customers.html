@@ -16,13 +16,16 @@
         <article class="list-item">
           <h3>{{ customer.customer_name }}</h3>
           <p>
+            {# "BU" is an internal abbreviation, and a missing link is a neutral
+               fact rather than something needing attention, so it no longer
+               carries the amber tone. #}
             {% if customer.business_unit_id and business_unit_map.get(customer.business_unit_id) %}
               <span class="badge green">{{ business_unit_map.get(customer.business_unit_id).name }}</span>
             {% else %}
-              <span class="badge amber">BU pending</span>
+              <span class="badge weak">Business unit not linked</span>
             {% endif %}
           </p>
-          <p><span class="badge amber">{{ customer.customer_type }}</span> <span class="badge weak">{{ customer.transport_domain }}</span></p>
+          <p><span class="badge weak">{{ customer.customer_type }}</span> <span class="badge weak">{{ customer.transport_domain }}</span></p>
           <p>Corporation Tax status: <strong>{{ customer.corporation_tax_status }}</strong></p>
           <p class="muted">{{ customer.notes }}</p>
           <details class="record-editor">
