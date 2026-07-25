@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
@@ -85,23 +84,19 @@ def test_reference_business_units_rename_legacy_labels(session):
 # record in change history (ADR-0002 line 21 keeps change history as a supporting tool, and the
 # rest of the app records create/update/delete through save_with_audit).
 #
-# app/main.py:1576 create_business_unit and :1594 update_business_unit call session.add and
-# session.commit directly and never call save_with_audit, so neither writes an AuditEvent. The
-# three tests below therefore fail today by design and are marked strict xfail: they flip to real
-# passes the moment the fix lands. Fix owner: the app/main.py serial-baton holder for
-# EPIC-RDEC-2026-07-VERIFIED-FIXES. Principal Engineer (tests) does not touch app/** in this wave.
-
-MISSING_BUSINESS_UNIT_AUDIT = (
-    "app/main.py create_business_unit/update_business_unit bypass save_with_audit, so business "
-    "unit create and update write no AuditEvent. Pending the app/main.py baton owner's fix."
-)
+# app/main.py create_business_unit and update_business_unit used to call session.add and
+# session.commit directly, never save_with_audit, so neither wrote an AuditEvent. The three tests
+# below were written as strict xfails against that gap; they became real passes when the baton
+# holder closed it (EPIC-RDEC-2026-07-VERIFIED-FIXES, E7-3), so the markers are gone and the tests
+# now stand as the regression net. A change history that records only deletes cannot say who
+# created or renamed the business unit a claim hangs off.
 
 
 def test_business_unit_delete_route_writes_an_audit_event(session):
     """Positive control: the audit plumbing does reach BusinessUnit over HTTP.
 
-    Delete goes through delete_or_block -> delete_with_audit and is audited today, so this test
-    proves the three xfails below fail because of the product, not because of this harness.
+    Delete goes through delete_or_block -> delete_with_audit, so this test proves the create and
+    update tests below exercise the product rather than an artefact of this harness.
     """
     unit = BusinessUnit(name="Deletable Unit", description="Unused business unit.")
     session.add(unit)
@@ -120,7 +115,6 @@ def test_business_unit_delete_route_writes_an_audit_event(session):
     assert [event.action for event in events] == ["delete"]
 
 
-@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
 def test_business_unit_create_route_writes_an_audit_event(session):
     client = client_for(session)
     try:
@@ -138,7 +132,6 @@ def test_business_unit_create_route_writes_an_audit_event(session):
     assert [event.action for event in business_unit_audit_events(session, unit.id)] == ["create"]
 
 
-@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
 def test_business_unit_update_route_writes_an_audit_event(session):
     unit = BusinessUnit(name="Renameable Unit", description="Original description.")
     session.add(unit)
@@ -160,7 +153,6 @@ def test_business_unit_update_route_writes_an_audit_event(session):
     assert [event.action for event in business_unit_audit_events(session, unit.id)] == ["update"]
 
 
-@pytest.mark.xfail(strict=True, reason=MISSING_BUSINESS_UNIT_AUDIT)
 def test_business_unit_rename_audit_event_records_the_previous_name(session):
     """A rename audit that cannot say what the unit was called before is not a change record."""
     unit = BusinessUnit(name="Previous Unit Name", description="Original description.")
