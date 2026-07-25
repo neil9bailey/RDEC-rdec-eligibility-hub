@@ -122,11 +122,28 @@ def check_source(source: KnowledgeSource, client: httpx.Client) -> KnowledgeSour
 
     try:
         response = client.get(source.url)
+        # The client follows redirects (run_live_source_checks uses
+        # follow_redirects=True), so the allow-list must be re-applied to the URL
+        # that actually served the content. Mirrors
+        # framework_intelligence.fetch_source_url. Without this, an official URL
+        # that redirects off the allow-list would have its content hashed and its
+        # "last updated" date read as if it were official guidance.
+        final_url = str(response.url)
+        if not official_source_allowed(final_url):
+            return KnowledgeSourceCheck(
+                source_id=source.id,
+                title=source.title,
+                url=final_url,
+                ok=False,
+                status_code=response.status_code,
+                checked_at=datetime.now(UTC),
+                notes="Blocked: the source redirected outside the approved official domain allow-list.",
+            )
         text = response.text or ""
         return KnowledgeSourceCheck(
             source_id=source.id,
             title=source.title,
-            url=source.url,
+            url=final_url,
             ok=response.status_code < 400,
             status_code=response.status_code,
             last_modified_header=response.headers.get("last-modified", ""),
