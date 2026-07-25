@@ -6,11 +6,14 @@ from sqlmodel import select
 from app.database import get_session
 from app.framework_intelligence import (
     FetchResult,
+    QUESTION_TEXT_MAX_LENGTH,
     configured_framework_source_types,
     create_portal_retrieval_run,
     create_intelligence_report,
     extract_document_intelligence,
+    extract_quality_questions_from_text,
     generate_framework_intelligence_report_markdown,
+    normalise_document_lines,
     official_framework_source_allowed,
     run_framework_agent_for_profile,
     run_single_source_check,
@@ -462,6 +465,108 @@ def test_opportunity_document_extraction_creates_quality_questions_and_retrieval
     assert question_count == 1
     assert questions[0].weighting == "20%"
     assert retrieval_runs[0].id == run.id
+
+
+REALISTIC_ITT_PACK = """Invitation to Tender - Roadside Technology Refresh
+Section 4: Quality Questions and Weightings
+
+Q1. Describe how you will deliver low latency real-time telemetry across the
+    roadside estate, including how you will evidence performance. Weighting 25%
+
+Q2. How will you integrate with the legacy SCADA control system without
+    interrupting live operations? Weighting 20%
+
+Q3. Set out your approach to cyber security accreditation for the connected
+    network. Weighting 15 marks
+
+Q4. Explain your resilience and failover design for the 24/7 service. 20%
+
+Q5. How will you manage the asset management data migration? Weighting 20%
+"""
+
+
+def test_itt_pack_extracts_one_question_per_question_not_one_blob(session):
+    """Finding E6-1: newline collapsing turned a whole pasted pack into one question."""
+    opportunity = FrameworkOpportunity(
+        title="Roadside technology refresh",
+        buyer_name="National Highways",
+        summary="Real-time roadside technology and legacy integration requirements.",
+    )
+    session.add(opportunity)
+    session.commit()
+    session.refresh(opportunity)
+    document = OpportunityDocument(
+        opportunity_id=opportunity.id,
+        title="ITT quality questions",
+        document_type="itt_document",
+        content_summary="Quality response pack for real-time operational technology.",
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+
+    _, _, question_count = extract_document_intelligence(session, opportunity, document, REALISTIC_ITT_PACK)
+    session.commit()
+
+    questions = list(session.exec(select(ExtractedQualityQuestion)))
+    texts = [question.question_text for question in questions]
+
+    assert question_count > 1
+    assert all(len(text) <= QUESTION_TEXT_MAX_LENGTH for text in texts)
+    assert not any("Q1." in text and "Q5." in text for text in texts), "questions were merged into one blob"
+    # Each hard-wrapped question survives as one whole question, not as fragments.
+    for marker, weighting in [("Q1.", "25%"), ("Q2.", "20%"), ("Q3.", "15 marks"), ("Q4.", "20%"), ("Q5.", "20%")]:
+        matching = [question for question in questions if question.question_text.startswith(marker)]
+        assert len(matching) == 1, f"{marker} was not extracted exactly once"
+        assert matching[0].weighting == weighting
+        assert matching[0].question_text.endswith(weighting)
+    # Exactly one extra candidate: the section header. This extractor is a review
+    # queue, so a low-precision candidate is triaged by a human; a merged blob is
+    # not triageable at all. Pinned so precision cannot silently regress.
+    assert question_count == 6
+    assert sum(1 for text in texts if text.startswith("Section 4")) == 0
+    assert sum(1 for text in texts if "Invitation to Tender" in text) == 1
+    # Document metadata must not become a question: this document is titled
+    # "ITT quality questions" and summarised as a "Quality response pack".
+    assert not any(text == "ITT quality questions" for text in texts)
+    assert not any("Quality response pack" in text for text in texts)
+
+
+def test_quality_question_extraction_separates_adjacent_questions():
+    pack = "Q1. First question? Weighting 10%\nQ2. Second question? Weighting 90%"
+
+    extracted = extract_quality_questions_from_text(pack)
+
+    assert [text for text, _ in extracted] == [
+        "Q1. First question? Weighting 10%",
+        "Q2. Second question? Weighting 90%",
+    ]
+    assert [weighting for _, weighting in extracted] == ["10%", "90%"]
+
+
+def test_a_hard_wrapped_question_is_rejoined_not_fragmented():
+    pack = "Q1. Describe how you will deliver\n    resilient real-time telemetry.\n    Weighting 30%"
+
+    extracted = extract_quality_questions_from_text(pack)
+
+    assert extracted == [
+        ("Q1. Describe how you will deliver resilient real-time telemetry. Weighting 30%", "30%")
+    ]
+
+
+def test_normalise_document_lines_keeps_newlines_and_collapses_indentation():
+    assert normalise_document_lines("a  b\r\n   c \t d\n\n e") == "a b\nc d\n\ne"
+
+
+def test_a_single_long_paragraph_is_split_rather_than_truncated():
+    sentence = "Describe how you will evidence real-time resilience at 20%. "
+    pack = (sentence * 20).strip()
+
+    extracted = extract_quality_questions_from_text(pack)
+
+    assert len(extracted) > 1
+    assert all(len(text) <= QUESTION_TEXT_MAX_LENGTH for text, _ in extracted)
+    assert sum(len(text) for text, _ in extracted) > QUESTION_TEXT_MAX_LENGTH
 
 
 def test_framework_intelligence_report_routes(session):

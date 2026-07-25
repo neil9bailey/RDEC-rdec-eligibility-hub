@@ -67,6 +67,18 @@ REQUIREMENT_PATTERNS: dict[str, list[str]] = {
     "transport operations": ["highways", "rail", "tfl", "transport", "traffic", "passenger", "ticketing"],
 }
 
+# Maximum stored length of a single extracted ITT quality question. A "question"
+# longer than this is a document, not a question, and is split on sentence
+# boundaries rather than truncated.
+QUESTION_TEXT_MAX_LENGTH = 600
+
+# A line opening with one of these markers starts a new question block, even when
+# the previous question was not followed by a blank line.
+QUESTION_START_PATTERN = re.compile(
+    r"^(?:q\s?\d{1,2}\b|question\s+\d{1,2}\b|quality\s+question\b|\d{1,2}[.)]\s)",
+    re.IGNORECASE,
+)
+
 RDEC_SIGNAL_THEMES = {
     "cyber security",
     "data and analytics",
@@ -942,22 +954,90 @@ def extract_requirements_for_opportunity(session: Session, opportunity: Framewor
     return requirement_count, signal_count
 
 
+def normalise_document_lines(text: str) -> str:
+    """Collapse horizontal whitespace but preserve line structure.
+
+    ``textish`` collapses every run of whitespace including newlines, which turned
+    a whole pasted multi-question ITT pack into one bogus "question". Question
+    extraction needs the line breaks that separate one question from the next.
+    """
+    cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[^\S\n]+", " ", line).strip() for line in cleaned.split("\n")]
+    return "\n".join(lines)
+
+
+def question_blocks(text: str) -> list[str]:
+    """Group physical lines into question-sized blocks.
+
+    Real ITT packs are hard-wrapped, so a physical newline is usually a
+    continuation of the same question, not a boundary. A blank line, or a line
+    that opens with a new question marker, starts a new block.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    for raw_line in normalise_document_lines(text).split("\n"):
+        line = raw_line.strip()
+        if not line:
+            if current:
+                blocks.append(" ".join(current))
+                current = []
+            continue
+        if current and QUESTION_START_PATTERN.match(line):
+            blocks.append(" ".join(current))
+            current = []
+        current.append(line)
+    if current:
+        blocks.append(" ".join(current))
+    return blocks
+
+
+def question_segments(line: str, max_length: int = QUESTION_TEXT_MAX_LENGTH) -> list[str]:
+    """Split an overlong line on sentence boundaries instead of truncating it.
+
+    A pack pasted as one long paragraph still yields separate questions rather
+    than a single block that silently loses everything past the cap.
+    """
+    if len(line) <= max_length:
+        return [line] if line else []
+    segments: list[str] = []
+    current = ""
+    for part in re.split(r"(?<=[.?!])\s+", line):
+        if not part:
+            continue
+        if not current:
+            current = part
+        elif len(current) + 1 + len(part) <= max_length:
+            current = f"{current} {part}"
+        else:
+            segments.append(current)
+            current = part
+    if current:
+        segments.append(current)
+    return [segment[:max_length] for segment in segments if segment]
+
+
 def extract_quality_questions_from_text(text: str) -> list[tuple[str, str]]:
+    """Extract candidate ITT quality questions, one per question block.
+
+    Structure is preserved: pass the document text with its line breaks intact,
+    not a whitespace-collapsed blob. Output remains a review queue of candidates
+    for a human to triage, not a classification.
+    """
     questions: list[tuple[str, str]] = []
-    for raw_line in re.split(r"[\n\r]+", text or ""):
-        line = textish(raw_line)
-        if len(line) < 12:
-            continue
-        lower = line.lower()
-        looks_like_question = "?" in line or "quality question" in lower or lower.startswith(("q.", "q1", "q2", "q3"))
-        has_weighting = "weight" in lower or "%" in line or "marks" in lower or "score" in lower
-        if not (looks_like_question or has_weighting):
-            continue
-        weighting = ""
-        weight_match = re.search(r"(\d{1,3}\s?%|\d{1,3}\s?marks?)", line, flags=re.I)
-        if weight_match:
-            weighting = weight_match.group(1)
-        questions.append((line[:1200], weighting))
+    for block in question_blocks(text):
+        for line in question_segments(block):
+            if len(line) < 12:
+                continue
+            lower = line.lower()
+            looks_like_question = "?" in line or "quality question" in lower or lower.startswith(("q.", "q1", "q2", "q3"))
+            has_weighting = "weight" in lower or "%" in line or "marks" in lower or "score" in lower
+            if not (looks_like_question or has_weighting):
+                continue
+            weighting = ""
+            weight_match = re.search(r"(\d{1,3}\s?%|\d{1,3}\s?marks?)", line, flags=re.I)
+            if weight_match:
+                weighting = weight_match.group(1)
+            questions.append((line[:QUESTION_TEXT_MAX_LENGTH], weighting))
     return questions[:20]
 
 
@@ -1000,6 +1080,11 @@ def extract_document_intelligence(
     text: str,
 ) -> tuple[int, int, int]:
     source_text = textish(f"{document.title}. {document.content_summary}. {document.notes}. {text}")
+    # Questions are extracted from the document body only, with its line structure
+    # intact. Scanning the collapsed source_text merged every question into one,
+    # and scanning the title/summary invented questions out of metadata such as
+    # a document titled "ITT quality questions".
+    document_body = normalise_document_lines(text)
     requirement_count = 0
     signal_count = 0
     for theme in requirement_themes_for_text(source_text):
@@ -1009,7 +1094,7 @@ def extract_document_intelligence(
         if signal_created:
             signal_count += 1
     question_count = 0
-    for question_text, weighting in extract_quality_questions_from_text(source_text):
+    for question_text, weighting in extract_quality_questions_from_text(document_body):
         existing = session.exec(
             select(ExtractedQualityQuestion).where(
                 ExtractedQualityQuestion.opportunity_id == opportunity.id,
