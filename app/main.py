@@ -21,6 +21,7 @@ from app.company_setup import (
 )
 from app.database import engine, get_session, init_db
 from app.data_management import (
+    DATASETS,
     DEPENDENCY_RULES,
     DataOperationError,
     apply_import,
@@ -369,6 +370,22 @@ def cost_line_from_form(
     return cost
 
 
+# Change history is read by Finance and by an external reviewer, so an audit summary
+# must name the business record. `f"Deleted {model.__name__} {item_id}"` wrote the
+# Python class name into the stored summary, which rendered as "Deleted BusinessUnit 7".
+# The labels are read from the data-management dataset catalogue rather than copied, so
+# the deletion wording and the export/cleanup wording cannot drift apart. Rows already
+# written keep their old summary; only new events read this way.
+DATASET_LABEL_BY_MODEL = {spec.model: spec.label for spec in DATASETS}
+
+
+def deleted_record_summary(model, item_id: int) -> str:
+    label = DATASET_LABEL_BY_MODEL.get(model, "")
+    if not label:
+        return f"Deleted record {item_id}"
+    return f"Deleted {label.lower()} record {item_id}"
+
+
 def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -> RedirectResponse:
     item = session.get(model, item_id)
     if not item:
@@ -378,7 +395,7 @@ def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -
         if child:
             error = quote(f"delete_blocked_{label.replace(' ', '_')}")
             return redirect(f"{redirect_path}?error={error}")
-    delete_with_audit(session, item, f"Deleted {model.__name__} {item_id}")
+    delete_with_audit(session, item, deleted_record_summary(model, item_id))
     return redirect(redirect_path)
 
 
