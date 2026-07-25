@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 import csv
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from io import BytesIO, StringIO
 import json
@@ -57,6 +57,20 @@ class DataOperationError(ValueError):
 
 
 @dataclass(frozen=True)
+class ImportIssue:
+    """One problem with one uploaded row (ADR-0004 D7).
+
+    ``code`` is the stable contract a caller may branch on. ``message`` is display
+    only and must never be parsed. ``field`` carries a human field label, never a
+    database column name.
+    """
+
+    field: str
+    message: str
+    code: str
+
+
+@dataclass(frozen=True)
 class DatasetSpec:
     key: str
     label: str
@@ -65,10 +79,24 @@ class DatasetSpec:
     natural_key: tuple[str, ...] = ()
     foreign_keys: tuple[tuple[str, str], ...] = ()
     importable: bool = True
+    # ADR-0004 D7. Additive: overrides for columns the generic humaniser renders badly.
+    # compare=False keeps DatasetSpec hashable despite the mutable default.
+    field_labels: dict[str, str] = field(default_factory=dict, compare=False)
 
 
 DATASETS = (
-    DatasetSpec("companies", "Companies", "Company and periods", Company, ("company_name",)),
+    DatasetSpec(
+        "companies",
+        "Companies",
+        "Company and periods",
+        Company,
+        ("company_name",),
+        field_labels={
+            "utr": "Unique taxpayer reference",
+            "vat_number": "VAT number",
+            "sic_code": "SIC code",
+        },
+    ),
     DatasetSpec(
         "accounting_periods",
         "Accounting periods",
@@ -157,6 +185,12 @@ DATASETS = (
         CostLine,
         (),
         (("project_id", "projects"), ("activity_id", "activities")),
+        field_labels={
+            "gross_cost": "Gross cost",
+            "apportionment_percentage": "Apportionment percentage",
+            "qualifying_amount": "Qualifying amount",
+            "person_or_supplier_name": "Person or supplier name",
+        },
     ),
     DatasetSpec(
         "entitlement_assessments",
@@ -426,14 +460,104 @@ def parse_import_file(filename: str, content: bytes, selected_dataset: str = "")
     return {spec.key: datasets[spec.key] for spec in DATASETS if spec.key in datasets}
 
 
+_LABEL_WORDS = {
+    "rd": "R&D",
+    "utr": "UTR",
+    "uk": "UK",
+    "paye": "PAYE",
+    "nic": "NIC",
+    "vat": "VAT",
+    "sic": "SIC",
+    "ip": "IP",
+    "url": "web address",
+    "id": "identifier",
+}
+
+
+def _field_label(spec: DatasetSpec, name: str) -> str:
+    """A human field label for an uploaded column (ADR-0004 D7).
+
+    Database column names must never reach a user-facing message, so every label is
+    either an explicit override on the dataset or a humanised rendering of the column.
+    """
+    override = spec.field_labels.get(name)
+    if override:
+        return override
+    words = [part for part in str(name).split("_") if part]
+    if not words:
+        return "Value"
+    if len(words) > 1 and words[-1] == "id":
+        words = words[:-1]
+    rendered = [_LABEL_WORDS.get(word, word) for word in words]
+    first = rendered[0]
+    if first == first.lower():
+        rendered[0] = first[:1].upper() + first[1:]
+    return " ".join(rendered)
+
+
+# ADR-0004 D7. Keyed on the Pydantic error ``type``, never on its English text, so no raw
+# Pydantic wording and no column name can reach a user. Unmapped types fall back to the
+# safe generic message below.
+_PYDANTIC_ISSUE_MESSAGES: dict[str, tuple[str, str]] = {
+    "missing": ("{label} is required.", "required_value"),
+    "none_not_allowed": ("{label} is required.", "required_value"),
+    "string_type": ("{label} must be text.", "invalid_value"),
+    "string_too_long": ("{label} is longer than this area allows.", "invalid_value"),
+    "int_parsing": ("{label} must be a whole number.", "invalid_value"),
+    "int_type": ("{label} must be a whole number.", "invalid_value"),
+    "int_from_float": ("{label} must be a whole number.", "invalid_value"),
+    "float_parsing": ("{label} must be a number.", "invalid_value"),
+    "float_type": ("{label} must be a number.", "invalid_value"),
+    "decimal_parsing": ("{label} must be a number.", "invalid_value"),
+    "bool_parsing": ("{label} must be true or false.", "invalid_value"),
+    "bool_type": ("{label} must be true or false.", "invalid_value"),
+    "date_parsing": ("{label} must be a date in YYYY-MM-DD format.", "invalid_value"),
+    "date_type": ("{label} must be a date in YYYY-MM-DD format.", "invalid_value"),
+    "date_from_datetime_parsing": ("{label} must be a date in YYYY-MM-DD format.", "invalid_value"),
+    "date_from_datetime_inexact": ("{label} must be a date in YYYY-MM-DD format.", "invalid_value"),
+    "datetime_parsing": ("{label} must be a date and time.", "invalid_value"),
+    "datetime_type": ("{label} must be a date and time.", "invalid_value"),
+    "datetime_from_date_parsing": ("{label} must be a date and time.", "invalid_value"),
+    "greater_than": ("{label} is outside the range this area accepts.", "invalid_value"),
+    "greater_than_equal": ("{label} is outside the range this area accepts.", "invalid_value"),
+    "less_than": ("{label} is outside the range this area accepts.", "invalid_value"),
+    "less_than_equal": ("{label} is outside the range this area accepts.", "invalid_value"),
+    "enum": ("{label} is not one of the accepted values.", "invalid_value"),
+    "literal_error": ("{label} is not one of the accepted values.", "invalid_value"),
+}
+_PYDANTIC_FALLBACK = ("{label} could not be understood.", "invalid_value")
+
+
+def _validation_issues(spec: DatasetSpec, error: ValidationError) -> list[ImportIssue]:
+    issues: list[ImportIssue] = []
+    for item in error.errors():
+        location = [str(part) for part in item.get("loc", ())]
+        column = location[0] if location else ""
+        label = _field_label(spec, column) if column else spec.label
+        template, code = _PYDANTIC_ISSUE_MESSAGES.get(str(item.get("type", "")), _PYDANTIC_FALLBACK)
+        issues.append(ImportIssue(field=label, message=template.format(label=label), code=code))
+    return issues
+
+
+def _issue_messages(issues: list[ImportIssue]) -> list[str]:
+    return [issue.message for issue in issues]
+
+
 def _annotation_contains(annotation: Any, value_type: type) -> bool:
     return annotation is value_type or value_type in get_args(annotation)
 
 
-def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], list[ImportIssue]]:
     fields = spec.model.model_fields
     unknown = sorted(set(row).difference(fields))
-    errors = [f"Unknown column '{name}'." for name in unknown]
+    issues = [
+        ImportIssue(
+            field="",
+            message=f"This file has a column called '{name}' that {spec.label.lower()} do not use.",
+            code="unknown_column",
+        )
+        for name in unknown
+    ]
     cleaned: dict[str, Any] = {}
     for name, value in row.items():
         if name not in fields:
@@ -453,7 +577,7 @@ def _clean_row(spec: DatasetSpec, row: dict[str, Any]) -> tuple[dict[str, Any], 
                 cleaned[name] = False
                 continue
         cleaned[name] = value
-    return cleaned, errors
+    return cleaned, issues
 
 
 def _find_existing(session: Session, spec: DatasetSpec, values: dict[str, Any]) -> SQLModel | None:
@@ -505,7 +629,7 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
     seen: set[tuple[Any, ...]] = set()
     for spec in DATASETS:
         for row_number, raw_row in enumerate(datasets.get(spec.key, []), start=1):
-            cleaned, errors = _clean_row(spec, raw_row)
+            cleaned, issues = _clean_row(spec, raw_row)
             existing = _find_existing(session, spec, cleaned)
             merged = existing.model_dump(mode="json") if existing else {}
             merged.update(cleaned)
@@ -514,9 +638,7 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                 candidate = spec.model.model_validate(merged)
                 values = candidate.model_dump(mode="json")
             except ValidationError as exc:
-                errors.extend(
-                    f"{'.'.join(str(part) for part in item['loc'])}: {item['msg']}" for item in exc.errors()
-                )
+                issues.extend(_validation_issues(spec, exc))
 
             identity: tuple[Any, ...] | None = None
             if values.get("id") not in (None, ""):
@@ -524,11 +646,17 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
             elif spec.natural_key and all(values.get(name) not in (None, "") for name in spec.natural_key):
                 identity = (spec.key, "key", *(values.get(name) for name in spec.natural_key))
             if identity and identity in seen:
-                errors.append("This record appears more than once in the import file.")
+                issues.append(
+                    ImportIssue(
+                        field="",
+                        message="This record appears more than once in the import file.",
+                        code="duplicate_record",
+                    )
+                )
             elif identity:
                 seen.add(identity)
 
-            if not errors:
+            if not issues:
                 for field_name, target_key in spec.foreign_keys:
                     target_id = values.get(field_name)
                     if target_id in (None, ""):
@@ -538,9 +666,16 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                     except (TypeError, ValueError):
                         valid_link = False
                     if not valid_link:
-                        errors.append(f"{field_name} does not match an existing or included record.")
+                        label = _field_label(spec, field_name)
+                        issues.append(
+                            ImportIssue(
+                                field=label,
+                                message=f"{label} does not match a record in this file or in the Hub.",
+                                code="unknown_link",
+                            )
+                        )
 
-            if errors:
+            if issues:
                 status = "error"
             elif existing and mode == "add_only":
                 status = "skip"
@@ -555,7 +690,11 @@ def build_import_plan(session: Session, datasets: dict[str, list[dict[str, Any]]
                     "row_number": row_number,
                     "display": _display_name(spec, values),
                     "status": status,
-                    "errors": errors,
+                    "issues": issues,
+                    # Transitional mirror of ``issues`` so the preview template keeps rendering
+                    # readable text until app/main.py and data_management.html are wired to the
+                    # ratified shape. Derived, never authored: one source of truth.
+                    "errors": _issue_messages(issues),
                     "values": values,
                 }
             )

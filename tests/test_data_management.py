@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.data_management import (
+    ImportIssue,
     apply_import,
     build_import_plan,
     cleanup_candidates,
@@ -115,7 +116,85 @@ def test_import_preview_rejects_a_missing_parent_link(session):
     )
 
     assert preview["has_errors"] is True
-    assert "does not match an existing or included record" in " ".join(preview["rows"][0]["errors"])
+    assert "does not match a record in this file or in the Hub" in " ".join(preview["rows"][0]["errors"])
+
+
+BANNED_ISSUE_TEXT = ("Input should be", "validation error", "Value error", "value_error", "pydantic")
+
+
+def _all_issues(preview):
+    return [issue for row in preview["rows"] for issue in row["issues"]]
+
+
+def test_import_issues_are_business_language_with_stable_codes(session):
+    """ADR-0004 D7: no raw Pydantic text and no database column name reaches a user."""
+    customer = Customer(customer_name="Link Customer")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {
+            "contracts": [
+                # str, int, date and bool failures on one dataset, plus a missing required value.
+                {
+                    "contract_name": 12345,
+                    "customer_id": "not-a-number",
+                    "start_date": "31/12/2026",
+                    "customer_requested_rd": "perhaps",
+                },
+                {"customer_id": customer.id},
+                {"contract_name": "Column Check", "customer_id": customer.id, "made_up_column": "x"},
+            ],
+            # float failure, on the dataset that carries the money fields.
+            "cost_lines": [{"project_id": 1, "gross_cost": "abc"}],
+        },
+        "add_update",
+    )
+
+    issues = _all_issues(preview)
+    assert issues, "the deliberately broken rows produced no issues"
+    for issue in issues:
+        assert isinstance(issue, ImportIssue)
+        assert issue.message.endswith("."), issue.message
+        if issue.code != "unknown_column":
+            # No snake_case identifier can survive this. The one exemption is the
+            # unknown-column message, which quotes the operator's OWN column back to
+            # them so they can find it; ADR-0004 D7 keeps that message and requires it
+            # to render escaped instead (asserted in the injection test below).
+            assert "_" not in issue.message, f"a database column name leaked: {issue.message}"
+        assert "_" not in issue.field, f"a database column name leaked into a field label: {issue.field}"
+        assert issue.code and issue.code == issue.code.lower().replace(" ", "_")
+        for banned in BANNED_ISSUE_TEXT:
+            assert banned not in issue.message, f"raw validation text leaked: {issue.message}"
+
+    messages = {issue.message for issue in issues}
+    assert "Contract name must be text." in messages
+    assert "Customer must be a whole number." in messages
+    assert "Start date must be a date in YYYY-MM-DD format." in messages
+    assert "Customer requested R&D must be true or false." in messages
+    assert "Contract name is required." in messages
+    assert "Gross cost must be a number." in messages
+    assert {issue.code for issue in issues} >= {"invalid_value", "required_value", "unknown_column"}
+
+
+def test_an_uploaded_column_name_cannot_inject_html_into_the_preview(session):
+    """ADR-0004 D7: issue messages carry uploaded content, so they must render escaped."""
+    client = client_for(session)
+    payload = [{"company_name": "Injection Limited", "<img src=x onerror=alert(1)>": "x"}]
+    try:
+        response = client.post(
+            "/data-management/import/preview",
+            data={"data_area": "companies", "import_mode": "add_only"},
+            files={"import_file": ("companies.json", json.dumps(payload), "application/json")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "<img src=x onerror=alert(1)>" not in response.text
+    assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
 
 
 def test_cleanup_only_removes_selected_unlinked_records(session):
