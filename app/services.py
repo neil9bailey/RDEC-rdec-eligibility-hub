@@ -276,8 +276,19 @@ def assess_entitlement(
     )
 
 
-def sync_entitlement_for_project(session: Session, project_id: int) -> EntitlementAssessment:
-    context = get_project_context(session, project_id)
+def entitlement_facts_for_context(context: ProjectContext) -> tuple[str, EntitlementResult]:
+    """Resolve a project's entitlement position from its facts alone.
+
+    Pure: no query, no write, no session. Both entitlement routes go through here --
+    ``sync_entitlement_for_project`` persists what it returns, and
+    ``calculate_project_score(..., sync=False)`` reads it without persisting -- so the two can never
+    reach different answers from the same facts.
+
+    The resolved customer corporation tax status is returned alongside the result because the stored
+    assessment records the *resolved* status. Where the customer's status is blank or unknown, the
+    rules-engine default is substituted here; that substitution is recorded on the assessment rather
+    than applied invisibly at scoring time.
+    """
     project = context.project
     customer = context.customer
     contract = context.contract
@@ -299,6 +310,15 @@ def sync_entitlement_for_project(session: Session, project_id: int) -> Entitleme
         grant_funded_or_subsidised=project.grant_funded_or_subsidised,
         company_role=project.company_role,
     )
+    return customer_tax_status, result
+
+
+def sync_entitlement_for_project(session: Session, project_id: int) -> EntitlementAssessment:
+    context = get_project_context(session, project_id)
+    project = context.project
+    customer = context.customer
+    contract = context.contract
+    customer_tax_status, result = entitlement_facts_for_context(context)
     action = "update" if context.entitlement else "create"
     assessment = context.entitlement or EntitlementAssessment(project_id=project.id or 0)
     before_snapshot = compact_snapshot(assessment) if context.entitlement else ""
@@ -330,7 +350,27 @@ def sync_entitlement_for_project(session: Session, project_id: int) -> Entitleme
     return assessment
 
 
-def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
+def entitlement_status_for_scoring(session: Session, context: ProjectContext, *, sync: bool) -> str:
+    """The entitlement status a score should use, honouring ADR-0005 D6.
+
+    A stored assessment always wins, so a reviewed project scores off its reviewed position. Where
+    none is stored, ``sync=True`` creates and commits one (the user is on a write path) and
+    ``sync=False`` resolves the identical position in memory and leaves the database untouched.
+
+    The read-only branch deliberately produces the *same* status as the write branch. A score that
+    varied with whether an assessment row happened to exist yet would depend on render history
+    rather than on the project's facts, so the dashboard and the project page would publish
+    different ratings for one project. D6 permits that divergence; it does not require it, and the
+    determinism of a published score outranks it.
+    """
+    if context.entitlement is not None:
+        return context.entitlement.status
+    if sync:
+        return sync_entitlement_for_project(session, context.project.id or 0).status
+    return entitlement_facts_for_context(context)[1].status
+
+
+def calculate_project_score(session: Session, project_id: int, *, sync: bool = True) -> ScoreResult:
     rules = get_rules()
     weights = rules.eligibility_weights()
     negative_advance_terms = rules.negative_advance_terms()
@@ -446,17 +486,17 @@ def calculate_project_score(session: Session, project_id: int) -> ScoreResult:
         blockers.append(rules.blocker_label("missing_costs"))
         next_actions.append("Add cost lines with activity links, evidence, and apportionment.")
 
-    entitlement = context.entitlement or sync_entitlement_for_project(session, project_id)
-    if entitlement.status == "supplier_likely":
+    entitlement_status = entitlement_status_for_scoring(session, context, sync=sync)
+    if entitlement_status == "supplier_likely":
         score += weights["claim_entitlement"]
         positives.append("Supplier entitlement indicators are present.")
-    elif entitlement.status == "ambiguous_tax_review":
+    elif entitlement_status == "ambiguous_tax_review":
         score += 2
         warnings.append("Claim entitlement is ambiguous and needs tax review.")
-    elif entitlement.status == "customer_likely":
+    elif entitlement_status == "customer_likely":
         score += 1
         warnings.append("Customer entitlement indicators may be stronger than supplier indicators.")
-    elif entitlement.status == "blocked":
+    elif entitlement_status == "blocked":
         blockers.append(rules.blocker_label("entitlement_blocked"))
 
     if context.submission_status and context.submission_status.ct600_submitted:
@@ -686,7 +726,9 @@ def dashboard_metrics(session: Session) -> dict:
     solutions = list(session.exec(select(Solution)))
     projects = list(session.exec(select(RDProject)))
     periods = list(session.exec(select(AccountingPeriod)))
-    scores = [calculate_project_score(session, project.id or 0) for project in projects]
+    # ADR-0005 D6: the dashboard is a read. It must not bring an EntitlementAssessment into
+    # existence, so it scores with sync=False and never commits during a GET.
+    scores = [calculate_project_score(session, project.id or 0, sync=False) for project in projects]
     rating_counts = defaultdict(int)
     for score in scores:
         rating_counts[score.rating] += 1

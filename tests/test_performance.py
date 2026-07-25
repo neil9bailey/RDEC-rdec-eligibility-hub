@@ -202,7 +202,6 @@ def test_claim_period_pack_renders_within_budget(benchmark):
     )
 
 
-@pytest.mark.xfail(reason=PENDING_BUDGET, strict=False)
 def test_the_dashboard_does_not_write_on_a_get(unrendered_dashboard):
     """ADR-0005 D6 and verification 11: the read-only render must issue no COMMIT."""
     client, engine, _ = unrendered_dashboard

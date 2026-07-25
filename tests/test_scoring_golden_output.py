@@ -32,7 +32,7 @@ import json
 
 from sqlmodel import Session, col, select
 
-from app.models import AccountingPeriod, RDProject
+from app.models import AccountingPeriod, EntitlementAssessment, RDProject
 from app.schemas import AIFSelectionResult, ScoreResult
 from app.services import (
     CAVEAT,
@@ -295,6 +295,35 @@ def test_scoring_is_stable_when_repeated_within_a_session(seeded_session):
     first_readiness = canonical_json(aif_readiness_payload(seeded_session))
     second_readiness = canonical_json(aif_readiness_payload(seeded_session))
     assert first_readiness == second_readiness
+
+
+def test_a_project_with_no_stored_entitlement_scores_the_same_on_both_read_paths(seeded_session):
+    """ADR-0005 D6: the dashboard must not write, and must not disagree with the project page.
+
+    ``seed_demo_data`` runs ``sync_entitlement_for_project`` for every seeded project, so the
+    golden dataset alone can never reach the branch D6 changes. This test removes one assessment to
+    reach it deliberately. Order matters: the dashboard is rendered first, while the assessment is
+    genuinely absent, because ``sync=True`` would otherwise recreate it and make the assertion pass
+    for the wrong reason.
+    """
+    project = ordered_projects(seeded_session)[0]
+    project_id = project.id or 0
+    stored = seeded_session.exec(
+        select(EntitlementAssessment).where(EntitlementAssessment.project_id == project_id)
+    ).first()
+    assert stored is not None, "seed no longer creates assessments; this test needs revisiting"
+    seeded_session.delete(stored)
+    seeded_session.commit()
+
+    dashboard_score = dashboard_metrics(seeded_session)["scores"][project_id]
+
+    remaining = seeded_session.exec(
+        select(EntitlementAssessment).where(EntitlementAssessment.project_id == project_id)
+    ).first()
+    assert remaining is None, "the dashboard render created an EntitlementAssessment on a GET"
+
+    page_score = calculate_project_score(seeded_session, project_id)
+    assert canonical_json(score_payload(dashboard_score)) == canonical_json(score_payload(page_score))
 
 
 def test_every_project_still_carries_the_review_caveat(seeded_session):
