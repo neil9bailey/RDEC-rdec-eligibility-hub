@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from io import BytesIO, StringIO
 import json
+import re
 import secrets
 import time
 from typing import Any, get_args
@@ -384,13 +385,34 @@ def json_export_bytes(session: Session, dataset_keys: list[str]) -> bytes:
     return json.dumps(export_bundle(session, dataset_keys), indent=2, ensure_ascii=True).encode("utf-8")
 
 
+# ADR-0002 line 27 as amended by ADR-0004 D3. A whole-cell, fully anchored match: a value
+# satisfying it contains no letters and none of ! ( ) , : ; \ | + = @ " so it cannot carry
+# formula syntax, a DDE payload or a cell reference.
+#
+# BINDING GUARDRAIL (ADR-0004 D3 residual risk, reviewed at G5): this pattern is anchored
+# ^...$ and must never be changed to a search; it must never permit leading or trailing
+# whitespace, thousands separators, currency symbols, or Unicode minus signs.
+PLAIN_SIGNED_NUMBER = re.compile(r"^-(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
+
+# Always neutralised, whatever follows. LF is ADDED by the amendment: it was missing before,
+# so narrowing the "-" rule is not a net reduction in coverage.
+CSV_FORMULA_LEADS = ("=", "+", "@", "\t", "\r", "\n")
+
+# Minus-like characters that are not the ASCII hyphen-minus. The exemption above is decided
+# by an ASCII-only pattern, so these can never satisfy it; neutralising them explicitly keeps
+# the named "-5 with a Unicode minus" case covered rather than relying on that coincidence.
+CSV_UNICODE_MINUS_LEADS = ("−", "–", "—", "－")
+
+
 def _safe_csv_value(value: Any) -> Any:
     if value is None:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
     text = str(value)
-    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+    if text.startswith(CSV_FORMULA_LEADS) or text.startswith(CSV_UNICODE_MINUS_LEADS):
+        return "'" + text
+    if text.startswith("-") and not PLAIN_SIGNED_NUMBER.match(text):
         return "'" + text
     return text
 

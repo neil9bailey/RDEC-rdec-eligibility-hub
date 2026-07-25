@@ -12,6 +12,8 @@ from app import data_management
 from app.data_management import (
     DataOperationError,
     ImportIssue,
+    PLAIN_SIGNED_NUMBER,
+    _safe_csv_value,
     apply_import,
     build_import_plan,
     cleanup_candidates,
@@ -26,7 +28,16 @@ from app.data_management import (
 )
 from app.database import get_session
 from app.main import app
-from app.models import AuditEvent, BusinessUnit, Company, Contract, Customer, RDProject
+from app.models import (
+    AuditEvent,
+    BusinessUnit,
+    Company,
+    Contract,
+    CostLine,
+    Customer,
+    RDProject,
+    Solution,
+)
 
 
 def client_for(session):
@@ -57,6 +68,75 @@ def test_selected_json_and_csv_exports_are_review_safe(session):
     assert rows[0]["company_name"] == "'=Formula Limited"
     assert manifest["datasets"][0]["records"] == 1
     assert "Use the JSON export" in manifest["purpose"]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "-1+cmd|'/c calc'!A0",
+        "-500,=1+1",
+        "- 500",
+        "-5-5",
+        "-1e",
+        "-",
+        "−5",  # Unicode minus (U+2212), not the ASCII hyphen-minus.
+    ],
+)
+def test_a_value_that_only_looks_like_a_negative_number_is_still_neutralised(value):
+    """ADR-0004 D3: the seven named negative cases. Each must be neutralised."""
+    assert _safe_csv_value(value) == "'" + value
+
+
+@pytest.mark.parametrize("value", ["-500", "-1.5", "-0.25", "-1.5e3", "-.5"])
+def test_a_plain_signed_number_exports_as_a_number(value):
+    """ADR-0004 D3: the five named positive cases. Finance must be able to total these."""
+    assert _safe_csv_value(value) == value
+
+
+@pytest.mark.parametrize("value", ["=1+1", "+1", "@SUM(A1)", "\tcmd", "\rcmd", "\ncmd"])
+def test_every_formula_lead_is_neutralised_including_the_newly_added_line_feed(value):
+    """ADR-0004 D3: LF is ADDED by the amendment, so this is not a net loss of coverage."""
+    assert _safe_csv_value(value) == "'" + value
+
+
+def test_the_signed_number_exemption_is_a_whole_cell_anchored_match():
+    """ADR-0004 D3 binding guardrail: never a search, never whitespace tolerant."""
+    assert PLAIN_SIGNED_NUMBER.pattern.startswith("^")
+    assert PLAIN_SIGNED_NUMBER.pattern.endswith("$")
+    assert PLAIN_SIGNED_NUMBER.match("-500 ") is None
+    assert PLAIN_SIGNED_NUMBER.match(" -500") is None
+    assert PLAIN_SIGNED_NUMBER.match("-1,000") is None
+    assert PLAIN_SIGNED_NUMBER.match("-£500") is None
+    assert PLAIN_SIGNED_NUMBER.match("−500") is None
+
+
+def test_negative_money_survives_a_csv_export_as_a_number(session):
+    """The finding: every negative figure in a Finance or Ayming review pack was text."""
+    company = Company(company_name="Cost Co", utr="1111111111")
+    customer = Customer(customer_name="Cost Customer")
+    session.add_all([company, customer])
+    session.commit()
+    session.refresh(customer)
+    solution = Solution(solution_name="Cost Solution", customer_id=customer.id)
+    session.add(solution)
+    session.commit()
+    session.refresh(solution)
+    project = RDProject(project_title="Cost Project", solution_id=solution.id)
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    session.add(CostLine(project_id=project.id, activity="Credit note", gross_cost=-500.0))
+    session.commit()
+
+    archive_bytes = csv_export_zip_bytes(session, ["cost_lines"])
+    with ZipFile(BytesIO(archive_bytes)) as archive:
+        rows = list(csv.DictReader(StringIO(archive.read("cost_lines.csv").decode("utf-8-sig"))))
+        manifest = json.loads(archive.read("manifest.json"))
+
+    assert rows[0]["gross_cost"] == "-500.0"
+    assert float(rows[0]["gross_cost"]) == -500.0
+    assert "Use the JSON export for restore or re-import" in manifest["purpose"]
+    assert manifest["caveat"] == "Requires competent professional and tax review."
 
 
 def test_previewed_import_adds_and_updates_matching_records(session):
