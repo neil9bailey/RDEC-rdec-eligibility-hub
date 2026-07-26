@@ -40,6 +40,17 @@ class Settings:
         "true",
         "yes",
     }
+    # ADR-0004 D1. Restore by identifier is the only import mode that treats an identifier in an
+    # uploaded file as identity, so a file can overwrite a live record it never named. That is
+    # exactly how finding C2 destroyed a live contract. It requires the same deliberate operator
+    # enablement as purge: default off, and never a release default.
+    data_restore_by_identifier_enabled: bool = os.getenv(
+        "DATA_RESTORE_BY_IDENTIFIER_ENABLED", "false"
+    ).lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     # ADR-0005 D3.6. Operator escape hatch for link checking. Enforcement defaults on, but is only
     # ever switched on after a clean orphan scan, so this turns off a control that may already be
     # withheld. Setting it false is logged loudly at startup.

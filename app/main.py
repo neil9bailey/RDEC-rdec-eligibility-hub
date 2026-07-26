@@ -519,6 +519,9 @@ def data_management_response(
                 "export": settings.data_export_enabled,
                 "cleanup": settings.data_cleanup_enabled,
                 "purge": settings.data_purge_enabled,
+                # ADR-0004 D1. Published so the import form can offer the restore mode only when an
+                # operator has deliberately enabled it, the same way purge is gated.
+                "restore_by_identifier": settings.data_restore_by_identifier_enabled,
             },
             error_message=error_message,
             import_preview=import_preview,
@@ -584,7 +587,12 @@ async def preview_data_import(request: Request, session: Session = Depends(get_s
             content,
             str(form.get("data_area") or ""),
         )
-        plan = build_import_plan(session, datasets, str(form.get("import_mode") or "add_only"))
+        plan = build_import_plan(
+            session,
+            datasets,
+            str(form.get("import_mode") or "add_only"),
+            restore_by_identifier_enabled=get_settings().data_restore_by_identifier_enabled,
+        )
         payload = encode_import_payload(plan)
     except DataOperationError as exc:
         return data_management_response(request, session, error_message=str(exc), status_code=400)
@@ -597,8 +605,17 @@ async def apply_data_import(request: Request, session: Session = Depends(get_ses
         return data_management_response(request, session, error_message="Imports are turned off by the administrator.", status_code=403)
     form = await request.form()
     try:
-        mode, datasets = decode_import_payload(str(form.get("import_payload") or ""))
-        result = apply_import(session, datasets, mode)
+        # ADR-0004 D1: the flag is re-read and re-passed at each boundary. Decode refuses the mode
+        # in a payload that was issued while it was on and is being applied after it was turned
+        # off, and apply_import refuses it again rather than trusting the decode that preceded it.
+        restore_enabled = get_settings().data_restore_by_identifier_enabled
+        mode, datasets = decode_import_payload(
+            str(form.get("import_payload") or ""),
+            restore_by_identifier_enabled=restore_enabled,
+        )
+        result = apply_import(
+            session, datasets, mode, restore_by_identifier_enabled=restore_enabled
+        )
     except DataOperationError as exc:
         return data_management_response(request, session, error_message=str(exc), status_code=400)
     notice = quote(
