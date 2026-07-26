@@ -27,6 +27,37 @@ from app.settings import get_settings
 RESTORE_REFUSAL = "Restore by identifier is turned off."
 
 
+@pytest.fixture(autouse=True)
+def _hand_the_application_back():
+    """Clear the session override this module installs on the shared ``app`` object.
+
+    Added at G3. ``client_for`` cleared the overrides when the *next* client was built, which
+    is not the same as clearing them at teardown: the last test in this module left an
+    override bound to a session that had already been torn down, and the next module to build
+    a plain ``TestClient(main.app)`` against the real ``get_session`` then wrote into that
+    dead session instead of its own database.
+
+    The same fixture already guards tests/test_htmx_save_feedback.py and
+    tests/test_data_integrity_banner_and_restore_affordance.py. This module was the last one
+    still leaking: a session-end probe over every test module reported
+    ``overrides_at_session_end=1 ['get_session']`` here and 0 everywhere else.
+
+    Measured before this fixture existed, inside the container:
+
+        pytest -q tests/test_restore_by_identifier_gate.py tests/test_read_route_determinism.py
+        -> 3 failed, 11 passed   (each failure "0 == 1", zero rows created)
+
+        pytest -q tests/test_read_route_determinism.py
+        -> 7 passed
+
+    A full alphabetical run hid it, because ``test_read_route_determinism`` sorts before
+    ``test_restore_by_identifier_gate``. That ordering is luck, not isolation, and the module
+    it poisons is the ADR-0006 D1/D4/D5.5 conformance proof.
+    """
+    yield
+    app.dependency_overrides.clear()
+
+
 def client_for(session):
     def override_session():
         yield session

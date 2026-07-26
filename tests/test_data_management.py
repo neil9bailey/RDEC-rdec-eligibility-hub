@@ -595,6 +595,43 @@ def test_a_link_to_a_parent_in_the_same_file_is_named_from_that_file(session):
     assert after != rail.name
 
 
+def test_the_new_in_this_file_marker_survives_a_parent_name_long_enough_to_truncate():
+    """ADR-0004 D2.1: the marker is fitted INSIDE the 120-character budget, not appended after it.
+
+    Added at G3. The behaviour was correct at HEAD but nothing in the suite exercised it:
+    reverting ``_new_parent_display`` to truncate at ``CHANGED_VALUE_LIMIT`` and *then* append
+    the suffix left tests/test_data_management.py fully green (69 passed), so the control
+    could have been removed without a single red test. The existing marker assertions all use
+    short parent names ("Digital Signalling"), which never reach the truncation limit.
+
+    What the marker is worth: it is the only thing that tells an operator reviewing a
+    disclosure that the AFTER parent is a record this file will create rather than one
+    already in the Hub. A parent name long enough to hit the budget must not be able to push
+    that distinction off the end of the string and make a new parent read like an existing one.
+    """
+    limit = data_management.CHANGED_VALUE_LIMIT
+    suffix = data_management.NEW_PARENT_SUFFIX
+
+    short = data_management._new_parent_display("Digital Signalling")
+    assert short == f"Digital Signalling{suffix}"
+    assert len(short) <= limit
+
+    # Long enough that the name alone would consume the whole budget.
+    rendered = data_management._new_parent_display("L" * (limit * 3))
+    assert rendered.endswith(suffix), (
+        "a long parent name pushed the (new in this file) marker off the end of the "
+        "disclosure, so a record this file creates reads as one already in the Hub"
+    )
+    assert len(rendered) <= limit, f"the disclosure overran its {limit}-character budget: {len(rendered)}"
+    assert rendered[: -len(suffix)].startswith("LLL")
+
+    # Exactly at the boundary: the longest name that still needs no truncation.
+    exact = data_management._new_parent_display("N" * (limit - len(suffix)))
+    assert exact.endswith(suffix)
+    assert len(exact) == limit
+    assert "…" not in exact, "a name that fits was truncated anyway"
+
+
 def test_a_relink_to_an_in_file_parent_is_disclosed_when_nothing_else_moves(session):
     """ADR-0004 D1.4 as amended, R1 first failure mode: the link IS the change.
 
