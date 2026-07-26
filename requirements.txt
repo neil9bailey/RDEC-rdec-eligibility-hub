@@ -1,8 +1,23 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-sqlmodel==0.0.22
-jinja2==3.1.4
-python-multipart==0.0.19
-PyYAML==6.0.2
-pytest==8.3.4
+# Runtime dependencies. This file is what the Dockerfile installs, so this file is what ships.
+#
+# These pins are exactly the versions the test suite is verified against. Keep them in step with
+# the interpreter in .venv and with requirements-dev.txt: a divergence between the set the tests
+# run on and the set the image installs is what G5 condition H1 was raised for, and it hid 19
+# advisories behind a green suite.
+#
+# Test-only dependencies belong in requirements-dev.txt, never here.
+fastapi==0.139.2
+# Pinned explicitly even though fastapi pulls it in. fastapi 0.139.2 requires only
+# "starlette>=0.46.0", with no upper bound, so an unpinned build resolves to whatever is current
+# on the day it runs -- which is the drift mechanism itself. starlette also carried 9 of the 19
+# advisories on the previous pin set, including CVE-2026-48818 (StaticFiles UNC path handling on
+# Windows, which reaches an outbound SMB connection before the path is rejected).
+starlette==1.3.1
+uvicorn[standard]==0.51.0
+sqlmodel==0.0.39
+jinja2==3.1.6
+python-multipart==0.0.32
+PyYAML==6.0.3
+# Runtime, not test-only: imported by app/knowledge_agent.py and app/framework_intelligence.py
+# for the guarded outbound source checks. It is also what starlette's TestClient uses.
 httpx==0.28.1

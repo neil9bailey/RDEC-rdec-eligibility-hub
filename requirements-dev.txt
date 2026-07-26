@@ -1,0 +1,11 @@
+# Test-only dependencies.
+#
+# These are installed into the "test" stage of the Dockerfile and are deliberately absent from the
+# runtime image, so nothing here is part of the Hub's shipped attack surface. Adding a package here
+# rather than to requirements.txt is the difference between a test tool and a shipped one.
+#
+# Run the suite with:
+#   docker compose build test
+#   docker compose run --rm --no-deps test pytest -q
+-r requirements.txt
+pytest==9.1.1

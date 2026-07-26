@@ -1,24 +1,50 @@
+# The environment block is defined once and shared by both services, so the settings the tests run
+# under cannot drift from the settings the app runs under.
+x-hub-environment: &hub-environment
+  DATABASE_URL: sqlite:///./data/rdec_hub.db
+  SEED_REFERENCE_DATA: ${SEED_REFERENCE_DATA:-true}
+  SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+  DATA_IMPORT_ENABLED: ${DATA_IMPORT_ENABLED:-true}
+  DATA_EXPORT_ENABLED: ${DATA_EXPORT_ENABLED:-true}
+  DATA_CLEANUP_ENABLED: ${DATA_CLEANUP_ENABLED:-true}
+  DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-false}
+  # ADR-0004 D1. Makes an identifier in an uploaded file authoritative, so a file can overwrite
+  # a live record it never named. Same posture as purge: off by default, never a release default.
+  DATA_RESTORE_BY_IDENTIFIER_ENABLED: ${DATA_RESTORE_BY_IDENTIFIER_ENABLED:-false}
+  # ADR-0005 D3.6. Operator escape hatch: setting this false is the rollback lever for
+  # referential-integrity enforcement, without a code change or redeploy. Defaults on.
+  ENFORCE_FOREIGN_KEYS: ${ENFORCE_FOREIGN_KEYS:-true}
+
 services:
   app:
-    build: .
+    build:
+      context: .
+      # The runtime image. No test tooling is installed into it (G5 condition H1).
+      target: runtime
     ports:
       # Loopback only. The no-authentication, no-RBAC posture in README.md is justified by the
       # Hub being single-user and local; "0.0.0.0:8080" published it to every peer on the LAN,
       # which left that precondition unenforced. Publishing on 127.0.0.1 enforces it.
       - "127.0.0.1:8080:8080"
-    environment:
-      DATABASE_URL: sqlite:///./data/rdec_hub.db
-      SEED_REFERENCE_DATA: ${SEED_REFERENCE_DATA:-true}
-      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
-      DATA_IMPORT_ENABLED: ${DATA_IMPORT_ENABLED:-true}
-      DATA_EXPORT_ENABLED: ${DATA_EXPORT_ENABLED:-true}
-      DATA_CLEANUP_ENABLED: ${DATA_CLEANUP_ENABLED:-true}
-      DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-false}
-      # ADR-0004 D1. Makes an identifier in an uploaded file authoritative, so a file can overwrite
-      # a live record it never named. Same posture as purge: off by default, never a release default.
-      DATA_RESTORE_BY_IDENTIFIER_ENABLED: ${DATA_RESTORE_BY_IDENTIFIER_ENABLED:-false}
-      # ADR-0005 D3.6. Operator escape hatch: setting this false is the rollback lever for
-      # referential-integrity enforcement, without a code change or redeploy. Defaults on.
-      ENFORCE_FOREIGN_KEYS: ${ENFORCE_FOREIGN_KEYS:-true}
+    environment: *hub-environment
     volumes:
       - ./data:/app/data
+
+  # Test runner. Same code and same settings as `app`, plus requirements-dev.txt.
+  #   docker compose build test
+  #   docker compose run --rm --no-deps test pytest -q
+  # Behind a profile so `docker compose up` still starts only the app.
+  #
+  # It mounts ./data for one reason: tests/test_startup.py fingerprints the live database to prove
+  # the suite never writes to it, and that assertion is vacuous if the file is not there to see.
+  # tests/conftest.py redirects DATABASE_URL to a throwaway temporary directory before any app
+  # import, which is what actually keeps the live database untouched.
+  test:
+    build:
+      context: .
+      target: test
+    environment: *hub-environment
+    volumes:
+      - ./data:/app/data
+    profiles:
+      - test

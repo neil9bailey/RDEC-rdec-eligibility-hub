@@ -101,8 +101,15 @@ http://localhost:8080
 Run tests:
 
 ```powershell
-docker compose run --rm app pytest -q
+docker compose build test
+docker compose run --rm --no-deps test pytest -q
 ```
+
+Tests run in a separate `test` image, not in the `app` image. The `app` image installs only
+`requirements.txt`, so pytest and any other test-only tool is absent from what the Hub actually runs;
+`requirements-dev.txt` adds them to the `test` image alone. The two images are built from the same
+Dockerfile and run the same code and settings. `docker compose run --rm app pytest` no longer works,
+and is expected not to: pytest is not installed there.
 
 Stop the app:
 
