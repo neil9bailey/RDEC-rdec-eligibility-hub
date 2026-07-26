@@ -82,11 +82,18 @@ def test_the_back_link_cannot_break_out_of_its_attribute():
     assert not any("alert" in tag for tag in markup.tags)
 
 
-def test_the_default_back_link_is_unchanged_by_escaping():
-    """The default is a literal with no escapable character, so it must pass through."""
+def test_the_default_back_link_is_a_real_path():
+    """The default is a literal with no escapable character, so it must pass through.
+
+    ADR-0002 R10 replaced the previous ``javascript:history.back()`` default with a real
+    path: that value is not a URL, so it does nothing when scripts are blocked or a CSP is
+    tightened, and it gives assistive technology no destination to announce. The escaping
+    claim this test was written for is unchanged -- ``/`` still contains nothing to escape.
+    """
     body = validation_error_response(["Customer is required."]).body.decode("utf-8")
 
-    assert 'href="javascript:history.back()"' in body
+    assert 'href="/"' in body
+    assert "javascript:" not in body
 
 
 def test_a_plain_message_still_reads_normally():
