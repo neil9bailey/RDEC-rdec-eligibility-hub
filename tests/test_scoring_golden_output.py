@@ -157,7 +157,7 @@ GOLDEN_PROJECT_SCORES = r"""[
         "Evidence exists but no item is marked strong.",
         "Cost line 4: Flag missing evidence.",
         "Claim entitlement is ambiguous and needs tax review.",
-        "Warnings cap the current rating at amber until review points are resolved."
+        "Warnings keep this project at \"review required\" until the review points are resolved."
       ]
     }
   },
@@ -205,7 +205,7 @@ GOLDEN_PROJECT_SCORES = r"""[
       "rating": "red",
       "rating_label": "not currently supportable",
       "recommended_next_actions": [
-        "Obtain signed competent professional opinion before treating the project as green.",
+        "Obtain a signed competent professional opinion before treating this project as \"strong candidate\".",
         "Add evidence for advance, uncertainty, resolution activity, cost, and boundaries.",
         "Add cost lines with activity links, evidence, and apportionment.",
         "Resolve blockers and warnings before including in an audit-ready claim pack.",

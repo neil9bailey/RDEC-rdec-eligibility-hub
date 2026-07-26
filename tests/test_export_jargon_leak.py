@@ -42,6 +42,7 @@ from app.reports import (
     generate_project_memo_markdown,
 )
 from app.rules_engine import get_rules
+from app.services import calculate_project_score
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -69,19 +70,13 @@ PROVENANCE_SECTIONS = {"Rule versions used"}
 # because they are keyword constants rather than stored values.
 PYTHON_LITERALS = re.compile(r"\b(?:True|False)\b")
 
-# Two scoring sentences name the band by its colour in prose. This sweep found them; E5 cannot
-# fix them. Both are pinned byte-for-byte in tests/test_scoring_golden_output.py, and the epic's
-# must-not-regress list keeps the golden scoring output unchanged, so changing the wording here
-# would mean re-baselining a golden in order to make a new test pass. They are recorded, not
-# exempted silently, and they leak on the HTML score panel too -- the frontend humanisation did
-# not catch them either. test_the_known_colour_prose_is_still_golden_pinned makes the exception
-# self-expiring: it fails the moment either sentence changes or stops being golden-pinned, so the
-# exemption cannot outlive its justification.
-GOLDEN_PINNED_COLOUR_PROSE = (
-    "Warnings cap the current rating at amber until review points are resolved.",
-    "Obtain signed competent professional opinion before treating the project as green.",
-)
-BULLET = re.compile(r"^\s*-\s*")
+SCORE_PANEL_TEMPLATE = REPO_ROOT / "app" / "templates" / "_score_panel.html"
+SCORE_PANEL_FIELD = re.compile(r"\bscore\.(\w+)")
+
+# ``score.rating`` is the CSS class and the ``dashboard_metrics`` key (ADR-0002 R2, ADR-0002 R9
+# Tier 1) and ``score.score`` is the number, so neither is reviewer-facing TEXT. Every other field
+# the panel renders is a sentence a reviewer reads.
+SCORE_PANEL_NON_TEXT_FIELDS = {"rating", "score"}
 
 
 def _string_literals(path: Path) -> set[str]:
@@ -260,8 +255,6 @@ def test_no_export_contains_a_bare_colour_rating(exports):
     leaks = []
     for name, export in exports.items():
         for number, line in scannable_lines(export):
-            if BULLET.sub("", line).strip() in GOLDEN_PINNED_COLOUR_PROSE:
-                continue
             for colour in colours:
                 if re.search(rf"\b{re.escape(colour)}\b", line):
                     leaks.append(f"{name} line {number}: {colour!r} in {line.strip()!r}")
@@ -269,24 +262,83 @@ def test_no_export_contains_a_bare_colour_rating(exports):
     assert not leaks, "a colour name was shown to a reviewer:\n" + "\n".join(leaks)
 
 
-def test_the_known_colour_prose_is_still_golden_pinned():
-    """The only two exempted sentences, and the reason they are exempt, must both still hold.
+def score_panel_text_fields() -> set[str]:
+    """The fields ``_score_panel.html`` puts in front of a reviewer AS TEXT, from the template.
 
-    If either sentence is reworded, or stops being pinned by the golden scoring output, the
-    exemption's justification is gone and it must be deleted rather than carried forward.
+    Derived rather than listed for the same reason as everything else in this module: a field
+    added to the panel tomorrow is scanned tomorrow, without anybody remembering to add it here.
     """
-    services = (REPO_ROOT / "app" / "services.py").read_text(encoding="utf-8")
-    golden = (REPO_ROOT / "tests" / "test_scoring_golden_output.py").read_text(encoding="utf-8")
+    template = SCORE_PANEL_TEMPLATE.read_text(encoding="utf-8")
+    rendered = set(SCORE_PANEL_FIELD.findall(template))
+    assert rendered, "the score panel no longer reads any score field; this scan is now vacuous"
+    return rendered - SCORE_PANEL_NON_TEXT_FIELDS
 
-    for sentence in GOLDEN_PINNED_COLOUR_PROSE:
-        assert sentence in services, (
-            f"{sentence!r} is no longer produced by app/services.py -- delete it from "
-            f"GOLDEN_PINNED_COLOUR_PROSE so the colour sweep covers that line again"
-        )
-        assert sentence in golden, (
-            f"{sentence!r} is no longer pinned by the golden scoring output, so the reason it "
-            f"was exempted has gone. Humanise the sentence and delete the exemption."
-        )
+
+def scoring_prose(session) -> dict[str, list[str]]:
+    """Every reviewer-facing sentence the scoring engine emits, per project.
+
+    This is the score panel's text (``_score_panel.html`` renders exactly these fields) and it is
+    also the text ``app/reports.py`` embeds verbatim in the project memo and the claim-period pack,
+    so one scan covers all three surfaces named in ADR-0002 R8.
+    """
+    fields = score_panel_text_fields() | {"recommended_next_actions"}
+    assert "rating_label" in fields and "warnings" in fields, (
+        "the panel no longer renders the band text or the warnings; re-derive this scan"
+    )
+    prose: dict[str, list[str]] = {}
+    for project in session.exec(select(RDProject)):
+        score = calculate_project_score(session, project.id or 0, sync=False)
+        lines: list[str] = []
+        for field in sorted(fields):
+            value = getattr(score, field)
+            lines.extend([value] if isinstance(value, str) else list(value))
+        prose[project.project_title] = lines
+    assert prose, "no project produced scoring prose; this scan is vacuous"
+    return prose
+
+
+def test_no_scoring_prose_contains_a_colour_word(seeded_session):
+    """ADR-0002 R8. The durable invariant that replaced the retired two-sentence exemption.
+
+    The exemption named two sentences; this names none. Any reintroduction of a colour word into
+    reviewer-facing scoring prose fails here, including from code that ruling never saw.
+
+    All four values are forbidden outright on THIS surface -- a rating band has no other meaning
+    inside scoring prose. Across a whole export the word ``weak`` is treated differently, by
+    ``test_no_export_presents_a_score_band_value_as_a_status``, because a seeded evidence item
+    genuinely has ``strength="weak"`` and the memo prints it: forbidding the word document-wide
+    would fail on correct English rather than on a leak.
+    """
+    forbidden = rating_values() | score_band_values()
+    assert forbidden >= {"green", "amber", "red", "weak"}, (
+        f"the band vocabulary no longer derives the four words R8 names: {sorted(forbidden)}"
+    )
+
+    leaks = []
+    for title, lines in scoring_prose(seeded_session).items():
+        for line in lines:
+            for word in sorted(forbidden):
+                if re.search(rf"\b{re.escape(word)}\b", line, re.IGNORECASE):
+                    leaks.append(f"{title}: {word!r} in {line!r}")
+
+    assert not leaks, "a rating band was named by its stored value in reviewer-facing prose:\n" + "\n".join(leaks)
+
+
+def test_the_scoring_prose_scan_reaches_the_sentences_r8_rewrote(seeded_session):
+    """A sweep that visits nothing passes everything.
+
+    R8 rewrote a cap explanation and a competent-professional next action. If the seeded dataset
+    stops producing either, the scan above still passes while guarding one less branch, so the
+    two branches are asserted to be reachable here rather than assumed.
+    """
+    everything = [line for lines in scoring_prose(seeded_session).values() for line in lines]
+
+    assert any(line.startswith("Warnings keep this project at ") for line in everything), (
+        "no seeded project reaches the warning-cap branch; the colour scan no longer covers it"
+    )
+    assert any(line.startswith("Obtain a signed competent professional opinion") for line in everything), (
+        "no seeded project reaches the missing-signoff branch; the colour scan no longer covers it"
+    )
 
 
 def test_no_export_presents_a_score_band_value_as_a_status(exports):

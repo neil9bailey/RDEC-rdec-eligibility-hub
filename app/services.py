@@ -519,6 +519,10 @@ def score_project_context(session: Session, context: ProjectContext, *, sync: bo
     """
     rules = get_rules()
     weights = rules.eligibility_weights()
+    # ADR-0002 R8: the reviewer-facing sentences below name the band by the same rule-file
+    # ``description`` the badge shows, read once here through the one accessor, so prose and
+    # badge cannot drift and an operator editing eligibility_weights.yml gets consistent copy.
+    bands = rules.score_bands()
     negative_advance_terms = rules.negative_advance_terms()
     negative_uncertainty_terms = rules.negative_uncertainty_terms()
     advance_stop_phrases = rules.review_flag_stop_phrases("advance")
@@ -606,7 +610,13 @@ def score_project_context(session: Session, context: ProjectContext, *, sync: bo
         positives.append("Signed competent professional opinion present.")
     else:
         blockers.append(rules.blocker_label("missing_competent_professional_signoff"))
-        next_actions.append("Obtain signed competent professional opinion before treating the project as green.")
+        # ADR-0002 R8. The quotation marks are load-bearing: they keep the sentence grammatical
+        # whatever the description is edited to, and they signal that the phrase names a status
+        # rather than asserting that the project has become one.
+        green_description = str(bands["green"]["description"])
+        next_actions.append(
+            f'Obtain a signed competent professional opinion before treating this project as "{green_description}".'
+        )
 
     if context.evidence:
         strong_evidence = sum(1 for item in context.evidence if item.strength == "strong")
@@ -656,13 +666,16 @@ def score_project_context(session: Session, context: ProjectContext, *, sync: bo
             next_actions.append("Review AIF and CT600 sequencing before relying on claim readiness.")
 
     score = max(0, min(100, int(score)))
-    bands = rules.score_bands()
     green_min = int(bands["green"]["min"])
     amber_min = int(bands["amber"]["min"])
     weak_min = int(bands["weak"]["min"])
     if warnings and not blockers and score >= green_min:
         score = green_min - 1
-        warnings.append("Warnings cap the current rating at amber until review points are resolved.")
+        # ADR-0002 R8, as above: the band is named by its rule-file description, in quotes.
+        amber_description = str(bands["amber"]["description"])
+        warnings.append(
+            f'Warnings keep this project at "{amber_description}" until the review points are resolved.'
+        )
     if blockers:
         rating = str(bands["red"]["label"])
         rating_label = str(bands["red"]["description"])
