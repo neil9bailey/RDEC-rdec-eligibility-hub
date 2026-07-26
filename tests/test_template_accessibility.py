@@ -1178,6 +1178,209 @@ def test_the_banner_cannot_widen_the_page(stylesheet: str) -> None:
     )
 
 
+# ==========================================================================
+# E5-RESTORE: the ADR-0004 D1 restore-by-identifier affordance
+#
+# app/main.py:538 publishes data_features.restore_by_identifier. No template
+# consumed it, so the mode was selectable only by a hand-crafted POST. These
+# tests pin the markup and the copy; the rendered on/off states are driven
+# through real requests in
+# tests/test_data_integrity_banner_and_restore_affordance.py.
+# ==========================================================================
+
+RESTORE_VALUE = 'value="restore_by_identifier"'
+
+
+def restore_block() -> str:
+    """The affordance markup, comments stripped.
+
+    The Jinja comment above it quotes finding C2 in full, including the record
+    names, so an unstripped source-level assertion would pass on the explanation.
+    """
+    source = re.sub(
+        r"\{#.*?#\}", "", DATA_MANAGEMENT_TEMPLATE.read_text(encoding="utf-8"), flags=re.S
+    )
+    match = re.search(
+        r"\{%\s*if data_features\.restore_by_identifier\s*%\}(.*?)\{%\s*endif\s*%\}",
+        source,
+        re.S,
+    )
+    assert match, (
+        "the import form does not offer the restore mode. app/main.py publishes "
+        "data_features.restore_by_identifier; with no control reading it, ADR-0004 D1's "
+        "operator-enabled mode is reachable only by a crafted POST."
+    )
+    return match.group(1)
+
+
+def test_the_restore_mode_is_offered_only_behind_its_feature_flag() -> None:
+    """The purge precedent, exactly: the control exists only when it is enabled.
+
+    Every occurrence of the mode value in the template must be inside the guard, so
+    there is no path on which it renders with the flag off.
+    """
+    source = re.sub(
+        r"\{#.*?#\}", "", DATA_MANAGEMENT_TEMPLATE.read_text(encoding="utf-8"), flags=re.S
+    )
+    block = restore_block()
+    assert RESTORE_VALUE in block, block
+    assert source.count(RESTORE_VALUE) == block.count(RESTORE_VALUE) == 1, (
+        "the restore mode value is emitted outside the feature guard"
+    )
+
+
+def test_the_restore_detector_fires_on_the_pre_fix_import_form() -> None:
+    """Non-vacuity: the form as it stood before this increment offered two modes."""
+    pre_fix = (
+        '<fieldset class="plain-fieldset">'
+        "<legend>How matches should be handled</legend>"
+        '<div class="segmented-options vertical">'
+        '<label><input type="radio" name="import_mode" value="add_only" checked>'
+        "<span>Add new only</span></label>"
+        '<label><input type="radio" name="import_mode" value="add_update">'
+        "<span>Add new and update matches</span></label>"
+        "</div></fieldset>"
+    )
+    assert RESTORE_VALUE not in pre_fix
+    assert not re.search(r"\{%\s*if data_features\.restore_by_identifier\s*%\}", pre_fix)
+
+
+def test_the_restore_control_stays_in_the_one_import_mode_group() -> None:
+    """It is styled apart, but it must still be the same radio group.
+
+    A different ``name`` would post a second field the route never reads, and the
+    two default pills would stay selected -- the operator would believe they had
+    chosen restore while submitting add_only.
+    """
+    block = restore_block()
+    radio = re.search(r"<input([^>]*type=\"radio\"[^>]*)>", block)
+    assert radio, block
+    assert 'name="import_mode"' in radio.group(1), radio.group(1)
+    assert "checked" not in radio.group(1), (
+        "the restore mode must never be the preselected option"
+    )
+
+
+def test_the_restore_control_is_not_a_third_segmented_pill() -> None:
+    """ADR-0004 D1: a deliberate restore operation, not an ordinary import mode.
+
+    Inside ``.segmented-options`` it would render as one more equal-weight pill next
+    to "Add new only", which is how the most destructive control in the import flow
+    gets chosen by accident.
+    """
+    source = re.sub(
+        r"\{#.*?#\}", "", DATA_MANAGEMENT_TEMPLATE.read_text(encoding="utf-8"), flags=re.S
+    )
+    segmented = re.findall(r'<div class="segmented-options[^"]*">(.*?)</div>', source, re.S)
+    assert segmented, "the segmented import-mode control was not found"
+    for group in segmented:
+        assert RESTORE_VALUE not in group, (
+            "the restore mode is rendered as another segmented pill; it must be a "
+            "separate, warned control"
+        )
+    assert 'class="restore-option"' in restore_block()
+
+
+def test_the_restore_control_carries_its_warning_and_its_accessible_name() -> None:
+    """The wrapping label is what names the radio, and it is also the warning.
+
+    Same construction as .purge-scope: everything a screen reader announces for the
+    control is the same text a sighted user reads before choosing it.
+    """
+    block = restore_block()
+    assert not unnamed_controls(block), unnamed_controls(block)
+    label = re.search(r'<label class="restore-option">(.*?)</label>', block, re.S)
+    assert label, block
+    visible = " ".join(re.sub(r"<[^>]+>", " ", label.group(1)).split())
+    assert "<input" in label.group(1) or "input" in label.group(1)
+    for required in ("Hub reference", "replace", "never names"):
+        assert required.lower() in visible.lower(), (
+            f"the restore warning does not say {required!r}; it must state that an "
+            f"uploaded reference decides which live record is overwritten. Got: {visible!r}"
+        )
+    assert len(visible) > 200, (
+        f"the warning is too thin for the risk it carries: {visible!r}"
+    )
+
+
+def test_the_restore_warning_does_not_use_amber() -> None:
+    """Amber means "needs attention" here; this destroys live records on purpose.
+
+    The purge controls are red. Using amber for this would put it in the same visual
+    class as an import row that merely changes a field.
+    """
+    stylesheet_text = STYLESHEET.read_text(encoding="utf-8")
+    body = css_rule_body(".restore-option", stylesheet_text)
+    assert "--amber" not in body and "#fff0c7" not in body and "#fff8e6" not in body, body
+    assert "var(--red)" in body or "#e2b3b3" in body, (
+        f"the restore control must carry the same red treatment as the purge controls: {body!r}"
+    )
+    block = restore_block()
+    assert "amber" not in block, block
+
+
+def test_the_restore_control_meets_contrast_and_keeps_a_visible_focus_ring(
+    stylesheet: str,
+) -> None:
+    """A new surface is a new backdrop for the focus ring; SC 1.4.11 is per surface.
+
+    ``.restore-option`` hosts a real radio, so the ring is drawn against this panel's
+    own background rather than any of the four colours already pinned above.
+    """
+    body = css_rule_body(".restore-option", stylesheet)
+    background = re.search(r"background\s*:\s*(#[0-9a-fA-F]{3,6})\s*;", body)
+    assert background, body
+    ring = css_custom_property("focus-ring", stylesheet)
+    ratio = contrast_ratio(parse_hex(ring), parse_hex(background.group(1)))
+    assert ratio >= MINIMUM_FOCUS_CONTRAST, (
+        f"the focus ring {ring} measures {ratio:.2f}:1 against the restore panel "
+        f"{background.group(1)}"
+    )
+    warning = css_rule_body(".restore-option em", stylesheet)
+    colour = re.search(r"(?<![-\w])color\s*:\s*(#[0-9a-fA-F]{3,6})\s*;", warning)
+    assert colour, warning
+    text_ratio = contrast_ratio(parse_hex(colour.group(1)), parse_hex(background.group(1)))
+    assert text_ratio >= 4.5, (
+        f"the restore warning text measures {text_ratio:.2f}:1 at 12px, below SC 1.4.3"
+    )
+    # The radio must not inherit the global input width: 100%.
+    assert re.search(r"width\s*:\s*auto", css_rule_body(".restore-option input", stylesheet))
+
+
+def test_the_restore_control_cannot_widen_the_page(stylesheet: str) -> None:
+    """ADR-0002 line 70: no horizontal page overflow, measured at 360px.
+
+    The two mechanisms that cause it here are a fixed width and a grid track that
+    refuses to shrink below its content. ``minmax(0, 1fr)`` is the guard the rest of
+    this stylesheet uses; ``1fr`` alone is ``minmax(auto, 1fr)`` and blows out.
+    """
+    for selector in (".restore-option", ".restore-mode", ".restore-preview-note"):
+        body = css_rule_body(selector, stylesheet)
+        assert not re.search(r"(?<!max-)(?<!min-)width\s*:\s*\d", body), (
+            f"{selector} declares a fixed width: {body.strip()!r}"
+        )
+        for track in re.findall(r"grid-template-columns\s*:\s*([^;]+);", body):
+            assert "minmax(0" in track or "auto" in track, (
+                f"{selector} uses a non-shrinking track {track!r}; use minmax(0, 1fr)"
+            )
+    # The fieldset it lives in must keep the min-width: 0 that lets it shrink at all.
+    assert re.search(r"min-width\s*:\s*0", css_rule_body(".plain-fieldset", stylesheet)) or (
+        "min-width: 0" in stylesheet.split(".plain-fieldset")[1][:200]
+    )
+
+
+def test_the_restore_control_does_not_reflow_the_form_when_it_is_off(
+    stylesheet: str,
+) -> None:
+    """The affordance is additive. With the flag off the import form is unchanged."""
+    source = DATA_MANAGEMENT_TEMPLATE.read_text(encoding="utf-8")
+    assert "{{ ' with-restore-mode' if data_features.restore_by_identifier }}" in source, (
+        "the full-width span must itself be conditional, or the default layout moves"
+    )
+    body = css_rule_body(".plain-fieldset.with-restore-mode", stylesheet)
+    assert "grid-column" in body, body
+
+
 def test_no_template_disables_autoescaping() -> None:
     """Confirmed-good before this increment: no |safe anywhere. Keep it that way."""
     offenders = []

@@ -118,12 +118,42 @@
             {% endfor %}
           </select>
         </div>
-        <fieldset class="plain-fieldset">
+        <fieldset class="plain-fieldset{{ ' with-restore-mode' if data_features.restore_by_identifier }}">
           <legend>How matches should be handled</legend>
           <div class="segmented-options vertical">
             <label><input type="radio" name="import_mode" value="add_only" checked><span>Add new only</span></label>
             <label><input type="radio" name="import_mode" value="add_update"><span>Add new and update matches</span></label>
           </div>
+          {#- ADR-0004 D1. The restore mode was reachable only by a crafted POST: the setting was
+              read by the route and published here, but no control ever offered it.
+
+              Rendered only when an operator has deliberately turned it on, exactly as the purge
+              controls are (data_features.purge, further down this page). It defaults off and must
+              never be a release default.
+
+              Deliberately not a third pill in the segmented control above. It is the same radio
+              group -- one name, one submitted value -- but it is the highest-risk control in this
+              flow and reading as an ordinary third option is how it gets picked by accident.
+              Finding C2 is what it does when it is wrong: a file carrying reference 1 replaced a
+              live contract, "Passenger Insight Framework - Work Order 7" became "TOTALLY DIFFERENT
+              CONTRACT", and the preview never named the record it destroyed.
+
+              Red, not amber. Amber in this interface means "needs attention"; this overwrites live
+              records by a reference the file asserts, which is the same class of act as purge and
+              carries the same colour. -#}
+          {% if data_features.restore_by_identifier %}
+            <div class="restore-mode">
+              <p class="restore-mode-title">Restoring a backup</p>
+              <label class="restore-option">
+                <input type="radio" name="import_mode" value="restore_by_identifier">
+                <span>
+                  <strong>Restore records by their Hub reference</strong>
+                  <small>Only for putting back a backup that was taken from this workspace.</small>
+                  <em>This makes the Hub reference in the file decide which record changes, so an uploaded row can replace a live record it never names. A row carrying reference 1 overwrites whatever holds reference 1 here, field for field, however unrelated the two records are. References are not shared between workspaces or between exports. Read the live record named on every row of the preview before you apply.</em>
+                </span>
+              </label>
+            </div>
+          {% endif %}
         </fieldset>
       </div>
       <button type="submit">Preview import</button>
@@ -149,6 +179,17 @@
       {#- ADR-0004 D1.3. A data area with no natural key can never be matched, so a default
           import can only ever add to it and a second upload of the same file duplicates every
           row. The operator has to be told that before they apply, not after. -#}
+      {#- ADR-0004 D1 and D1.4. Which mode produced this preview is a fact about what the
+          "Apply" button would do, and it is the one fact the operator cannot recover from the
+          rows. In restore mode the match came from the reference in the file, not from the
+          record's name, so a row can be about to replace a live record that looks nothing like
+          it. Named here, at the point of decision, rather than left in the form above. -#}
+      {% if import_preview.mode == 'restore_by_identifier' %}
+        <div class="danger-panel restore-preview-note" role="note">
+          <p class="restore-preview-title">This preview was produced in restore-by-identifier mode.</p>
+          <p>Each live record shown in the "Live record it would change" column was matched by the Hub reference in the file, not by its name. Applying this import replaces those records with the uploaded rows. Check every one of them by name first.</p>
+        </div>
+      {% endif %}
       {% if import_preview.notices %}
         <div class="warning-panel preview-notices" role="note">
           <p class="preview-notices-title">Read this before you apply</p>
@@ -228,8 +269,15 @@
       {% elif import_payload %}
         <form method="post" action="/data-management/import/apply" class="confirm-action">
           <input type="hidden" name="import_payload" value="{{ import_payload }}">
-          <label class="checkbox"><input type="checkbox" required> I have reviewed the additions and updates shown above.</label>
-          <button type="submit">Apply these changes</button>
+          {#- The confirmation has to describe the act being confirmed. In restore mode that act
+              is replacing named live records, not adding and updating. -#}
+          {% if import_preview.mode == 'restore_by_identifier' %}
+            <label class="checkbox"><input type="checkbox" required> I have checked every live record listed above and I am deliberately restoring a backup over them.</label>
+            <button class="danger-button" type="submit">Replace the records listed above</button>
+          {% else %}
+            <label class="checkbox"><input type="checkbox" required> I have reviewed the additions and updates shown above.</label>
+            <button type="submit">Apply these changes</button>
+          {% endif %}
         </form>
       {% endif %}
     </div>

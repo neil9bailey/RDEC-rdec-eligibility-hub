@@ -16,12 +16,18 @@ runs against a response produced by the application, in both states of the condi
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import select
 
 from app import data_integrity
 from app.database import get_session
 from app.main import app
+from app.models import BusinessUnit, Contract, Customer
+from app.settings import get_settings
 
 CAVEAT = "Requires competent professional and tax review."
 
@@ -156,3 +162,196 @@ def test_the_banner_does_not_suppress_a_flash_message(session, warned) -> None:
         "the persistent banner is expected first; if this order is changed, change it "
         "deliberately rather than by accident"
     )
+
+
+# --------------------------------------------------------------------------
+# ADR-0004 D1 -- the restore-by-identifier affordance
+# --------------------------------------------------------------------------
+
+RESTORE_VALUE = 'value="restore_by_identifier"'
+RESTORE_CONTROL = 'class="restore-option"'
+LIVE_CONTRACT_NAME = "Passenger Insight Framework - Work Order 7"
+UPLOADED_CONTRACT_NAME = "TOTALLY DIFFERENT CONTRACT"
+
+
+@pytest.fixture()
+def live_contract(session):
+    """The record finding C2 destroyed, rebuilt so the affordance is exercised on it."""
+    unit = BusinessUnit(name="Transport", description="Reference unit")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    customer = Customer(customer_name="Transport for London", business_unit_id=unit.id)
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    contract = Contract(contract_name=LIVE_CONTRACT_NAME, customer_id=customer.id)
+    session.add(contract)
+    session.commit()
+    session.refresh(contract)
+    return contract
+
+
+@pytest.fixture()
+def restore_enabled(monkeypatch):
+    """The operator action ADR-0004 D1 requires. Off by default, never a release default."""
+    monkeypatch.setattr(get_settings(), "data_restore_by_identifier_enabled", True)
+
+
+def upload_for(contract_id: int, customer_id: int) -> dict:
+    """A file whose only claim on the live contract is its Hub reference."""
+    payload = {
+        "datasets": {
+            "contracts": [
+                {
+                    "id": contract_id,
+                    "contract_name": UPLOADED_CONTRACT_NAME,
+                    "customer_id": customer_id,
+                }
+            ]
+        }
+    }
+    return {
+        "import_file": ("restore.json", json.dumps(payload).encode("utf-8"), "application/json")
+    }
+
+
+def test_the_import_form_offers_nothing_while_the_gate_is_shut(session) -> None:
+    """The purge precedent: the control is not rendered at all when it is off.
+
+    ``get_settings().data_restore_by_identifier_enabled`` is False by default, so this is
+    the state of every workspace that has not deliberately been changed.
+    """
+    assert get_settings().data_restore_by_identifier_enabled is False
+    body = client_for(session).get("/data-management").text
+    assert RESTORE_VALUE not in body
+    assert RESTORE_CONTROL not in body
+    assert "Restoring a backup" not in body
+    assert "with-restore-mode" not in body, (
+        "the fieldset takes its full-width span even with the feature off, so the "
+        "default import layout has moved"
+    )
+    # ...while the two default modes are untouched.
+    assert 'value="add_only"' in body
+    assert 'value="add_update"' in body
+
+
+def test_the_import_form_offers_the_restore_mode_once_an_operator_enables_it(
+    session, restore_enabled
+) -> None:
+    body = client_for(session).get("/data-management").text
+    assert RESTORE_VALUE in body
+    assert RESTORE_CONTROL in body
+    assert "Restoring a backup" in body
+    control = body.split(RESTORE_CONTROL, 1)[1].split("</label>", 1)[0]
+    assert 'name="import_mode"' in control, control
+    assert "checked" not in control, "the restore mode must never be preselected"
+
+
+def test_the_rendered_warning_states_what_the_mode_actually_does(
+    session, restore_enabled
+) -> None:
+    """The copy has to earn its place: this is how finding C2 destroyed a live contract."""
+    body = client_for(session).get("/data-management").text
+    control = body.split(RESTORE_CONTROL, 1)[1].split("</label>", 1)[0]
+    visible = " ".join(re.sub(r"<[^>]+>", " ", control).split())
+    assert "Hub reference" in visible
+    assert "replace a live record it never names" in visible, visible
+    assert "backup" in visible.lower()
+    assert "References are not shared between workspaces" in visible, visible
+    # Not a verdict, and not a promise the Hub will look after it (ADR-0002 line 59).
+    for word in ("approved", "rejected", "qualifies", "safely", "automatically"):
+        assert word not in visible.lower(), f"restore copy contains {word!r}: {visible!r}"
+
+
+def test_the_offered_value_is_the_one_the_backend_accepts(
+    session, live_contract, restore_enabled
+) -> None:
+    """Drive the affordance: read the value out of the rendered form and post it.
+
+    A control that offers a value the route refuses is worse than no control. The value
+    is taken from the page rather than written into the test, so a typo in the template
+    cannot pass.
+    """
+    client = client_for(session)
+    body = client.get("/data-management").text
+    offered = re.findall(r'<input[^>]*name="import_mode"[^>]*value="([^"]+)"', body)
+    assert "restore_by_identifier" in offered, offered
+
+    response = client.post(
+        "/data-management/import/preview",
+        data={"data_area": "contracts", "import_mode": "restore_by_identifier"},
+        files=upload_for(int(live_contract.id), int(live_contract.customer_id)),
+    )
+    assert response.status_code == 200, response.text[:500]
+    assert "Restore by identifier is turned off." not in response.text
+
+
+def test_the_preview_names_the_live_record_and_says_which_mode_produced_it(
+    session, live_contract, restore_enabled
+) -> None:
+    """ADR-0004 D1.4. The mode is the one fact the rows themselves cannot carry."""
+    response = client_for(session).post(
+        "/data-management/import/preview",
+        data={"data_area": "contracts", "import_mode": "restore_by_identifier"},
+        files=upload_for(int(live_contract.id), int(live_contract.customer_id)),
+    )
+    assert response.status_code == 200
+    assert "restore-preview-note" in response.text, (
+        "the preview does not disclose that it was produced in restore mode"
+    )
+    note = response.text.split("restore-preview-note", 1)[1].split("</div>", 1)[0]
+    assert "matched by the Hub reference in the file, not by its name" in note, note
+    # D1.4: both names on the row, so the substitution is visible.
+    assert LIVE_CONTRACT_NAME in response.text
+    assert UPLOADED_CONTRACT_NAME in response.text
+
+
+def test_the_confirmation_describes_replacement_not_addition(
+    session, live_contract, restore_enabled
+) -> None:
+    """The last control before the write must name the act it authorises."""
+    response = client_for(session).post(
+        "/data-management/import/preview",
+        data={"data_area": "contracts", "import_mode": "restore_by_identifier"},
+        files=upload_for(int(live_contract.id), int(live_contract.customer_id)),
+    )
+    assert response.status_code == 200
+    confirm = response.text.split('class="confirm-action"', 1)[1]
+    assert "deliberately restoring a backup over them" in confirm, confirm[:600]
+    assert "Replace the records listed above" in confirm
+    assert "I have reviewed the additions and updates shown above." not in confirm
+    assert "danger-button" in confirm, "the submit control is not marked as destructive"
+
+
+def test_a_default_import_preview_carries_none_of_the_restore_copy(
+    session, live_contract, restore_enabled
+) -> None:
+    """Enabling the mode must not colour every preview. Only the restore one changes."""
+    response = client_for(session).post(
+        "/data-management/import/preview",
+        data={"data_area": "contracts", "import_mode": "add_update"},
+        files=upload_for(int(live_contract.id), int(live_contract.customer_id)),
+    )
+    assert response.status_code == 200
+    assert "restore-preview-note" not in response.text
+    assert "I have reviewed the additions and updates shown above." in response.text
+    assert "Replace the records listed above" not in response.text
+    # The affordance itself is still offered on the same page.
+    assert RESTORE_VALUE in response.text
+
+
+def test_the_restore_affordance_never_writes_by_being_rendered(
+    session, live_contract, restore_enabled
+) -> None:
+    """Preview changes nothing: the live contract is untouched by everything above."""
+    client = client_for(session)
+    client.get("/data-management")
+    client.post(
+        "/data-management/import/preview",
+        data={"data_area": "contracts", "import_mode": "restore_by_identifier"},
+        files=upload_for(int(live_contract.id), int(live_contract.customer_id)),
+    )
+    session.expire_all()
+    assert session.get(Contract, live_contract.id).contract_name == LIVE_CONTRACT_NAME
+    assert len(list(session.exec(select(Contract)))) == 1
