@@ -24,8 +24,9 @@ import re
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import event
-from sqlmodel import Session, select
+from sqlalchemy import event, func
+from sqlalchemy import select as sa_select
+from sqlmodel import Session, SQLModel, select
 
 import app.database as database
 import app.main as main
@@ -37,6 +38,7 @@ from app.models import (
     CostLine,
     Customer,
     EntitlementAssessment,
+    EvidenceItem,
     RDProject,
     Solution,
 )
@@ -136,6 +138,34 @@ def build_dataset(session: Session) -> tuple[int, list[int]]:
 
     assert not list(session.exec(select(EntitlementAssessment))), "fixture must start unassessed"
     return int(period.id or 0), [int(project.id or 0) for project in projects]
+
+
+@pytest.fixture(autouse=True)
+def _the_application_carries_no_session_override():
+    """Every proof in this module is "no row was created". An override makes that free.
+
+    This module deliberately does not install a ``get_session`` override: it rebinds the
+    engine and lets the real dependency run, so the rows it counts are the rows the
+    application actually wrote. That makes it the victim, not the source, of the known
+    ``client_for`` leak - a module that clears ``app.dependency_overrides`` when the *next*
+    client is built leaves its last test's override bound to a session that is already torn
+    down, and a plain ``TestClient(main.app)`` built afterwards writes into that dead session.
+    Writes then vanish and every assertion here passes for the wrong reason.
+
+    So the precondition is asserted rather than silently repaired: repairing it would hide the
+    leak in whichever module caused it, and passing without it would manufacture conformance.
+    The teardown clear is the pattern this module owes the next one, and holds even if a future
+    test here installs an override.
+    """
+    leaked = sorted(getattr(key, "__name__", repr(key)) for key in main.app.dependency_overrides)
+    assert not leaked, (
+        "a previous test module left dependency overrides installed on app.main.app "
+        f"({leaked}); every 'no row was created' assertion in this module would pass "
+        "vacuously because the write went to a torn-down session. Clear overrides in an "
+        "autouse teardown, not when the next client is built."
+    )
+    yield
+    main.app.dependency_overrides.clear()
 
 
 @pytest.fixture()
@@ -375,3 +405,210 @@ def test_saving_an_assessment_creates_exactly_one_row_and_one_audit_event(unrend
     assert len(saved_note) == 1
     assert RECORDED_LABEL in saved_note[0]
     assert sum(RESOLVED_LABEL in line for line in notes) == PROJECT_COUNT - 1
+
+
+# --------------------------------------------------------------------------------------
+# P3-ADR0006-NO-UNINTENDED-WRITE
+#
+# ADR-0006 Verification item 5, amendment A2, property P3: "no unintended write is added".
+#
+# Item 5 used to read `grep -n "sync=" app/main.py app/reports.py` shows sync=False "nowhere
+# on a POST path". Raised at G3 as a contradiction, because sync=False does appear on two POST
+# handlers. The EA ruled the clause over-broad and the code conformant: both sites are the htmx
+# render branch, reached after save_with_audit has already committed the row the route exists
+# to write. sync=True there would create an EntitlementAssessment plus an audit event as a side
+# effect of saving a cost line, and - because the full-page branch of the same POST redirects to
+# a GET that scores sync=False - one user action would produce two different database outcomes
+# depending on whether htmx was active.
+#
+# A grep over a 2,400-line module cannot tell a handler's write phase from its render phase, and
+# that distinction is the whole subject of the ADR. So the property is measured instead of spelt:
+# take a row count of every table before and after, and read off what the request actually wrote.
+#
+# Status is not evidence here. Two routes in this application return a perfectly correct 303
+# while committing an orphan row, so a status-only assertion would report conformance for a
+# request that had written.
+# --------------------------------------------------------------------------------------
+
+HTMX = {"HX-Request": "true"}
+
+VALID_COST_FORM = {
+    "cost_input_type": "direct_cost",
+    "cost_category": "consumables",
+    "activity": "Rig calibration",
+    "person_or_supplier_name": "Aerodyne Ltd",
+    "gross_cost": "12000",
+    "apportionment_percentage": "80",
+    "paid_status": "paid",
+    "uk_or_overseas": "UK",
+    "connected_party_status": "unconnected",
+    "evidence_link": "INV-2291",
+}
+
+VALID_EVIDENCE_FORM = {
+    "source_system": "Manual upload / note",
+    "source_reference": "SPIKE-114",
+    "url_or_file_path": "//evidence/spike-114.md",
+    "date_created": "2026-02-11",
+    "evidence_type": "technical spike",
+    "relevance_tag": "uncertainty",
+    "strength": "strong",
+    "notes": "Rig calibration spike write-up.",
+}
+
+#: The two POSTs the ruling is about: routes that write something *other* than an assessment.
+NON_ASSESSMENT_POSTS = {
+    "costs": ("costs", VALID_COST_FORM, CostLine),
+    "evidence": ("evidence", VALID_EVIDENCE_FORM, EvidenceItem),
+}
+
+ASSESSMENTS = EntitlementAssessment.__tablename__
+AUDIT = AuditEvent.__tablename__
+
+
+def table_counts(engine) -> dict[str, int]:
+    """One row count per mapped table.
+
+    Counting every table rather than only ``EntitlementAssessment`` is deliberate: the write
+    this property forbids arrives with an audit event attached, and a per-model count would
+    report the assessment while missing the second row it drags into the history.
+    """
+    with Session(engine) as session:
+        return {
+            name: session.execute(sa_select(func.count()).select_from(table)).scalar_one()
+            for name, table in sorted(SQLModel.metadata.tables.items())
+        }
+
+
+def rows_written(before: dict[str, int], after: dict[str, int]) -> dict[str, int]:
+    """Tables whose row count moved, and by how much. Empty means the request wrote nothing."""
+    return {name: after[name] - before[name] for name in after if after[name] != before[name]}
+
+
+def assert_htmx_branch(response) -> None:
+    """The htmx branch really ran: a fragment, not a document, with the out-of-band panel."""
+    assert response.status_code == 200, response.status_code
+    body = response.text
+    assert "<!doctype html>" not in body.lower(), "htmx POST returned a full page, not a partial"
+    assert 'id="save-errors" hx-swap-oob="innerHTML"' in body
+    assert 'id="eligibility-score"' in body
+
+
+def assert_full_page_branch(response, expected_location: str) -> None:
+    """The full-page branch really ran: the redirect, not the partial."""
+    assert response.status_code == 303, response.status_code
+    assert response.headers["location"] == expected_location
+    assert 'hx-swap-oob' not in response.text
+
+
+@pytest.mark.parametrize("route_key", sorted(NON_ASSESSMENT_POSTS))
+@pytest.mark.parametrize("htmx", [True, False], ids=["htmx_branch", "full_page_branch"])
+def test_a_cost_or_evidence_save_creates_no_entitlement_assessment(unrendered_hub, route_key, htmx):
+    """ADR-0006 item 5 / P3, on both branches of both routes.
+
+    The forbidden write and the required one are asserted together. "No assessment row" is
+    trivially true of a request that saved nothing at all - a rejected form, a missing parent,
+    a 500 - so the cost line or evidence item this route exists to store must be shown to have
+    landed in the same breath.
+    """
+    client, engine, _, project_ids = unrendered_hub
+    project_id = project_ids[0]
+    segment, payload, child_model = NON_ASSESSMENT_POSTS[route_key]
+    url = f"/projects/{project_id}/{segment}"
+    child_table = child_model.__tablename__
+
+    before = table_counts(engine)
+    response = client.post(
+        url,
+        data=payload,
+        headers=HTMX if htmx else {},
+        follow_redirects=False,
+    )
+    after = table_counts(engine)
+
+    if htmx:
+        assert_htmx_branch(response)
+    else:
+        assert_full_page_branch(response, url)
+
+    written = rows_written(before, after)
+    # The intended write. Without this the property below is satisfied by doing nothing.
+    assert written.get(child_table) == 1, f"the save did not store a row: {written}"
+    # P3 itself.
+    assert written.get(ASSESSMENTS, 0) == 0, (
+        f"POST {url} created {written.get(ASSESSMENTS)} EntitlementAssessment row(s); "
+        "an assessment's genesis must be a person saving one, not a panel that rendered"
+    )
+    # Nothing else moved either - an assessment arrives with an audit event, and a count
+    # restricted to the assessments table would report the row but not its companion.
+    assert written == {child_table: 1, AUDIT: 1}, f"unexpected rows written: {written}"
+
+
+@pytest.mark.parametrize("route_key", sorted(NON_ASSESSMENT_POSTS))
+def test_htmx_and_full_page_saves_leave_the_same_rows_behind(unrendered_hub, route_key):
+    """One user action, one database outcome, whether or not htmx was active (ADR-0006 A1).
+
+    This is the reason the ruling made ``sync=False`` on the render branch required rather than
+    merely permitted. Comparing the two branches against each other, rather than each against a
+    literal, is what makes the divergence itself the failure.
+    """
+    client, engine, _, project_ids = unrendered_hub
+    project_id = project_ids[0]
+    segment, payload, _ = NON_ASSESSMENT_POSTS[route_key]
+    url = f"/projects/{project_id}/{segment}"
+
+    before_full_page = table_counts(engine)
+    full_page = client.post(url, data=payload, follow_redirects=False)
+    after_full_page = table_counts(engine)
+    partial = client.post(url, data=payload, headers=HTMX, follow_redirects=False)
+    after_partial = table_counts(engine)
+
+    assert_full_page_branch(full_page, url)
+    assert_htmx_branch(partial)
+    full_page_rows = rows_written(before_full_page, after_full_page)
+    partial_rows = rows_written(after_full_page, after_partial)
+    assert partial_rows == full_page_rows, (
+        "the same save wrote different rows depending on the transport: "
+        f"full page {full_page_rows}, htmx {partial_rows}"
+    )
+    assert ASSESSMENTS not in full_page_rows
+
+
+def test_the_row_counter_sees_the_write_that_is_supposed_to_happen(unrendered_hub):
+    """The control for P3: prove the measurement can tell the two POST classes apart.
+
+    P3 asserts an absence, and an absence is also what a broken counter reports, and what a
+    build with entitlement writing removed altogether would report. Both POST classes are
+    therefore run through the identical apparatus in one test: the cost save must move no
+    assessment row and the assessment save must move exactly one. If
+    ``POST /projects/{id}/assessment`` ever stopped recording its assessment this goes red,
+    which is precisely what P3 on its own could not do.
+    """
+    client, engine, period_id, project_ids = unrendered_hub
+    project_id = project_ids[0]
+
+    before_cost = table_counts(engine)
+    client.post(f"/projects/{project_id}/costs", data=VALID_COST_FORM, follow_redirects=False)
+    after_cost = table_counts(engine)
+
+    saved = client.post(
+        f"/projects/{project_id}/assessment",
+        data={
+            "accounting_period_id": str(period_id),
+            "outcome": "unresolved",
+            "company_role": "framework supplier",
+            "advance_sought": "Advance recorded for this dataset.",
+            "scientific_or_technological_uncertainties": "Uncertainty recorded for this dataset.",
+        },
+        follow_redirects=False,
+    )
+    after_assessment = table_counts(engine)
+
+    assert saved.status_code == 303
+    cost_rows = rows_written(before_cost, after_cost)
+    assessment_rows_written = rows_written(after_cost, after_assessment)
+    assert cost_rows.get(ASSESSMENTS, 0) == 0, cost_rows
+    assert assessment_rows_written.get(ASSESSMENTS) == 1, (
+        "the assessment route wrote no EntitlementAssessment, so P3's absence proves nothing: "
+        f"{assessment_rows_written}"
+    )
