@@ -7,11 +7,13 @@ from sqlmodel import Session, select
 from app.models import CostLine, EvidenceItem, ReviewDecision, RDProject
 from app.services import (
     CAVEAT,
+    ProjectContext,
     aif_readiness_for_period,
     bulk_project_contexts,
     calculate_project_score,
     cost_summary_by_category,
     cost_validation_warnings,
+    entitlement_facts_for_context,
     get_project_context,
     money,
     project_qualifying_spend,
@@ -23,6 +25,31 @@ from app.rule_loader import rules_version_summary
 
 COST_OUTPUT_CAVEAT = "Qualifying expenditure captured for review; relief value and payable credit are not calculated by this MVP."
 ENTITLEMENT_CAVEAT = "Contracted-out and irrelievable-client treatment requires tax review."
+
+# ADR-0006 D4.3: provenance statements about the Hub's own records. They are not ratings, not
+# approvals and not tax statements, and they add no term to the controlled vocabulary.
+RECORDED_ASSESSMENT_LABEL = "(recorded assessment)"
+RESOLVED_ASSESSMENT_LABEL = "(resolved from current project facts; no assessment recorded yet)"
+ASSESSMENT_NOT_RECORDED = "no - resolved from current project facts"
+
+
+def entitlement_position(context: ProjectContext) -> tuple[str, str, bool]:
+    """The entitlement status and rationale to report, plus whether a row is stored.
+
+    ADR-0006 D4. The position is derived from the resolved facts and never from the presence of a
+    row. Before this, the pack appended a note only ``if context.entitlement``, and the row was
+    created by the render itself while scoring -- so a first render omitted the note and a second
+    render, from identical data, included it. A document offered as claim evidence whose content
+    depends on how many times it has been rendered is not evidence.
+
+    The unrecorded branch reads ``entitlement_facts_for_context``, which is the same pure resolver
+    that ``sync_entitlement_for_project`` persists, so the recorded and resolved wordings cannot
+    disagree for the same facts.
+    """
+    if context.entitlement:
+        return context.entitlement.status, context.entitlement.rationale, True
+    result = entitlement_facts_for_context(context)[1]
+    return result.status, result.rationale, False
 
 
 def bullet_list(items: list[str]) -> str:
@@ -113,9 +140,11 @@ def markdown_table(lines: list[str]) -> str:
 
 def generate_project_memo_markdown(session: Session, project_id: int) -> str:
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    # ADR-0006 D1/D2: this memo is built from a GET, including the ?format=md download, so it
+    # scores read-only. A Markdown download route is a GET that happens to return text/markdown.
+    score = calculate_project_score(session, project_id, sync=False)
     project = context.project
-    entitlement = context.entitlement
+    entitlement_status, entitlement_rationale, entitlement_recorded = entitlement_position(context)
     cost_summary = cost_summary_by_category(context.costs)
     total_spend = project_qualifying_spend(context.costs)
 
@@ -197,8 +226,9 @@ Total qualifying amount captured: {money(total_spend)}
 ## Entitlement assessment
 {ENTITLEMENT_CAVEAT}
 
-- Status: {entitlement.status if entitlement else "Not assessed"}
-- Rationale: {entitlement.rationale if entitlement else "Not assessed"}
+- Status: {entitlement_status}
+- Rationale: {entitlement_rationale}
+- Assessment recorded: {"yes" if entitlement_recorded else ASSESSMENT_NOT_RECORDED}
 
 ## Score and risk rating
 - Score: {score.score}
@@ -230,18 +260,25 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
     project_readiness_lines: list[str] = []
 
     # One batched load for every project in the period, instead of ~10 queries per project.
-    # Contexts are built before any score is computed, exactly as the per-project loop did, so a
-    # project whose entitlement assessment is created while scoring still reports no entitlement
-    # note on this render -- the pack's content is unchanged by the batching.
+    # Contexts are built before any score is computed. That used to decide the pack's content,
+    # because scoring created the assessment row that the note was conditional on; under
+    # ADR-0006 the note is derived from the resolved facts, so build order no longer matters.
     contexts = bulk_project_contexts(session, projects)
     for project in projects:
         context = contexts[project.id or 0]
-        score = score_project_context(session, context)
+        # ADR-0006 D1/D2: reached from GET /claim-periods/{id}/pack. Scoring 120 projects here
+        # committed 120 times inside a read, and every commit expired the identity map that the
+        # batching above exists to fill.
+        score = score_project_context(session, context, sync=False)
         all_costs.extend(context.costs)
         if not context.evidence:
             evidence_gaps.append(f"{project.project_title}: no evidence linked")
-        if context.entitlement:
-            entitlement_notes.append(f"{project.project_title}: {context.entitlement.status} - {context.entitlement.rationale}")
+        # ADR-0006 D4.1: exactly one note per project, in the existing project order, each
+        # labelled with where the position came from. Previously an unassessed project was
+        # silently absent from this list.
+        status, rationale, recorded = entitlement_position(context)
+        label = RECORDED_ASSESSMENT_LABEL if recorded else RESOLVED_ASSESSMENT_LABEL
+        entitlement_notes.append(f"{project.project_title}: {status} - {rationale} {label}")
         people_time.extend([f"{project.project_title}: {line}" for line in people_time_lines(context.costs)])
         cost_warnings.extend(cost_warning_lines(context.costs, project.project_title))
         project_lines.append(

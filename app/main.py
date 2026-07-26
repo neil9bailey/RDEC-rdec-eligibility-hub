@@ -1940,7 +1940,10 @@ def projects(request: Request, session: Session = Depends(get_session)):
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
     solution_map = {solution.id: solution for solution in solutions}
     period_map = {period.id: period for period in periods}
-    scores = bulk_project_scores(session, projects)
+    # ADR-0006 D1. Not in D2's list of named sites, and measured committing once per unassessed
+    # project on the pre-fix tree: D1 is an invariant over every GET route, not only the seven
+    # the escalation happened to enumerate, so the read-only argument is passed here too.
+    scores = bulk_project_scores(session, projects, sync=False)
     return templates.TemplateResponse(
         request,
         "projects.html",
@@ -2077,7 +2080,12 @@ def project_detail(project_id: int, request: Request, session: Session = Depends
     if not session.get(RDProject, project_id):
         return redirect("/projects")
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    # ADR-0006 D1/D2: a GET must not commit. With the default sync=True, scoring a project that
+    # has no EntitlementAssessment created and committed one from inside a page render, so an
+    # auditable record recorded "somebody looked at a page" rather than a human act. The score
+    # itself is unchanged: sync=False resolves the identical position through the same pure
+    # resolver the write path persists (app/services.py entitlement_facts_for_context).
+    score = calculate_project_score(session, project_id, sync=False)
     return templates.TemplateResponse(
         request,
         "project_detail.html",
@@ -2090,7 +2098,10 @@ def project_assessment(project_id: int, request: Request, session: Session = Dep
     if not session.get(RDProject, project_id):
         return redirect("/projects")
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    # ADR-0006 D2 includes this route deliberately, amending ADR-0005 D6: on the *GET* of the
+    # assessment page the user is not performing a write. The POST below still calls
+    # sync_entitlement_for_project unconditionally, so the record's genesis is unchanged.
+    score = calculate_project_score(session, project_id, sync=False)
     periods = list(session.exec(select(AccountingPeriod).order_by(col(AccountingPeriod.start_date))))
     return templates.TemplateResponse(
         request,
@@ -2147,7 +2158,7 @@ def project_costs(project_id: int, request: Request, session: Session = Depends(
     if not session.get(RDProject, project_id):
         return redirect("/projects")
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
         request,
         "project_costs.html",
@@ -2214,7 +2225,7 @@ def project_evidence(project_id: int, request: Request, session: Session = Depen
     if not session.get(RDProject, project_id):
         return redirect("/projects")
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
         request,
         "project_evidence.html",
@@ -2294,7 +2305,7 @@ def project_competent_professional(project_id: int, request: Request, session: S
     if not session.get(RDProject, project_id):
         return redirect("/projects")
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
         request,
         "project_competent_professional.html",
@@ -2379,7 +2390,7 @@ def project_report(project_id: int, request: Request, format: str | None = None,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     context = get_project_context(session, project_id)
-    score = calculate_project_score(session, project_id)
+    score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
         request,
         "project_report.html",
