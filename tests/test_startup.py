@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from markupsafe import escape
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, SQLModel, select
@@ -443,6 +444,108 @@ def test_the_operator_escape_hatch_withholds_enforcement(fk_engine, monkeypatch)
     assert pragma_value(fk_engine) == 0
 
 
+#: Copy that would turn an operational report into a claim of repair, and copy that would pass a
+#: verdict on the operator's records. ADR-0005 D3.5 forbids the first outright -- the Hub never
+#: modifies, quarantines or deletes -- and ADR-0002 line 59 forbids the second. Stated here rather
+#: than imported from the template test that also checks them: this asserts the *published string*,
+#: which is composed in app/data_integrity.py and reaches the page as data, and a shared constant
+#: across two independently owned files would couple them for no gain.
+BANNER_FORBIDDEN_COPY = (
+    "repair",
+    "fixed",
+    "fix them",
+    "corrected",
+    "cleaned up",
+    "removed for you",
+    "we will",
+    "invalid",
+    "corrupt",
+    "damaged",
+)
+FORBIDDEN_VERDICT_WORDS = ("not eligible", "rejected", "fails", "approved", "qualifies")
+
+
+def assert_reads_as_an_operational_report(warning: str) -> None:
+    lowered = warning.lower()
+    offenders = [word for word in BANNER_FORBIDDEN_COPY if word in lowered]
+    assert not offenders, f"the published warning {warning!r} contains {offenders}"
+    for word in FORBIDDEN_VERDICT_WORDS:
+        assert word not in lowered, f"the published warning reads as a verdict: {word!r}"
+
+
+def test_the_escape_hatch_publishes_a_banner_on_a_clean_database(fk_engine, monkeypatch):
+    """D3.6, the gap this closes: enforcement off by setting, database clean, banner still shown.
+
+    The published warning used to be ``orphan_warning_text(orphans)``, which returns None when
+    there are no orphans -- so the workspace whose operator had switched link checking off saw
+    nothing at all, which is the one state where no scan will ever raise it. The banner renders
+    on a truthiness guard, so None is not a banner with empty text; it is no banner.
+    """
+    monkeypatch.setattr(database.settings, "enforce_foreign_keys", False)
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
+
+    assert result.orphans == (), "the database under test is meant to be clean"
+    assert result.enforcement_enabled is False
+    warning = result.warning
+    assert warning, "enforcement is off and the operator is told nothing"
+    assert data_integrity.INTEGRITY_WARNING == warning
+    assert "link checking is switched off" in warning
+    assert data_integrity.ENFORCEMENT_SETTING in warning, "the operator is not told which lever"
+    assert "Nothing has been changed or removed." in warning
+    assert "points at" not in warning and "point at" not in warning, (
+        f"a clean database must not be described as having dangling links: {warning!r}"
+    )
+    assert_reads_as_an_operational_report(warning)
+
+
+def test_the_escape_hatch_banner_reports_both_reasons_when_both_hold(fk_engine, monkeypatch):
+    """Enforcement off by setting AND orphans present: neither reason may hide the other."""
+    monkeypatch.setattr(database.settings, "enforce_foreign_keys", False)
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
+
+    warning = result.warning or ""
+    assert len(result.orphans) == 1
+    assert data_integrity.ENFORCEMENT_SETTING in warning, "the setting reason is missing"
+    assert "1 record points at a record that is no longer in the Hub." in warning, (
+        f"the orphan reason is missing: {warning!r}"
+    )
+    assert "Open each listed record" in warning, "the operator is not told what to do"
+    assert_reads_as_an_operational_report(warning)
+
+
+def test_an_orphan_banner_is_unchanged_while_the_setting_is_on(fk_engine):
+    """The wording every existing test and the rendered-page tests pin must not have moved."""
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        session.add(Contract(contract_name="Orphan contract", customer_id=4242))
+        session.commit()
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
+
+    assert result.warning == data_integrity.orphan_warning_text(result.orphans)
+    assert result.warning == (
+        "1 record points at a record that is no longer in the Hub, so link checking is switched "
+        "off until that is resolved. Nothing has been changed or removed. Open each listed record "
+        "and choose the correct link on its own page."
+    )
+
+
+def test_nothing_is_published_when_link_checking_is_actually_running(fk_engine):
+    """The other half of D3.6: a banner on a workspace with nothing wrong would train it away."""
+    with Session(fk_engine) as session:
+        seed_minimum_parents(session)
+        result = data_integrity.apply_foreign_key_policy(session, fk_engine)
+
+    assert result.enforcement_enabled is True
+    assert result.warning is None
+    assert data_integrity.INTEGRITY_WARNING is None
+
+
 # The lifespan wiring. Everything above proves the control works when it is called; these prove the
 # application actually calls it, which is the part that was still inert (ADR-0005 D3.3 and D3.4).
 
@@ -508,6 +611,34 @@ def test_startup_withholds_enforcement_and_publishes_the_warning_for_an_orphan(s
             for contract in session.exec(select(Contract))
         ]
     assert after == before
+
+
+def test_startup_publishes_the_escape_hatch_banner_and_renders_it(startup_engine, monkeypatch):
+    """D3.6 end to end: enforcement off by setting, clean database, sentence on the page.
+
+    The unit tests above prove the string is composed; this proves it is published into every
+    template context and survives to the rendered HTML, which is the only form the operator ever
+    sees. Patching the module globals first is what stops this lifespan from configuring a later
+    test: monkeypatch restores their pre-test values on teardown.
+    """
+    monkeypatch.setattr(data_integrity, "INTEGRITY_WARNING", None)
+    monkeypatch.setattr(data_integrity, "INTEGRITY_REPORT", ())
+    monkeypatch.setattr(database.settings, "enforce_foreign_keys", False)
+
+    with TestClient(main.app) as client:
+        assert database.FK_ENFORCEMENT is False
+        assert pragma_value(startup_engine) == 0
+        warning = data_integrity.INTEGRITY_WARNING
+        assert warning, "the escape hatch is on and no warning was published"
+        assert data_integrity.ENFORCEMENT_SETTING in warning
+        assert main.template_context(bare_request())["data_integrity_warning"] == warning
+
+        response = client.get("/")
+        assert response.status_code == 200
+        # Compared through Jinja's own escaper, because the template renders the sentence as data
+        # rather than as markup -- the property worth pinning, since the banner is composed in
+        # Python. html.escape() would not do: it spells the apostrophe &#x27; and Jinja &#39;.
+        assert str(escape(warning)) in response.text, "the published sentence never reaches the page"
 
 
 def test_a_failing_integrity_scan_still_lets_the_application_start(startup_engine, monkeypatch):

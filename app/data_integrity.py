@@ -154,6 +154,31 @@ def scan_orphans(session: Session) -> list[OrphanRecord]:
     return orphans
 
 
+#: The environment variable an operator sets, named in the banner so the sentence is actionable
+#: by the person who can act on it. Documented in README.md and passed through docker-compose.yml.
+ENFORCEMENT_SETTING = "ENFORCE_FOREIGN_KEYS"
+
+NOTHING_CHANGED = "Nothing has been changed or removed."
+
+ORPHAN_REMEDY = "Open each listed record and choose the correct link on its own page."
+
+SWITCHED_OFF_BY_SETTING = (
+    f"The Hub's link checking is switched off by the {ENFORCEMENT_SETTING} setting, so records are "
+    "not being checked for links to records that are no longer in the Hub."
+)
+
+SWITCH_BACK_ON = (
+    f"Setting {ENFORCEMENT_SETTING} back to true and restarting the Hub switches link checking "
+    "back on."
+)
+
+
+def orphan_count_sentence(orphans: tuple[OrphanRecord, ...] | list[OrphanRecord]) -> str:
+    count = len(orphans)
+    noun = "record points" if count == 1 else "records point"
+    return f"{count} {noun} at a record that is no longer in the Hub."
+
+
 def orphan_warning_text(orphans: tuple[OrphanRecord, ...] | list[OrphanRecord]) -> str | None:
     """Plain operational wording for the banner. Not a tax, accounting, or eligibility statement."""
     if not orphans:
@@ -162,9 +187,39 @@ def orphan_warning_text(orphans: tuple[OrphanRecord, ...] | list[OrphanRecord]) 
     noun = "record points" if count == 1 else "records point"
     return (
         f"{count} {noun} at a record that is no longer in the Hub, so link checking is switched off "
-        "until that is resolved. Nothing has been changed or removed. Open each listed record and "
-        "choose the correct link on its own page."
+        f"until that is resolved. {NOTHING_CHANGED} {ORPHAN_REMEDY}"
     )
+
+
+def integrity_warning_text(
+    orphans: tuple[OrphanRecord, ...] | list[OrphanRecord],
+    *,
+    disabled_by_setting: bool,
+) -> str | None:
+    """The banner sentence for whichever reason link checking is not active, or None if it is.
+
+    ADR-0005 D3.6 requires the same banner when an operator has switched enforcement off, and that
+    reason is invisible in the records: on a clean database ``orphan_warning_text`` returns None,
+    so publishing its result alone left an operator-disabled workspace showing no banner at all --
+    the one state in which the operator most needs to be told, because they may have set the
+    variable weeks ago in a shell they no longer have open.
+
+    The two reasons are independent and can hold together, so both are reported. The wording stays
+    operational: the Hub has found a condition and is telling the operator what is not happening
+    and what to do about it. It claims no repair (ADR-0005 D3.5, which forbids one), passes no
+    verdict on the records (ADR-0002 line 59), and promises nothing about the future.
+    """
+    if not disabled_by_setting:
+        return orphan_warning_text(orphans)
+
+    sentences = [SWITCHED_OFF_BY_SETTING]
+    if orphans:
+        sentences.append(orphan_count_sentence(orphans))
+    sentences.append(NOTHING_CHANGED)
+    if orphans:
+        sentences.append(ORPHAN_REMEDY)
+    sentences.append(SWITCH_BACK_ON)
+    return " ".join(sentences)
 
 
 def apply_foreign_key_policy(session: Session, target_engine: Engine | None = None) -> IntegrityScanResult:
@@ -175,6 +230,12 @@ def apply_foreign_key_policy(session: Session, target_engine: Engine | None = No
     pool. A scan that finds orphans leaves the pragma off, logs each orphan, and stores the report:
     withholding the *new* control is the only option that is neither destructive nor silent, and
     refusing to start would strand the operator with a database they cannot inspect.
+
+    D3.6's escape hatch is the second reason enforcement can be inactive, and it is the reason the
+    published warning is not simply the orphan report: an operator who has set ENFORCE_FOREIGN_KEYS
+    to false on a clean database is running without link checking and no scan will ever say so.
+    The warning states whichever reasons hold, so the banner appears in both cases and in the case
+    where both apply at once.
     """
     global INTEGRITY_REPORT, INTEGRITY_WARNING
 
@@ -188,26 +249,30 @@ def apply_foreign_key_policy(session: Session, target_engine: Engine | None = No
             ", ".join(f"{table}.{column}" for table, columns in missing.items() for column in columns),
         )
 
-    if not get_settings().enforce_foreign_keys:
-        database.set_fk_enforcement(False, active)
-        INTEGRITY_REPORT = orphans
-        INTEGRITY_WARNING = orphan_warning_text(orphans)
-        logger.warning("Link enforcement is switched off by ENFORCE_FOREIGN_KEYS.")
-        return IntegrityScanResult(orphans, False, missing, INTEGRITY_WARNING)
+    disabled_by_setting = not get_settings().enforce_foreign_keys
 
-    if orphans:
+    # Logged before the branch, so an orphan is reported whichever reason enforcement is withheld
+    # for. Reaching this with the setting off used to return early and log nothing about them.
+    for orphan in orphans:
+        logger.warning(
+            "%s %s (id %s) points at %s id %s, which no longer exists.",
+            orphan.child_dataset,
+            orphan.child_display,
+            orphan.child_id,
+            orphan.parent_dataset,
+            orphan.missing_parent_id,
+        )
+
+    if disabled_by_setting or orphans:
         database.set_fk_enforcement(False, active)
-        for orphan in orphans:
+        if disabled_by_setting:
             logger.warning(
-                "%s %s (id %s) points at %s id %s, which no longer exists.",
-                orphan.child_dataset,
-                orphan.child_display,
-                orphan.child_id,
-                orphan.parent_dataset,
-                orphan.missing_parent_id,
+                "Link enforcement is switched off by %s. Records can be saved pointing at records "
+                "that are no longer in the Hub until it is set back to true and the Hub restarted.",
+                ENFORCEMENT_SETTING,
             )
         INTEGRITY_REPORT = orphans
-        INTEGRITY_WARNING = orphan_warning_text(orphans)
+        INTEGRITY_WARNING = integrity_warning_text(orphans, disabled_by_setting=disabled_by_setting)
         return IntegrityScanResult(orphans, False, missing, INTEGRITY_WARNING)
 
     database.set_fk_enforcement(True, active)
