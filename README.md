@@ -61,6 +61,13 @@ This remains a decision-support MVP at every version. It is not legal, tax, acco
 
 This remains an MVP for local evidence capture and decision support. It is not suitable for live public-sector evidence operations without additional controls, including SSO, role-based access control, formal audit-log review, backup/restore, deployment controls, encryption and retention policies, and evidence export governance.
 
+The Hub has no authentication and no role-based access control. That is accepted only because it is a
+single-user local tool, so `docker-compose.yml` publishes port 8080 on `127.0.0.1` rather than on all
+interfaces. The app is reachable at `http://localhost:8080` from the machine running it, and is not
+reachable from other machines on the network. Anyone who republishes it on `0.0.0.0`, or puts it behind
+a reverse proxy or a tunnel, removes the only control that makes the missing authentication acceptable
+and must add identity and access control first.
+
 The current audit log is useful for local traceability, but it is not immutable or append-only. Import, export, cleanup, and purge controls are local MVP safeguards rather than production data governance. Production use should move to a controlled deployment model, stronger identity, managed backup/restore, retention controls, and a database platform such as Postgres with managed migrations.
 
 ## Official Guidance Checked

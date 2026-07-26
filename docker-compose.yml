@@ -2,7 +2,10 @@ services:
   app:
     build: .
     ports:
-      - "8080:8080"
+      # Loopback only. The no-authentication, no-RBAC posture in README.md is justified by the
+      # Hub being single-user and local; "0.0.0.0:8080" published it to every peer on the LAN,
+      # which left that precondition unenforced. Publishing on 127.0.0.1 enforces it.
+      - "127.0.0.1:8080:8080"
     environment:
       DATABASE_URL: sqlite:///./data/rdec_hub.db
       SEED_REFERENCE_DATA: ${SEED_REFERENCE_DATA:-true}
