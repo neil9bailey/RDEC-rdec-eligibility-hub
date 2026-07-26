@@ -776,6 +776,130 @@ def test_apply_refuses_an_update_the_preview_never_disclosed(session):
     assert session.exec(select(Company).where(Company.company_name == "Disclosed Limited")).first().utr == "1111111111"
 
 
+def test_apply_rolls_the_whole_import_back_when_a_link_moves_undisclosed(session, monkeypatch):
+    """ADR-0004 D1.6 clause 3: the enforcement, not the display.
+
+    The disclosure path and the write path are separate code and can drift apart -- they
+    had. This drives them apart deliberately, by making ``_changed_fields`` omit the link it
+    should have named, and asserts that apply refuses rather than performing the write the
+    operator was never shown. The business unit created earlier in the same transaction must
+    also disappear: the whole import rolls back, not just the offending row.
+    """
+    real_changed_fields = data_management._changed_fields
+
+    def hide_the_link(session_, spec, existing, values, links):
+        return [
+            change
+            for change in real_changed_fields(session_, spec, existing, values, links)
+            if change["field"] != "Business unit"
+        ]
+
+    monkeypatch.setattr(data_management, "_changed_fields", hide_the_link)
+
+    rail = BusinessUnit(name="Rail Systems")
+    session.add(rail)
+    session.commit()
+    session.refresh(rail)
+    customer = Customer(customer_name="Colliding Customer", business_unit_id=rail.id, sector="Rail")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {
+            "business_units": [{"id": rail.id, "name": "Digital Signalling"}],
+            "customers": [
+                {
+                    "customer_name": "Colliding Customer",
+                    "business_unit_id": rail.id,
+                    "sector": "Bus",
+                }
+            ],
+        },
+        "add_update",
+    )
+    customer_row = preview["rows"][1]
+    assert customer_row["status"] == "update"
+    assert [change["field"] for change in customer_row["changed_fields"]] == ["Sector"]
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, approved, mode)
+
+    assert "the preview did not show" in str(exc.value)
+    session.expire_all()
+    assert session.exec(select(BusinessUnit).where(BusinessUnit.name == "Digital Signalling")).first() is None
+    unchanged = session.get(Customer, customer.id)
+    assert unchanged.business_unit_id == rail.id
+    assert unchanged.sector == "Rail"
+    assert list(session.exec(select(AuditEvent))) == []
+
+
+def test_every_foreign_key_has_a_label_of_its_own():
+    """The invariant ADR-0004 D1.6's enforcement rests on.
+
+    ``changed_fields`` entries carry a field LABEL, and D1.6 matches an about-to-be-written
+    link against that label. Two columns of one dataset sharing a label would let a
+    disclosed change to the other column satisfy the check and cover an undisclosed relink;
+    it also leaves the operator unable to tell which of the two moved. ``cost_lines``
+    ``activity_id`` and ``activity`` did exactly that. A new column that reintroduces a
+    collision must fail here rather than quietly weaken the control.
+    """
+    collisions = []
+    for spec in data_management.DATASETS:
+        labels: dict[str, list[str]] = {}
+        for name in spec.model.model_fields:
+            labels.setdefault(data_management._field_label(spec, name), []).append(name)
+        linked = {name for name, _ in spec.foreign_keys}
+        collisions.extend(
+            (spec.key, label, names)
+            for label, names in labels.items()
+            if len(names) > 1 and linked.intersection(names)
+        )
+
+    assert collisions == []
+
+
+def test_a_row_the_preview_skipped_has_its_link_left_alone(session):
+    """ADR-0004 D1.6 clause 1: a skip results in no write of any kind, link rewrites included."""
+    rail = BusinessUnit(name="Rail Systems")
+    session.add(rail)
+    session.commit()
+    session.refresh(rail)
+    customer = Customer(customer_name="Colliding Customer", business_unit_id=rail.id, sector="Rail")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {
+            "business_units": [{"id": rail.id, "name": "Digital Signalling"}],
+            "customers": [
+                {
+                    "customer_name": "Colliding Customer",
+                    "business_unit_id": rail.id,
+                    "sector": "Bus",
+                }
+            ],
+        },
+        # add_only never updates, so the row is disclosed as a skip even though the file
+        # describes a relink and a changed sector.
+        "add_only",
+    )
+    assert preview["rows"][1]["status"] == "skip"
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    result = apply_import(session, approved, mode)
+
+    assert result["updated"] == 0 and result["skipped"] == 1
+    session.expire_all()
+    unchanged = session.get(Customer, customer.id)
+    assert unchanged.business_unit_id == rail.id
+    assert unchanged.sector == "Rail"
+
+
 def test_a_preview_payload_can_only_be_applied_once(session):
     """C3, the proven defect: one preview applied three times created three rows."""
     preview = build_import_plan(

@@ -204,6 +204,12 @@ DATASETS = (
         (),
         (("project_id", "projects"), ("activity_id", "activities")),
         field_labels={
+            # ADR-0004 D1.6: the link and the free-text column both humanised to "Activity",
+            # so the preview could not tell an operator which of the two had moved, and the
+            # D1.6 matcher -- which keys on the label -- could have accepted a disclosed text
+            # change as cover for an undisclosed relink. Labels must be unique per dataset;
+            # test_every_foreign_key_has_a_label_of_its_own holds the line.
+            "activity_id": "Linked activity",
             "gross_cost": "Gross cost",
             "apportionment_percentage": "Apportionment percentage",
             "qualifying_amount": "Qualifying amount",
@@ -996,6 +1002,34 @@ def _resolve_links(
         values[field_name] = resolved
 
 
+def _assert_link_changes_disclosed(
+    spec: DatasetSpec,
+    existing: SQLModel,
+    values: dict[str, Any],
+    changed_fields: list[dict[str, str]],
+) -> None:
+    """ADR-0004 D1.6: no foreign key may move unless the preview named it.
+
+    Called after ``_resolve_links`` and before the write, on the values that will actually
+    be stored, so it compares the outcome against the disclosure rather than one intention
+    against another. The disclosure path (``_changed_fields``) and the write path
+    (``_resolve_links``) are separate pieces of code that can drift apart -- they had, which
+    is how an operator who reviewed one renamed field also re-parented an RDEC record. When
+    they diverge this refuses the whole import instead of letting the write win in silence:
+    a disclosure control the write path can diverge from is a display feature, not a control.
+
+    This is to links what D1.5 is to identity.
+    """
+    disclosed = {str(change.get("field")) for change in changed_fields}
+    for field_name, _target_key in spec.foreign_keys:
+        stored = _live_link_target(getattr(existing, field_name, None))
+        writing = _live_link_target(values.get(field_name))
+        if stored == writing:
+            continue
+        if _field_label(spec, field_name) not in disclosed:
+            raise DataOperationError(UNDISCLOSED_WRITE_MESSAGE)
+
+
 def _rejected_dataset_issue(key: str) -> ImportIssue | None:
     """ADR-0004 D5: the one place that decides whether a dataset key may be written."""
     spec = DATASET_BY_KEY.get(key)
@@ -1184,6 +1218,12 @@ _MAX_TRACKED_PREVIEWS = 32
 EXPIRED_PREVIEW_MESSAGE = "The import preview has expired or is too large. Preview the file again."
 APPLIED_PREVIEW_MESSAGE = "This import preview has already been applied. Preview the file again."
 UNREADABLE_PREVIEW_MESSAGE = "The import preview could not be read. Preview the file again."
+# ADR-0004 D1.5 and D1.6 share one plain-language refusal, because the operator's position is
+# the same either way: a write was about to happen that the preview never showed them.
+UNDISCLOSED_WRITE_MESSAGE = (
+    "This import would change a record that the preview did not show. "
+    "Preview the file again and check the records listed before applying."
+)
 
 
 def _bound_preview_store(store: dict[str, tuple[int, str]], now: int) -> None:
@@ -1440,10 +1480,7 @@ def apply_import(
         index = row["row_number"] - 1
         declared_target = shown[index] if 0 <= index < len(shown) else None
         if declared_target is None or declared_target != row["existing_id"]:
-            raise DataOperationError(
-                "This import would change a record that the preview did not show. "
-                "Preview the file again and check the records listed before applying."
-            )
+            raise DataOperationError(UNDISCLOSED_WRITE_MESSAGE)
     applied = {"created": 0, "updated": 0, "skipped": plan["summary"]["skip"]}
     # ADR-0004 D2.1: (dataset key, identifier declared in the file) -> identifier in THIS
     # database. Built as rows are written, in dependency order, so a child's link resolves
@@ -1462,9 +1499,12 @@ def apply_import(
                 continue
             values = dict(row["values"])
             _resolve_links(session, spec, values, row.get("links") or [], id_remap)
-            candidate = spec.model.model_validate(values)
             # The record the preview named, and only that record.
             existing = session.get(spec.model, existing_id) if existing_id is not None else None
+            if existing is not None:
+                # ADR-0004 D1.6, immediately after link resolution and before any write.
+                _assert_link_changes_disclosed(spec, existing, values, row.get("changed_fields") or [])
+            candidate = spec.model.model_validate(values)
             if existing:
                 before = compact_snapshot(existing)
                 for field_name in spec.model.model_fields:
