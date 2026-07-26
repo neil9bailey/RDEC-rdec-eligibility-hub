@@ -151,7 +151,7 @@ Use `/data-management` for normal local administration:
 
 - open the existing edit pages for individual records
 - export selected data as a JSON backup bundle or ZIP of CSV files
-- preview JSON or CSV additions and updates before applying them
+- preview JSON or CSV additions and updates before applying them, matched on a conservative natural key rather than on any record identifier in the uploaded file
 - remove selected records only when the Hub confirms they have no current links
 - inspect purge scopes and record counts
 
@@ -166,7 +166,7 @@ docker compose up --build
 
 An enabled purge still requires a selected scope, backup acknowledgement, and the exact confirmation phrase shown in the UI. Reference catalogues and local change history are preserved. This does not replace a managed business backup and restore process.
 
-The local data controls can be configured independently before startup:
+The local data controls can be configured independently before startup. All six are forwarded to the container by `docker-compose.yml`, so setting one on the host before `docker compose up` is enough; compose only passes variables it names.
 
 | Setting | Default | Effect |
 | --- | --- | --- |
@@ -174,6 +174,14 @@ The local data controls can be configured independently before startup:
 | `DATA_EXPORT_ENABLED` | `true` | Allows selected JSON and CSV downloads. |
 | `DATA_CLEANUP_ENABLED` | `true` | Allows deletion of explicitly selected unused records in the 7 areas listed above. |
 | `DATA_PURGE_ENABLED` | `false` | Makes guarded whole-area purge controls available. |
+| `DATA_RESTORE_BY_IDENTIFIER_ENABLED` | `false` | Permits the separate restore-by-identifier import mode. That mode makes a record identifier in an uploaded file authoritative, so an uploaded row can overwrite a live record it never named. Leave it off unless an operator is deliberately restoring a backup. |
+| `ENFORCE_FOREIGN_KEYS` | `true` | Rollback lever for referential-integrity enforcement. Setting it `false` starts the Hub with link checking switched off, so records can be saved pointing at records that no longer exist. The startup log says so loudly. |
+
+A default import matches records on a conservative natural key. A record identifier in an uploaded file is treated as untrusted data: it never selects the record to update and is never written to the database. Data areas that have no natural key can only be added by a default import, never updated, so importing the same file twice creates duplicates in those areas.
+
+`DATA_RESTORE_BY_IDENTIFIER_ENABLED` is the one setting that changes this, and it is the reason it is treated exactly like purge: off by default and never a release default. This branch gates the mode in the import routes and publishes the setting to the data-management screen, but does not yet render a control for selecting it.
+
+Link checking is applied at startup. The Hub first scans for records pointing at records that no longer exist. If that scan is clean, database link enforcement is switched on. If it finds any, enforcement is left off and every affected record is written to the startup log; nothing is changed or removed automatically, and the records are corrected from their own edit pages. On this branch the startup log is the only place that report appears. Setting `ENFORCE_FOREIGN_KEYS` to `false` withholds enforcement the same way, without a code change or a redeploy, and is also recorded in the startup log.
 
 For a deliberate full local SQLite reset outside the UI:
 
@@ -243,6 +251,7 @@ It covers business-unit setup, company/accounting period setup, customer and con
 - `app/company_setup.py` - claimant company normalization, setup readiness, and accounting-period guardrails.
 - `app/review_cockpit.py` - workflow stage status and prioritised next actions.
 - `app/data_management.py` - selected exports, previewed imports, unused-record cleanup, purge scopes, and relationship safeguards.
+- `app/data_integrity.py` - startup orphan scan, link-enforcement policy, and the plain-language integrity banner.
 - `app/services.py` - scoring, entitlement, AIF readiness, cost validation, dashboard metrics.
 - `app/rules_engine.py` - typed runtime accessors and validation for YAML rules.
 - `app/form_utils.py` - safe form parsing helpers and validation responses.
