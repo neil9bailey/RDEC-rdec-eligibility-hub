@@ -170,6 +170,69 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+# G5b E6-HEADERS. The Hub emitted no security response headers at all.
+#
+# Deliberately proportionate, and deliberately NOT a resource-restricting CSP. The templates
+# carry inline ``style="..."`` attributes throughout, so a policy naming ``default-src`` or
+# ``style-src`` would stop those attributes applying and visibly break the pages. Every
+# directive below therefore governs framing, the document base and form targets only -- none of
+# them can block a stylesheet, the vendored HTMX bundle, or an HTMX request, because none of
+# them govern resource loading. That is what makes this set safe to ship without a browser
+# regression pass over every page.
+#
+# No HSTS: the Hub is served over plain HTTP on loopback by design (docker-compose publishes
+# 127.0.0.1:8080), and Strict-Transport-Security on such an origin is either inert or, if the
+# host name were ever reused over HTTPS, a lasting pin nobody asked for.
+#
+# Not in scope here, and a sponsor decision rather than an engineering one: /docs, /redoc and
+# /openapi.json remain enabled.
+SECURITY_HEADERS: tuple[tuple[bytes, bytes], ...] = (
+    # Stop a browser second-guessing the declared type of an export or a static asset.
+    (b"x-content-type-options", b"nosniff"),
+    # The Hub links out to gov.uk guidance. Without this the internal path of the page a
+    # reviewer was reading travels to those hosts in the Referer header.
+    (b"referrer-policy", b"no-referrer"),
+    # Framing: X-Frame-Options for browsers that still honour it, frame-ancestors for those
+    # that have retired it. Nothing in the Hub is meant to be embedded.
+    (b"x-frame-options", b"DENY"),
+    (b"content-security-policy", b"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"),
+)
+
+
+class SecurityHeadersMiddleware:
+    """Add SECURITY_HEADERS to every HTTP response.
+
+    Written as a plain ASGI middleware rather than a BaseHTTPMiddleware subclass on purpose:
+    BaseHTTPMiddleware wraps each request in an anyio task pair, and the two read paths in this
+    app are already governed by wall-clock budgets in tests/test_performance.py. This form only
+    intercepts the response-start message.
+
+    It sits outside the router, so it also covers the mounted static files, the 400 responses
+    from validation_error_response, and the export downloads -- not just rendered templates.
+    A header already set by a route is left alone.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                already_set = {name.lower() for name, _value in headers}
+                headers.extend((name, value) for name, value in SECURITY_HEADERS if name not in already_set)
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # E5-DELETED-MSG. Every record a route can be asked for and not find.
 #
 # Since E3-D1/E3-D2 a request for a record that is no longer in the database redirects to the
