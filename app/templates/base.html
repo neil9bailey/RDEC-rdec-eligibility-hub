@@ -91,12 +91,30 @@
             saying some links are broken, with no way to find out which, leaves the operator
             with a worry and no next step. It sits inside <main>, so it costs no tab stop on the
             way to the page content and the pinned "one tab stop reaches <main>" metric is
-            unmoved. -#}
+            unmoved.
+
+            D3.6 gives the banner a second reason to appear, and the title and link follow the
+            reason rather than the presence of the banner. An operator who has set
+            ENFORCE_FOREIGN_KEYS to false is running without link checking even on a database
+            with nothing wrong in it; the backend's sentence says so, and says so correctly. But
+            a fixed title reading "Some record links need attention" would, in that state,
+            assert a data problem that does not exist, and the link would lead to a page listing
+            nothing. Both are the same class of error as a screen that contradicts the database.
+
+            So: the orphan wording and the link appear when there is something to list, in the
+            exact words the tests pin; otherwise the title reports the switched-off state and no
+            link is offered. When both reasons hold at once there IS something to list, so the
+            orphan title stands and does not contradict the composed sentence beneath it.
+
+            The distinction is drawn from data_integrity_orphan_count, which app/main.py derives
+            from the already-published INTEGRITY_REPORT. No new backend field was needed. -#}
         {% if data_integrity_warning %}
           <div class="integrity-banner" role="region" aria-labelledby="data-integrity-banner-title">
-            <p class="integrity-banner-title" id="data-integrity-banner-title">Some record links need attention</p>
+            <p class="integrity-banner-title" id="data-integrity-banner-title">{% if data_integrity_orphan_count %}Some record links need attention{% else %}Link checking is switched off{% endif %}</p>
             <p class="integrity-banner-body">{{ data_integrity_warning }}</p>
-            <p class="integrity-banner-action"><a href="/data-integrity">See which records are affected</a></p>
+            {% if data_integrity_orphan_count %}
+              <p class="integrity-banner-action"><a href="/data-integrity">See which records are affected</a></p>
+            {% endif %}
           </div>
         {% endif %}
         {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}

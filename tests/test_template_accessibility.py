@@ -1020,17 +1020,29 @@ def base_banner_block() -> str:
     A Jinja comment is never rendered, and the comment above this block names
     every identifier under test, so a source-level assertion made against the
     unstripped file would pass on the explanation alone.
+
+    The closing ``{% endif %}`` is found by balancing rather than by a non-greedy
+    match. Once D3.6 gave the banner a state with no link to offer, the block
+    acquired a nested ``{% if %}``, and a non-greedy regex then stopped at the
+    *inner* endif and returned a truncated block -- which would have silently
+    excluded the link from every assertion that is supposed to cover it.
     """
     source = re.sub(r"\{#.*?#\}", "", BASE_TEMPLATE.read_text(encoding="utf-8"), flags=re.S)
-    match = re.search(
-        r"\{%\s*if data_integrity_warning\s*%\}(.*?)\{%\s*endif\s*%\}", source, re.S
-    )
-    assert match, (
+    opening = re.search(r"\{%-?\s*if data_integrity_warning\s*-?%\}", source)
+    assert opening, (
         "base.html does not render the ADR-0005 D3.4 banner. app/main.py injects "
         "data_integrity_warning into every context; with no template reading it the "
         "only signal that link enforcement was withheld is a startup log line."
     )
-    return match.group(1)
+    depth = 1
+    cursor = opening.end()
+    for token in re.finditer(r"\{%-?\s*(if|endif)\b", source[opening.end():]):
+        depth += 1 if token.group(1) == "if" else -1
+        if depth == 0:
+            cursor = opening.end() + token.start()
+            break
+    assert depth == 0, "the banner's {% if %} is never closed in base.html"
+    return source[opening.end():cursor]
 
 
 def test_base_renders_the_injected_integrity_warning() -> None:
@@ -1110,6 +1122,11 @@ def test_the_banner_carries_exactly_one_link_and_no_other_control() -> None:
     tags = [tag for tag, _attrs in parser.focusables]
     assert tags == ["a"], f"the banner must offer its link and nothing else; got {tags}"
     assert "/data-integrity" in block, "the banner's link must point at the D3.4 report page"
+    assert re.search(r"\{%-?\s*if data_integrity_orphan_count\s*-?%\}[^{]*integrity-banner-action", block), (
+        "the link must be conditional on there being records to list; ADR-0005 D3.6 makes the "
+        "banner appear on a clean database when the operator has switched enforcement off, and "
+        "a link to an empty report is a promise the page cannot keep"
+    )
     assert not unnamed_controls(block)
     assert "onclick" not in block and "hx-" not in block, (
         "the banner is a static notice; it must not act on its own"

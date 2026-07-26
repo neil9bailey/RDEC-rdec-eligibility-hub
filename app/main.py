@@ -194,6 +194,18 @@ def template_context(request: Request, **extra):
         # app.data_integrity.INTEGRITY_WARNING, and a from-import here would freeze the None it
         # held when this module was first imported.
         "data_integrity_warning": data_integrity.INTEGRITY_WARNING,
+        # ADR-0005 D3.6 gives the banner a second reason to appear: an operator who has set
+        # ENFORCE_FOREIGN_KEYS to false is running without link checking even on a database with
+        # nothing wrong in it. The published sentence covers both reasons, but the banner's
+        # title and its link to /data-integrity must not: on a clean, operator-disabled
+        # workspace there are no affected records to see, and a title saying some records need
+        # attention would be the Hub asserting a data problem that does not exist.
+        #
+        # Derived here rather than requested from the backend. INTEGRITY_REPORT is already
+        # published and already consumed by the report page; whether the banner offers a link
+        # is a presentation decision, not a new fact, so it does not need a new context key
+        # from app/data_integrity.py.
+        "data_integrity_orphan_count": len(data_integrity.INTEGRITY_REPORT),
     }
     base.update(extra)
     return base

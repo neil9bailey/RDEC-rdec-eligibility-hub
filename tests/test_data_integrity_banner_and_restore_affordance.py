@@ -39,12 +39,16 @@ BANNER_MARKER = 'class="integrity-banner"'
 
 #: The exact sentence app/data_integrity.py:orphan_warning_text produces for two orphans.
 #: Built by the module under test rather than pasted, so the two cannot drift apart.
+#: ``child_dataset`` and ``parent_dataset`` are DatasetSpec *keys*, which is what
+#: ``scan_orphans`` emits; ``test_the_scan_really_emits_the_keys_the_page_maps`` holds that to
+#: the code. They were dataset labels when this fixture only fed the warning sentence, which
+#: reads neither field.
 ORPHAN = data_integrity.OrphanRecord(
-    child_dataset="Contracts",
+    child_dataset="contracts",
     child_display="Passenger Insight Framework - Work Order 7",
     child_id=1,
     field="customer_id",
-    parent_dataset="Customers",
+    parent_dataset="customers",
     missing_parent_id=906,
 )
 
@@ -80,14 +84,44 @@ def client_for(session) -> TestClient:
 
 @pytest.fixture()
 def warned(monkeypatch):
-    """The non-None case. It cannot be reached from data alone.
+    """The orphans-found case. It cannot be reached from data alone.
 
     ``INTEGRITY_WARNING`` is set once, at startup, by ``apply_foreign_key_policy``. A test
     that only seeded an orphan would still render nothing, because the module-level value is
     not recomputed per request -- which is exactly why this state had never been seen.
+
+    Both module-level values are set, not just the sentence. Startup always writes them
+    together, and since ADR-0005 D3.6 the banner reads both: a sentence about orphans with an
+    empty report is a state the application cannot produce, and a fixture that produced it
+    would be testing a screen no operator can reach.
     """
     warning = data_integrity.orphan_warning_text((ORPHAN, ORPHAN))
     assert warning, "orphan_warning_text returned nothing for a non-empty report"
+    monkeypatch.setattr(data_integrity, "INTEGRITY_REPORT", (ORPHAN, ORPHAN))
+    monkeypatch.setattr(data_integrity, "INTEGRITY_WARNING", warning)
+    return warning
+
+
+@pytest.fixture()
+def disabled_on_a_clean_database(monkeypatch):
+    """ADR-0005 D3.6: the operator switched link checking off and nothing is wrong with the data.
+
+    The sentence is built by calling the producer rather than by pasting its output, so this
+    fixture and the wording cannot drift apart.
+    """
+    warning = data_integrity.integrity_warning_text((), disabled_by_setting=True)
+    assert warning, "integrity_warning_text returned nothing for an operator-disabled workspace"
+    monkeypatch.setattr(data_integrity, "INTEGRITY_REPORT", ())
+    monkeypatch.setattr(data_integrity, "INTEGRITY_WARNING", warning)
+    return warning
+
+
+@pytest.fixture()
+def disabled_with_orphans(monkeypatch):
+    """Both reasons at once. The composed sentence carries both, and there is still a list."""
+    warning = data_integrity.integrity_warning_text((ORPHAN,), disabled_by_setting=True)
+    assert warning
+    monkeypatch.setattr(data_integrity, "INTEGRITY_REPORT", (ORPHAN,))
     monkeypatch.setattr(data_integrity, "INTEGRITY_WARNING", warning)
     return warning
 
@@ -187,6 +221,102 @@ def test_the_banner_does_not_suppress_a_flash_message(session, warned) -> None:
         "the persistent banner is expected first; if this order is changed, change it "
         "deliberately rather than by accident"
     )
+
+
+# --------------------------------------------------------------------------
+# ADR-0005 D3.6 -- the banner reports the reason, and does not overstate it
+# --------------------------------------------------------------------------
+
+SWITCHED_OFF_TITLE = "Link checking is switched off"
+
+
+def banner_block(session) -> str:
+    body = client_for(session).get("/").text
+    assert BANNER_MARKER in body, "no banner rendered in a state that should show one"
+    return body.split(BANNER_MARKER, 1)[1].split("</div>", 1)[0]
+
+
+def test_the_banner_appears_when_the_operator_switched_checking_off(
+    session, disabled_on_a_clean_database
+) -> None:
+    """D3.6 requires the banner in this state. Nothing else about it is in question.
+
+    Compared on the visible text: the published sentence contains "The Hub's", and asserting
+    on the raw response would be comparing against ``&#39;``, which is the template escaping
+    correctly rather than a difference in the copy.
+    """
+    body = client_for(session).get("/").text
+    assert BANNER_MARKER in body
+    assert disabled_on_a_clean_database in visible_text(body)
+
+
+def test_a_clean_database_is_never_told_its_records_need_attention(
+    session, disabled_on_a_clean_database
+) -> None:
+    """The reason this increment exists.
+
+    D3.6's "show the same banner" is about the operator never being unaware that link checking
+    is inactive. It is not licence to assert a data problem: here the scan found nothing, and a
+    title reading "Some record links need attention" would be the Hub telling a Finance
+    reviewer something untrue about their records.
+    """
+    banner = banner_block(session)
+    assert SWITCHED_OFF_TITLE in banner, banner
+    assert BANNER_TITLE not in banner, (
+        "the banner claims records need attention on a database where the scan found none"
+    )
+
+
+def test_a_clean_database_is_not_offered_a_list_of_nothing(
+    session, disabled_on_a_clean_database
+) -> None:
+    """A link to a report with no rows is a promise the page cannot keep."""
+    banner = banner_block(session)
+    assert "href=" not in banner, f"the banner offers a link with nothing to show: {banner!r}"
+
+
+def test_the_orphan_wording_and_link_are_unchanged(session, warned) -> None:
+    """The state that was already correct must be byte-identical. D3.6 changes nothing here."""
+    banner = banner_block(session)
+    assert BANNER_TITLE in banner
+    assert SWITCHED_OFF_TITLE not in banner
+    assert 'href="/data-integrity"' in banner
+    assert "See which records are affected" in banner
+
+
+def test_both_reasons_at_once_keep_the_list_and_the_orphan_title(
+    session, disabled_with_orphans
+) -> None:
+    """The composed sentence carries both reasons; the title must not contradict it."""
+    banner = banner_block(session)
+    assert BANNER_TITLE in banner, "there are records to review, so the title must say so"
+    assert 'href="/data-integrity"' in banner
+    assert data_integrity.ENFORCEMENT_SETTING in banner, (
+        "the operator's own reason has vanished from the sentence"
+    )
+
+
+@pytest.mark.parametrize(
+    "state", ["warned", "disabled_on_a_clean_database", "disabled_with_orphans"]
+)
+def test_no_banner_state_claims_a_repair_or_passes_a_verdict(session, request, state) -> None:
+    """The word lists are asserted on the backend side too; they must not diverge here."""
+    request.getfixturevalue(state)
+    visible = " ".join(re.sub(r"<[^>]+>", " ", banner_block(session)).split()).lower()
+    for claim in ("repair", "fixed", "corrected", "cleaned up", "we will", "invalid", "corrupt", "damaged"):
+        assert claim not in visible, f"[{state}] banner copy claims {claim!r}: {visible!r}"
+    for verdict in ("not eligible", "rejected", "fails", "approved", "qualifies"):
+        assert verdict not in visible, f"[{state}] banner copy reads as a verdict: {verdict!r}"
+    assert visible
+
+
+def test_the_switched_off_title_detector_is_not_vacuous(session, warned) -> None:
+    """Non-vacuity: a template that hard-coded the new title would fail the orphan state.
+
+    Both titles are asserted in both directions above, so neither can be satisfied by a
+    template that renders one string unconditionally.
+    """
+    assert SWITCHED_OFF_TITLE not in banner_block(session)
 
 
 # --------------------------------------------------------------------------
