@@ -12,6 +12,9 @@ import httpx
 from sqlmodel import Session, col, select
 
 from app.audit import compact_snapshot, log_event
+# One implementation of the per-hop outbound guard, shared by both agents. Two copies of an
+# SSRF allow-list walk is how the two guards drift apart and one of them quietly reopens.
+from app.knowledge_agent import MAX_REDIRECT_HOPS, fetch_via_allowlisted_hops
 from app.models import (
     BuyerPortalInstance,
     BusinessUnit,
@@ -524,7 +527,14 @@ def source_query_url(source: FrameworkSource, terms: list[str], today: date | No
     return url
 
 
-def fetch_source_url(url: str) -> FetchResult:
+def fetch_source_url(url: str, *, transport: httpx.BaseTransport | None = None) -> FetchResult:
+    """Fetch an approved procurement/official source, refusing every off-allow-list hop.
+
+    ``transport`` is a test seam only. It is keyword-only and defaults to None, so every
+    production caller (including the ``fetcher=fetch_source_url`` defaults below) is unchanged;
+    it exists so the redirect behaviour can be proven against an injected transport without any
+    real outbound call.
+    """
     if not official_framework_source_allowed(url):
         return FetchResult(
             ok=False,
@@ -534,27 +544,51 @@ def fetch_source_url(url: str) -> FetchResult:
             error="Blocked by official-source allow-list.",
         )
     try:
-        with httpx.Client(follow_redirects=True, timeout=15.0) as client:
-            response = client.get(url, headers={"User-Agent": "RDEC Eligibility Hub local intelligence agent"})
-        final_url = str(response.url)
-        if not official_framework_source_allowed(final_url):
-            return FetchResult(
-                ok=False,
-                status_code=response.status_code,
-                url=final_url,
-                text="",
-                content_type=response.headers.get("content-type", ""),
-                error="Blocked because the source redirected outside the official-source allow-list.",
+        # follow_redirects=False here and per request inside fetch_via_allowlisted_hops: the
+        # allow-list is applied to each Location BEFORE that hop is requested. The previous
+        # follow_redirects=True form re-checked only the final URL, by which point the request
+        # to the redirect target had already been sent (G5b E6-SSRF, blind SSRF).
+        with httpx.Client(follow_redirects=False, timeout=15.0, transport=transport) as client:
+            fetched = fetch_via_allowlisted_hops(
+                client,
+                url,
+                official_framework_source_allowed,
+                headers={"User-Agent": "RDEC Eligibility Hub local intelligence agent"},
             )
-        return FetchResult(
-            ok=response.status_code < 400,
-            status_code=response.status_code,
-            url=final_url,
-            text=response.text or "",
-            content_type=response.headers.get("content-type", ""),
-            error="" if response.status_code < 400 else f"Source returned HTTP {response.status_code}.",
-        )
-    except httpx.HTTPError as exc:
+            if fetched.refusal == "off_allowlist":
+                return FetchResult(
+                    ok=False,
+                    status_code=fetched.refused_after_status,
+                    url=fetched.url,
+                    text="",
+                    error=(
+                        "Blocked because the source redirected outside the official-source allow-list. "
+                        "The redirect was not followed, so no request was made to that address."
+                    ),
+                )
+            if fetched.refusal == "hop_limit":
+                return FetchResult(
+                    ok=False,
+                    status_code=fetched.refused_after_status,
+                    url=fetched.url,
+                    text="",
+                    error=(
+                        f"Blocked because the source redirected more than {MAX_REDIRECT_HOPS} times. "
+                        "The chain was abandoned and no further request was made."
+                    ),
+                )
+            response = fetched.response
+            if response is None:  # pragma: no cover - refusal is "" only when a response exists
+                return FetchResult(ok=False, status_code=0, url=fetched.url, text="", error="No response received.")
+            return FetchResult(
+                ok=response.status_code < 400,
+                status_code=response.status_code,
+                url=fetched.url,
+                text=response.text or "",
+                content_type=response.headers.get("content-type", ""),
+                error="" if response.status_code < 400 else f"Source returned HTTP {response.status_code}.",
+            )
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
         return FetchResult(ok=False, status_code=0, url=url, text="", error=f"Network source check failed: {exc}")
 
 

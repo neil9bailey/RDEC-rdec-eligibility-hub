@@ -1,10 +1,13 @@
 import json
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.database import get_session
 from app.framework_intelligence import (
+    MAX_REDIRECT_HOPS,
     CandidateOpportunity,
     FetchResult,
     QUESTION_TEXT_MAX_LENGTH,
@@ -14,6 +17,7 @@ from app.framework_intelligence import (
     extract_document_intelligence,
     extract_quality_questions_from_text,
     extract_requirements_for_opportunity,
+    fetch_source_url,
     generate_framework_intelligence_report_markdown,
     normalise_document_lines,
     official_framework_source_allowed,
@@ -812,3 +816,143 @@ def test_framework_source_portal_and_document_routes(session):
     assert all(response.status_code == 200 for response in responses)
     assert doc_response.status_code == 303
     assert session.exec(select(ExtractedQualityQuestion)).first() is not None
+
+
+# --- G5b E6-SSRF: per-hop redirect validation in the framework fetcher -------------------------
+#
+# fetch_source_url previously used follow_redirects=True and re-applied the allow-list to the
+# final URL. That is post-hoc: an open redirect on an allow-listed procurement or gov.uk host
+# caused a request to be SENT to the redirect target before the check could fire. Off-allow-list
+# content was never ingested, so this was blind SSRF -- but the request left the host. These
+# tests inject a transport and assert on what reached it, so nothing here makes a real call.
+
+ALLOWED_SOURCE_URL = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?q=rail"
+
+
+def recording_transport(routes: dict[str, httpx.Response], seen: list[str]) -> httpx.MockTransport:
+    """A transport that records every URL it is asked for.
+
+    The recording happens before the route lookup, so a request to an unrouted host is still
+    counted -- an SSRF test whose listener silently ignores unexpected hosts proves nothing.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return routes.get(str(request.url), httpx.Response(200, text="attacker controlled body"))
+
+    return httpx.MockTransport(handler)
+
+
+def test_fetch_source_url_reaches_an_allowlisted_source_positive_control():
+    """Positive control: without this, every "no request was made" assertion below is vacuous."""
+    seen: list[str] = []
+    transport = recording_transport(
+        {ALLOWED_SOURCE_URL: httpx.Response(200, text='{"releases":[]}', headers={"content-type": "application/json"})},
+        seen,
+    )
+
+    result = fetch_source_url(ALLOWED_SOURCE_URL, transport=transport)
+
+    assert seen == [ALLOWED_SOURCE_URL]
+    assert result.ok
+    assert result.text == '{"releases":[]}'
+
+
+@pytest.mark.parametrize(
+    "redirect_target",
+    [
+        "https://evil.example.com/copy",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://127.0.0.1:8080/customers",
+        "https://www.find-tender.service.gov.uk.evil.com/copy",
+        "https://www.gov.uk@evil.example.com/copy",
+        "http://www.find-tender.service.gov.uk/downgraded",
+    ],
+)
+def test_fetch_source_url_never_requests_an_off_allowlist_redirect_target(redirect_target):
+    seen: list[str] = []
+    transport = recording_transport(
+        {ALLOWED_SOURCE_URL: httpx.Response(302, headers={"location": redirect_target})},
+        seen,
+    )
+
+    result = fetch_source_url(ALLOWED_SOURCE_URL, transport=transport)
+
+    assert seen == [ALLOWED_SOURCE_URL], f"a request escaped to {redirect_target}: {seen}"
+    assert redirect_target not in seen
+    assert not result.ok
+    assert result.text == ""
+    assert "redirected outside the official-source allow-list" in result.error
+    assert "no request was made to that address" in result.error
+    assert result.url == redirect_target
+
+
+def test_fetch_source_url_never_requests_an_internal_host_on_a_bounce_chain():
+    """allow-listed -> internal -> allow-listed. A final-URL-only check cannot see this."""
+    internal = "https://169.254.169.254/latest/meta-data/"
+    seen: list[str] = []
+    transport = recording_transport(
+        {
+            ALLOWED_SOURCE_URL: httpx.Response(302, headers={"location": internal}),
+            internal: httpx.Response(302, headers={"location": ALLOWED_SOURCE_URL}),
+        },
+        seen,
+    )
+
+    result = fetch_source_url(ALLOWED_SOURCE_URL, transport=transport)
+
+    assert seen == [ALLOWED_SOURCE_URL], f"the internal host was contacted: {seen}"
+    assert not result.ok
+    assert result.text == ""
+    assert result.url == internal
+
+
+def test_fetch_source_url_follows_an_allowlisted_redirect_and_ingests_its_content():
+    """The guard must not break legitimate canonicalisation on an approved host."""
+    canonical = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?q=rail&page=1"
+    seen: list[str] = []
+    transport = recording_transport(
+        {
+            ALLOWED_SOURCE_URL: httpx.Response(301, headers={"location": canonical}),
+            canonical: httpx.Response(200, text='{"releases":[{"ocid":"x"}]}'),
+        },
+        seen,
+    )
+
+    result = fetch_source_url(ALLOWED_SOURCE_URL, transport=transport)
+
+    assert seen == [ALLOWED_SOURCE_URL, canonical]
+    assert result.ok
+    assert result.url == canonical
+    assert '"ocid"' in result.text
+
+
+def test_fetch_source_url_abandons_an_allowlisted_redirect_loop_at_the_hop_cap():
+    other = "https://www.find-tender.service.gov.uk/api/1.0/ocdsReleasePackages?q=bus"
+    seen: list[str] = []
+    transport = recording_transport(
+        {
+            ALLOWED_SOURCE_URL: httpx.Response(302, headers={"location": other}),
+            other: httpx.Response(302, headers={"location": ALLOWED_SOURCE_URL}),
+        },
+        seen,
+    )
+
+    result = fetch_source_url(ALLOWED_SOURCE_URL, transport=transport)
+
+    assert len(seen) == MAX_REDIRECT_HOPS + 1
+    assert not result.ok
+    assert result.text == ""
+    assert "redirected more than" in result.error
+
+
+def test_fetch_source_url_still_refuses_an_off_allowlist_url_before_any_request():
+    """Entry validation is untouched: the transport must never be reached at all."""
+    seen: list[str] = []
+    transport = recording_transport({}, seen)
+
+    result = fetch_source_url("https://evil.example.com/tenders", transport=transport)
+
+    assert seen == []
+    assert not result.ok
+    assert result.error == "Blocked by official-source allow-list."

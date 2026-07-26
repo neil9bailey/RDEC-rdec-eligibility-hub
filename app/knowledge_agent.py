@@ -58,8 +58,87 @@ def load_knowledge_sources() -> list[KnowledgeSource]:
 
 
 def official_source_allowed(url: str) -> bool:
+    """Whether a URL may be requested at all.
+
+    Deliberately compares the FULL netloc, not ``parsed.hostname``. The netloc carries any
+    userinfo, so ``https://www.gov.uk@attacker.host/`` yields ``www.gov.uk@attacker.host``,
+    which is not in the set and is refused. Using ``.hostname`` here would return
+    ``attacker.host`` for that URL and ``www.gov.uk`` for ``https://www.gov.uk@x/`` variants
+    in other parsers -- that asymmetry is the whole userinfo-confusion bypass class. Do not
+    "tidy" this into ``.hostname``.
+    """
     parsed = urlparse(url)
     return parsed.scheme == "https" and parsed.netloc.lower() in OFFICIAL_DOMAINS
+
+
+#: Redirects followed after the first request. A legitimate gov.uk canonicalisation is one or
+#: two hops; the cap stops a redirect loop between two allow-listed URLs from spinning.
+MAX_REDIRECT_HOPS = 5
+
+
+@dataclass(frozen=True)
+class AllowlistedFetch:
+    """Outcome of a GET in which every hop was allow-list checked BEFORE it was sent.
+
+    ``response`` is None whenever ``refusal`` is set, so a caller cannot reach for the body of
+    a request that was refused: there is no body, because the request was never made.
+    """
+
+    response: httpx.Response | None
+    #: The URL that served the content, or -- when refused -- the hop that was not requested.
+    url: str
+    #: "" | "off_allowlist" | "hop_limit"
+    refusal: str = ""
+    #: Status of the last allow-listed response actually received (the redirect itself).
+    refused_after_status: int = 0
+
+
+def fetch_via_allowlisted_hops(
+    client: httpx.Client,
+    url: str,
+    is_allowed,
+    *,
+    headers: dict[str, str] | None = None,
+    max_hops: int = MAX_REDIRECT_HOPS,
+) -> AllowlistedFetch:
+    """GET ``url``, validating every redirect target against ``is_allowed`` before requesting it.
+
+    G5b finding E6-SSRF. The previous form of both fetchers passed ``follow_redirects=True`` and
+    re-applied the allow-list to the FINAL url afterwards. That check is post-hoc by construction:
+    an open redirect on an allow-listed gov.uk or procurement host made the client send a request
+    to the internal address, and only then was the result discarded. The content was never
+    ingested, but the request left the host -- blind SSRF. Instrumentation at G5b confirmed the
+    intermediate request was really being sent.
+
+    Two properties do the work here:
+
+    * ``follow_redirects=False`` is passed PER REQUEST, not merely on the client. A caller that
+      hands in a client built with ``follow_redirects=True`` therefore still cannot make this
+      function auto-follow -- the per-request value overrides the client default in httpx.
+    * The URL that is validated is the one taken off the request object that is about to be
+      sent (``response.next_request``, built by httpx itself from the ``Location`` header), and
+      that same object is then sent unmodified. There is no re-parse between the check and the
+      send, so relative, scheme-relative and userinfo-bearing Location values cannot resolve to
+      one thing for the allow-list and another for the transport.
+
+    This lives in ``knowledge_agent`` rather than in a module of its own only because a new
+    application module was outside the remediation's file scope; it is shared verbatim with
+    ``framework_intelligence.fetch_source_url`` so the two outbound guards cannot drift apart.
+    Extracting it to ``app/safe_fetch.py`` is a sensible follow-up.
+    """
+    request = client.build_request("GET", url, headers=headers)
+    last_status = 0
+    for _ in range(max_hops + 1):
+        current = str(request.url)
+        if not is_allowed(current):
+            return AllowlistedFetch(None, current, "off_allowlist", last_status)
+        response = client.send(request, follow_redirects=False)
+        last_status = response.status_code
+        next_request = response.next_request
+        if next_request is None:
+            return AllowlistedFetch(response, current)
+        request = next_request
+    return AllowlistedFetch(None, str(request.url), "hop_limit", last_status)
 
 
 def latest_checks_by_source(session: Session) -> dict[str, KnowledgeSourceCheck]:
@@ -121,24 +200,50 @@ def check_source(source: KnowledgeSource, client: httpx.Client) -> KnowledgeSour
         )
 
     try:
-        response = client.get(source.url)
-        # The client follows redirects (run_live_source_checks uses
-        # follow_redirects=True), so the allow-list must be re-applied to the URL
-        # that actually served the content. Mirrors
-        # framework_intelligence.fetch_source_url. Without this, an official URL
-        # that redirects off the allow-list would have its content hashed and its
-        # "last updated" date read as if it were official guidance.
-        final_url = str(response.url)
-        if not official_source_allowed(final_url):
+        # Every hop is allow-list checked before it is requested. The earlier form followed
+        # redirects and re-checked the final URL afterwards, which discarded off-allow-list
+        # CONTENT but had already SENT the request to the off-allow-list host (G5b E6-SSRF).
+        fetched = fetch_via_allowlisted_hops(client, source.url, official_source_allowed)
+        if fetched.refusal == "off_allowlist":
             return KnowledgeSourceCheck(
                 source_id=source.id,
                 title=source.title,
-                url=final_url,
+                # The refused address is recorded, not hidden: an operator reading the check
+                # needs to see where the official source tried to send the Hub.
+                url=fetched.url,
                 ok=False,
-                status_code=response.status_code,
+                status_code=fetched.refused_after_status,
                 checked_at=datetime.now(UTC),
-                notes="Blocked: the source redirected outside the approved official domain allow-list.",
+                notes=(
+                    "Blocked: the source redirected outside the approved official domain allow-list. "
+                    "The redirect was not followed, so no request was made to that address."
+                ),
             )
+        if fetched.refusal == "hop_limit":
+            return KnowledgeSourceCheck(
+                source_id=source.id,
+                title=source.title,
+                url=fetched.url,
+                ok=False,
+                status_code=fetched.refused_after_status,
+                checked_at=datetime.now(UTC),
+                notes=(
+                    f"Blocked: the source redirected more than {MAX_REDIRECT_HOPS} times. "
+                    "The chain was abandoned and no further request was made."
+                ),
+            )
+        response = fetched.response
+        if response is None:  # pragma: no cover - unreachable: refusal is "" only with a response
+            return KnowledgeSourceCheck(
+                source_id=source.id,
+                title=source.title,
+                url=fetched.url,
+                ok=False,
+                status_code=0,
+                checked_at=datetime.now(UTC),
+                notes="Blocked: the official-source check returned no response.",
+            )
+        final_url = fetched.url
         text = response.text or ""
         return KnowledgeSourceCheck(
             source_id=source.id,
@@ -152,7 +257,10 @@ def check_source(source: KnowledgeSource, client: httpx.Client) -> KnowledgeSour
             checked_at=datetime.now(UTC),
             notes="Official source reachable." if response.status_code < 400 else "Official source returned an error status.",
         )
-    except httpx.HTTPError as exc:
+    # httpx.InvalidURL is not an HTTPError: it is raised when a Location header cannot be
+    # resolved into a request at all. Without it here a malformed redirect would escape as an
+    # unhandled exception from a routine freshness check.
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
         return KnowledgeSourceCheck(
             source_id=source.id,
             title=source.title,
@@ -167,7 +275,9 @@ def check_source(source: KnowledgeSource, client: httpx.Client) -> KnowledgeSour
 def run_live_source_checks(session: Session) -> list[KnowledgeSourceCheck]:
     sources = load_knowledge_sources()
     checks: list[KnowledgeSourceCheck] = []
-    with httpx.Client(follow_redirects=True, timeout=12.0) as client:
+    # follow_redirects=False on the client as well as per request: check_source walks the chain
+    # itself, validating each hop before it is sent (G5b E6-SSRF).
+    with httpx.Client(follow_redirects=False, timeout=12.0) as client:
         for source in sources:
             check = check_source(source, client)
             session.add(check)
