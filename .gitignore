@@ -27,6 +27,16 @@ docs/*.pdf
 # Local browser inspection artifacts.
 .playwright-mcp/
 
-# Local UI/UX score-loop capture artifacts (binary screenshots only).
-# The textual scorecard.md is retained as ADR-0002 line 70 verification evidence.
-ux-loop-artifacts/**/*.png
+# Local UI/UX score-loop capture artifacts.
+#
+# Deny by default, then re-admit only scorecard.md, which is retained as ADR-0002 line 70
+# verification evidence. The previous rule ignored *.png alone, so any other capture landing here --
+# an .html snapshot, a .json trace, a console log -- was committable. These captures are taken
+# against the live database: the sibling .playwright-mcp/ directory, which is ignored outright,
+# holds real customer identifiers in 23 non-image files, so that was a live disclosure path.
+#
+# The second line is load-bearing: git cannot re-include a file whose parent directory is excluded,
+# so directories have to be re-admitted before scorecard.md can be.
+ux-loop-artifacts/**
+!ux-loop-artifacts/**/
+!ux-loop-artifacts/**/scorecard.md
