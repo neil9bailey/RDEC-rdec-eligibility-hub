@@ -997,6 +997,34 @@ table {
   min-width: 620px;
 }
 
+/* E5-COLUMNS. A register is read by scanning down a column, so the columns whose value is an
+   atomic label must be sized to that label rather than to whatever auto table layout has left
+   over. Measured before this rule on a 1707px desktop: Period rendered at 60.64px with
+   "FY2025/26" broken over three lines, and the header cells broke as "PERI OD" and "SC OR E"
+   (2 and 3 line boxes). After: Period 95.98px, every header and the period value on one line.
+
+   Deliberately NOT a min-width on the table. That is the sibling pattern used by .table-wrap,
+   and it was measured here and rejected: .table-scroll is max-width: 100% but its .panel
+   ancestor only gets min-width: 0 inside the 680px media query, so a table min-width at 681px
+   pushed the panel out and documentElement.scrollWidth exceeded clientWidth -- page-level
+   horizontal overflow, which is exactly what ADR-0002 Ruling R1 forbids. Below 680px the panel
+   min-width IS reset, so the min-width is applied there only, matching .table-wrap table. */
+.register-table th {
+  white-space: nowrap;
+}
+
+.register-table td.col-period,
+.register-table td.col-score {
+  white-space: nowrap;
+}
+
+/* .badge is globally nowrap, which is right for a badge sitting in a sentence but wrong for one
+   that owns a table column: held on one line the rating pill claimed 219.30px of a 620px panel
+   and starved every other column. Wrapping is scoped to this column so no other badge moves. */
+.register-table td.col-rating .badge {
+  white-space: normal;
+}
+
 th,
 td {
   padding: 12px 13px;
@@ -1301,6 +1329,14 @@ pre {
   }
 
   .table-wrap table {
+    min-width: 620px;
+  }
+
+  /* E5-COLUMNS. Only here, where .panel above is reset to min-width: 0, can a table minimum be
+     given without pushing the page itself wide. At 360px it takes the register row from 947.50px
+     tall (the project title on 41 line boxes) to 92.50px, scrolling locally inside .table-scroll
+     with documentElement.scrollWidth still equal to clientWidth. */
+  .table-scroll .register-table {
     min-width: 620px;
   }
 

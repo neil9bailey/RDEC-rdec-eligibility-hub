@@ -12,27 +12,32 @@
   <div class="panel">
     <h2>Projects</h2>
     <div class="table-scroll">
-      <table>
+      {#- E5-COLUMNS. The column classes are what the stylesheet sizes the register by. Auto table
+          layout distributes width by content, so with nothing to hold them the short columns lost:
+          measured on a 1707px desktop the Period column rendered at 60.64px and "FY2025/26" broke
+          across three lines, while the headers broke as "PERI OD" and "SC OR E". An accounting
+          period is how the whole claim is scoped; a reviewer has to read it at a glance. -#}
+      <table class="register-table">
         <thead>
           <tr>
-            <th>Project</th>
-            <th>Solution</th>
-            <th>Period</th>
-            <th>Rating</th>
-            <th>Score</th>
+            <th class="col-project">Project</th>
+            <th class="col-solution">Solution</th>
+            <th class="col-period">Period</th>
+            <th class="col-rating">Rating</th>
+            <th class="col-score">Score</th>
           </tr>
         </thead>
         <tbody>
           {% for project in projects %}
             {% set score = scores.get(project.id) %}
             <tr>
-              <td><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
-              <td>{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
-              <td>{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
+              <td class="col-project"><a href="/projects/{{ project.id }}">{{ project.project_title }}</a></td>
+              <td class="col-solution">{{ solution_map.get(project.solution_id).solution_name if solution_map.get(project.solution_id) else "Unknown" }}</td>
+              <td class="col-period">{{ period_map.get(project.accounting_period_id).label if project.accounting_period_id and period_map.get(project.accounting_period_id) else "Missing" }}</td>
               {# ADR-0002 R2: the rating value stays in the class attribute; a
                  colour name is not a status, so the text is rating_label. #}
-              <td><span class="badge {{ score.rating }}">{{ score.rating_label }}</span></td>
-              <td>{{ score.score }}</td>
+              <td class="col-rating"><span class="badge {{ score.rating }}">{{ score.rating_label }}</span></td>
+              <td class="col-score">{{ score.score }}</td>
             </tr>
             <tr>
               <td colspan="5">
