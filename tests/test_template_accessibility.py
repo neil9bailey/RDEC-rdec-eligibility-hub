@@ -1090,18 +1090,31 @@ def test_the_banner_is_inside_main_so_the_skip_link_cannot_skip_it() -> None:
     )
 
 
-def test_the_banner_adds_no_tab_stop_and_no_focusable_control() -> None:
-    """A persistent banner must not cost every user a keystroke on every page.
+def test_the_banner_carries_exactly_one_link_and_no_other_control() -> None:
+    """E5-INTEGRITY-PAGE amends the assertion this replaces, and says why.
 
-    It also carries no dismiss control on purpose: the condition is a standing
-    one, and a dismissed banner would restore the silence D3.4 removes.
+    While ``/data-integrity`` did not exist the banner carried no focusable element at all
+    and this test asserted that. D3.4 always required the link; it was withheld only because
+    a link to a route that 404s is worse than none. The route exists, so the requirement is
+    now that the banner offers exactly one way forward -- the link -- and nothing else.
+
+    What has *not* changed, and is re-asserted below, is the reason the original assertion
+    existed: the banner must not cost every user a keystroke on the way to the page content.
+    It cannot, because it renders inside <main>, which the skip link already jumps past. It
+    still carries no dismiss control on purpose: the condition is a standing one, and a
+    dismissed banner would restore the silence D3.4 removes.
     """
     block = base_banner_block()
     parser = FocusableCollector()
     parser.feed(block)
-    assert parser.focusables == [], f"the banner introduces focusable elements: {parser.focusables}"
+    tags = [tag for tag, _attrs in parser.focusables]
+    assert tags == ["a"], f"the banner must offer its link and nothing else; got {tags}"
+    assert "/data-integrity" in block, "the banner's link must point at the D3.4 report page"
     assert not unnamed_controls(block)
-    # ...and the pinned whole-page metrics are unmoved.
+    assert "onclick" not in block and "hx-" not in block, (
+        "the banner is a static notice; it must not act on its own"
+    )
+    # ...and the pinned whole-page metrics are unmoved, because the banner is inside <main>.
     source = BASE_TEMPLATE.read_text(encoding="utf-8")
     assert tab_stops_to_reach_main(source) == 1
     assert len(focusables_before_main(source)) == 18

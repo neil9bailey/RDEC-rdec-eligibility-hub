@@ -74,6 +74,21 @@ VALID_EVIDENCE = {
 INVALID_EVIDENCE = dict(VALID_EVIDENCE, date_created="the third of never")
 
 
+@pytest.fixture(autouse=True)
+def _hand_the_application_back():
+    """Clear the session override this module installs on the shared ``app`` object.
+
+    Clearing it when the *next* client is built is not the same as clearing it at teardown:
+    the last test in the module would otherwise leave an override bound to a session that has
+    already been torn down, and the next module that builds a plain ``TestClient(main.app)``
+    against the real ``get_session`` writes into that dead session instead of its own database.
+    Measured: without this, tests/test_read_route_determinism.py loses three tests to "zero
+    rows created" when it happens to run after this module.
+    """
+    yield
+    app.dependency_overrides.clear()
+
+
 def client_for(session) -> TestClient:
     def override_session():
         yield session

@@ -2173,6 +2173,22 @@ button.danger-button:hover {
   font-weight: 600;
 }
 
+/* E5-INTEGRITY-PAGE: the banner's link to /data-integrity.
+
+   Colour is inherited from .integrity-banner (#5b3b00 on #fff8e6, measured 8.53:1) rather
+   than from the default link colour, which was chosen against a white panel and is not
+   guaranteed against this amber. The underline stays: on a coloured banner, colour alone is
+   not a link affordance (SC 1.4.1). */
+.integrity-banner-action {
+  margin: 8px 0 0;
+  font-weight: 700;
+}
+
+.integrity-banner-action a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .trust-note {
   margin: 18px 0 0;
   padding: 13px 14px;

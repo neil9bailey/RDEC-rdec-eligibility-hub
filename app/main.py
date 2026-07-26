@@ -24,6 +24,7 @@ from app.data_integrity import apply_foreign_key_policy
 from app.database import engine, get_session, init_db, set_fk_enforcement
 from app.data_management import (
     DATASETS,
+    DATASET_BY_KEY,
     DEPENDENCY_RULES,
     DataOperationError,
     apply_import,
@@ -611,6 +612,109 @@ def data_management_response(
 @app.get("/data-management", response_class=HTMLResponse)
 def data_management(request: Request, session: Session = Depends(get_session)):
     return data_management_response(request, session)
+
+
+# ADR-0005 D3.4. Each entry is (singular noun for the remedy sentence, path, screen name) for
+# the screen where a record of that type is opened and its links chosen.
+#
+# The nouns are written out rather than derived from DatasetSpec.label because the labels are
+# plural and de-pluralising English by rule turns "Opportunity searches" into "opportunity
+# searche". This is user-facing copy on a page an operator reads when something is already
+# wrong; it is not the place for a clever rule.
+#
+# Every path is a static route that exists. A per-record deep link is deliberately not built:
+# OrphanRecord carries the child's own id but not the scope a project-nested URL needs, and
+# for the datasets whose only foreign key IS that scope -- evidence items and competent
+# professional reviews, whose sole link is to a project -- the record has no page of its own
+# precisely because the project it belongs to is the record that has gone. The register is
+# then the only honest destination. A link that 404s would be worse than the screen name.
+ORPHAN_RECORD_SCREENS: dict[str, tuple[str, str, str]] = {
+    # Datasets with no foreign key of their own are here too: they can never be the orphan,
+    # but they are named as the missing parent, and without an entry the remedy sentence
+    # would read "choose the record it should link to".
+    "companies": ("company", "/companies", "Company setup"),
+    "framework_sources": ("opportunity source", "/framework-intelligence/sources", "Opportunity sources"),
+    "procurement_platforms": ("procurement platform", "/framework-intelligence/portal-platforms", "Procurement platforms"),
+    "accounting_periods": ("accounting period", "/companies", "Company setup"),
+    "submission_statuses": ("final review status", "/final-review", "Final review"),
+    "business_units": ("business unit", "/business-units", "Business structure"),
+    "customers": ("customer", "/customers", "Customers"),
+    "contracts": ("contract", "/contracts", "Contracts"),
+    "solutions": ("solution", "/solutions", "Solutions"),
+    "projects": ("R&D project", "/projects", "R&D project register"),
+    "technical_uncertainties": ("technical uncertainty", "/projects", "R&D project register"),
+    "activities": ("project activity", "/projects", "R&D project register"),
+    "professional_opinions": ("competent professional review", "/projects", "R&D project register"),
+    "evidence_items": ("evidence item", "/projects", "R&D project register"),
+    "cost_lines": ("cost line", "/costs", "Costs"),
+    "entitlement_assessments": ("entitlement review", "/projects", "R&D project register"),
+    "review_decisions": ("review decision", "/projects", "R&D project register"),
+    "watch_profiles": ("opportunity search", "/framework-intelligence/watch-profiles", "Opportunity searches"),
+    "opportunities": ("opportunity", "/framework-intelligence/opportunities", "Opportunities"),
+    "opportunity_documents": ("opportunity document", "/framework-intelligence/opportunities", "Opportunities"),
+    "opportunity_requirements": ("opportunity requirement", "/framework-intelligence/requirements", "Opportunity requirements"),
+    "opportunity_signals": ("review prompt", "/framework-intelligence/requirements", "Opportunity requirements"),
+    "portal_instances": ("buyer portal", "/framework-intelligence/portal-platforms", "Procurement platforms"),
+    "quality_questions": ("quality question", "/framework-intelligence/opportunities", "Opportunities"),
+    "source_check_history": ("source check record", "/framework-intelligence/source-changes", "Source changes"),
+    "opportunity_runs": ("opportunity search run", "/framework-intelligence/agent-runs", "Search history"),
+    "portal_runs": ("portal retrieval record", "/framework-intelligence/opportunities", "Opportunities"),
+    "intelligence_reports": ("opportunity report", "/framework-intelligence/reports", "Opportunity reports"),
+}
+
+ORPHAN_FALLBACK_SCREEN = ("record", "/data-management", "Data management")
+
+
+def orphan_rows(orphans) -> list[dict]:
+    """Turn the startup scan's report into rows a reviewer can act on.
+
+    Presentation only. Nothing is looked up, nothing is written, and the report is read
+    exactly as ``apply_foreign_key_policy`` left it. The column names never reach the page:
+    an operator is told the record type and the type of link that is missing, in the same
+    business language the rest of the Hub uses.
+    """
+    rows: list[dict] = []
+    for orphan in orphans:
+        child_noun, href, screen = ORPHAN_RECORD_SCREENS.get(orphan.child_dataset, ORPHAN_FALLBACK_SCREEN)
+        parent_noun = ORPHAN_RECORD_SCREENS.get(orphan.parent_dataset, ORPHAN_FALLBACK_SCREEN)[0]
+        child_spec = DATASET_BY_KEY.get(orphan.child_dataset)
+        parent_spec = DATASET_BY_KEY.get(orphan.parent_dataset)
+        rows.append(
+            {
+                "record_type": child_spec.label if child_spec else orphan.child_dataset,
+                "display": orphan.child_display,
+                "record_id": orphan.child_id,
+                "parent_type": parent_spec.label if parent_spec else orphan.parent_dataset,
+                "missing_parent_id": orphan.missing_parent_id,
+                # D3.4's own example wording ("open this contract and choose a customer"),
+                # with "the ... it should link to" in place of the indefinite article: "a"
+                # versus "an" cannot be decided from the spelling, because "R&D project" is
+                # read aloud as "an R&D project" while starting with a consonant.
+                "remedy": f"Open this {child_noun} and choose the {parent_noun} it should link to.",
+                "href": href,
+                "screen": screen,
+            }
+        )
+    return rows
+
+
+@app.get("/data-integrity", response_class=HTMLResponse)
+def data_integrity_report(request: Request):
+    """ADR-0005 D3.4: the read-only list of records whose links point at nothing.
+
+    Report only, by ADR-0005 D3.5. It offers no repair, no quarantine and no delete, and it
+    takes no database session at all -- there is nothing here that could write even by
+    accident, which is the strongest form of the ADR-0006 D1 "no GET commits" invariant.
+
+    It reads ``data_integrity.INTEGRITY_REPORT``, which the startup scan publishes for exactly
+    this purpose, off the module rather than through a from-import: startup rebinds the name,
+    and a bound reference would freeze the empty tuple it held at import time.
+    """
+    return templates.TemplateResponse(
+        request,
+        "data_integrity.html",
+        template_context(request, orphans=orphan_rows(data_integrity.INTEGRITY_REPORT)),
+    )
 
 
 @app.post("/data-management/export")

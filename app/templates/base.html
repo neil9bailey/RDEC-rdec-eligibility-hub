@@ -86,13 +86,17 @@
             ``data_integrity.orphan_warning_text``; this template does not compose or edit it.
 
             D3.4 also calls for a read-only /data-integrity page listing every orphan. That route
-            does not exist yet and creating it means editing app/main.py, which is outside this
-            increment's ownership, so no link is rendered to it -- a link to a route that 404s
-            would be worse than none. Reported as outstanding at handoff. -#}
+            now exists (E5-INTEGRITY-PAGE), so the banner links to it. The link is the one
+            focusable element in the banner and it is the whole point of the banner: a sentence
+            saying some links are broken, with no way to find out which, leaves the operator
+            with a worry and no next step. It sits inside <main>, so it costs no tab stop on the
+            way to the page content and the pinned "one tab stop reaches <main>" metric is
+            unmoved. -#}
         {% if data_integrity_warning %}
           <div class="integrity-banner" role="region" aria-labelledby="data-integrity-banner-title">
             <p class="integrity-banner-title" id="data-integrity-banner-title">Some record links need attention</p>
             <p class="integrity-banner-body">{{ data_integrity_warning }}</p>
+            <p class="integrity-banner-action"><a href="/data-integrity">See which records are affected</a></p>
           </div>
         {% endif %}
         {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}

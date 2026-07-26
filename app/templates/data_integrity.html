@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Record links - {{ app_name }}{% endblock %}
+{% block content %}
+{#- ADR-0005 D3.4: the read-only page the integrity banner links to.
+
+    Report only (D3.5). There is deliberately no button here that repairs, relinks, quarantines
+    or deletes anything: these are the operator's own RDEC evidence records, and moving them on
+    their behalf would be a destructive, non-obvious mutation. The reviewer fixes each record on
+    the screen that already owns it.
+
+    Copy discipline (ADR-0005 Guardrails, ADR-0002 line 59): operational information only. This
+    page says which links point at records the Hub cannot find. It passes no judgement on
+    whether the records themselves are right, and it is not a tax, accounting or eligibility
+    statement. It does not call anything invalid, corrupt or damaged.
+
+    The reviewer's next step is a screen, not a modal: the record type determines where it is
+    opened, and app/main.py:ORPHAN_RECORD_SCREENS maps that. -#}
+<div class="page-head">
+  <div>
+    <h1>Record links</h1>
+    <p>Records that point at another record the Hub cannot find.</p>
+  </div>
+</div>
+
+<section class="panel">
+  <h2>What this page is</h2>
+  {#- The wording follows the report. On a workspace with nothing to report, a page that says
+      "every record below stores a broken link" is stating something untrue about a list that
+      is empty, which is the same class of defect this whole increment exists to close. -#}
+  {% if orphans %}
+    <p>Every record below stores a link to another record that is not in the Hub. Nothing has been
+      changed or removed, and nothing on this page changes anything: it is a list to work through.</p>
+    <p>While any link is unresolved the Hub leaves link checking switched off, so that a record you
+      open still opens instead of failing. Link checking is switched back on the next time the Hub
+      starts with nothing on this list.</p>
+  {% else %}
+    <p>This page lists records that store a link to another record the Hub cannot find, so that
+      each one can be opened and its link chosen again. It only reports: nothing on this page
+      changes a record.</p>
+    <p>The list is built when the Hub starts. It is empty at the moment.</p>
+  {% endif %}
+</section>
+
+{% if orphans %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>{{ orphans | length }} record{{ "" if orphans | length == 1 else "s" }} to review</h2>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Record</th>
+            <th>Type</th>
+            <th>Link that is missing</th>
+            <th>What to do</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for orphan in orphans %}
+            <tr>
+              <td>
+                {{ orphan.display }}<br>
+                <span class="muted">Hub reference {{ orphan.record_id }}</span>
+              </td>
+              <td>{{ orphan.record_type }}</td>
+              <td>
+                {{ orphan.parent_type }}<br>
+                <span class="muted">Hub reference {{ orphan.missing_parent_id }}, which is not in the Hub</span>
+              </td>
+              <td>
+                {{ orphan.remedy }}<br>
+                <a class="button secondary" href="{{ orphan.href }}">Open {{ orphan.screen }}</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% else %}
+  <section class="panel" style="margin-top: 18px;">
+    <h2>Nothing to review</h2>
+    <div class="ok-panel">Every record link the Hub checked at startup points at a record that is
+      in the Hub.</div>
+  </section>
+{% endif %}
+{% endblock %}
