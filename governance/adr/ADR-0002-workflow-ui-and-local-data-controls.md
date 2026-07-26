@@ -331,6 +331,144 @@ only while implementing. Ruled, for every ADR in this repository:
 5. The EA then amends the losing clause verbatim, so the next reader is not required to rediscover
    the conflict.
 
+### Ruling R8 — colour names in advisory prose: re-baseline. The exemption is retired
+
+Added 2026-07-26 under G1 authority, on a Principal's escalation of a genuine conflict between the
+must-not-regress golden and the G4 acceptance criterion. **The Principal was right to stop.** A
+Principal who re-baselines a golden the epic pins as immutable is weakening a signed-off invariant on
+their own authority, and the interim it chose instead — a named, self-expiring exemption plus a guard
+test that fails the moment either sentence changes *or* stops being pinned — is exactly the right
+holding pattern. That behaviour is confirmed as the standard.
+
+**Ruled: option (b). The two sentences change, and this ruling is the written authorisation for that
+specific re-baseline.**
+
+The prose-versus-status-field distinction is real and it correctly describes the *blast radius* — a
+reviewer plausibly parses a sentence where they cannot parse `ambiguous_tax_review`. It does not
+survive three tests:
+
+- **ADR-0001 line 72 fixes the vocabulary the system must use**: `R&D candidate`, `review required`,
+  `strong indicators`, `blocked`, `pending competent professional and tax review`. `amber` and `green`
+  are not in it. `review required` — the exact term — is already sitting in
+  `eligibility_weights.yml:31` as amber's `description`. These sentences are non-conformant with
+  ADR-0001 independently of any G4 criterion, so (a) would require me to amend ADR-0001's vocabulary
+  clause, which I am not willing to do to preserve two sentences.
+- **One score, described two ways.** `app/reports.py:181-183` records the principle this epic already
+  applied: pack, memo and panel all read `rating_label` so they cannot describe one score
+  differently. A pack that says "Current status: review required" in one section and "cap the current
+  rating at amber" in another breaks that on the same page.
+- **The second sentence is the worse of the two.** "before treating the project as green" states a
+  threshold at which the project *becomes* something. A tool that must never decide eligibility
+  should not imply "do X and it turns green". That is closer to a verdict than a leaked identifier
+  is, not further from one. Ruling R2's bar — wording must not read as an approval, a rejection, or a
+  verdict — is the binding constraint, and line 59 is where it comes from.
+
+Fact 1 also removes the containment argument: they leak on the HTML score panel too, so this was
+never an export-only issue with a small audience.
+
+**Replacement wording — derived, not literal, and specified here so no Principal invents it.** The
+band word is read from the same rule-file `description` the badge already shows, through the accessor
+path already used at `app/services.py:668-680`, so panel and prose cannot drift and an operator
+editing `eligibility_weights.yml` gets consistent copy:
+
+```python
+# app/services.py:665
+f'Warnings keep this project at "{amber_description}" until the review points are resolved.'
+# app/services.py:609
+f'Obtain a signed competent professional opinion before treating this project as "{green_description}".'
+```
+
+Against the seeded rule files these render as:
+
+> Warnings keep this project at "review required" until the review points are resolved.
+> Obtain a signed competent professional opinion before treating this project as "strong candidate".
+
+The quotation marks are load-bearing: they keep the sentence grammatical whatever an operator edits
+the description to, and they signal that the phrase names a status rather than making a claim about
+the project. No colour word, no invented terminology, no verdict vocabulary.
+
+**Authorised re-baseline, bounded exactly.** `tests/test_scoring_golden_output.py:160` and `:208` are
+updated in the same commit as the two sentences. The diff to that file must touch **only** those two
+expected strings; any other change to it under this authorisation is out of scope and will be
+rejected. Score, rating value, blocker set, warning count and ordering are unchanged by this edit and
+must be shown to be unchanged.
+
+**The exemption is retired, the guard test is kept and repointed.** Delete the named exemption; it did
+its job. Repoint its guard from "these two strings are pinned" to the durable positive invariant:
+no reviewer-facing text — score panel, project memo, claim-period pack — contains `green`, `amber`,
+`red` or `weak` as a word. That guard fails on reintroduction from anywhere, including code this
+ruling never saw, which the exemption could not do.
+
+### Ruling R9 — the golden invariant is narrowed in principle: two tiers
+
+The deadlock was caused by pinning advisory prose with the same immutability as decision-bearing
+output, and the orchestrator is right that it will recur on the next copy change. Ruled, for
+`tests/test_scoring_golden_output.py` and any golden that follows it:
+
+**Tier 1 — decision-bearing. Byte-for-byte, immutable without an EA ruling.** The score, the rating
+*value* (`green`/`amber`/`weak`/`red` as a CSS class and `dashboard_metrics` key), the blocker set and
+its exact strings, warning-set membership and count, entitlement status values, and the ordering and
+structure of all of these. These encode what the Hub asserts. A change here is a change of meaning and
+returns to G1.
+
+**Tier 2 — advisory prose.** Recommended next actions, cap explanations, and similar reviewer-facing
+sentences. Still asserted, so accidental drift still fails a test — but:
+
+- where the text is derived from a rule file, the assertion is on the **derivation** (the sentence
+  rendered from the current `description`), not on a frozen literal;
+- a copy change that is itself approved may re-baseline Tier 2 in the same commit, by the owning role,
+  without an EA ruling, provided the commit message names the approval; and
+- Tier 2 additionally carries invariants that do not depend on exact words and therefore survive every
+  re-baseline: the caveat is present, no colour name appears as a word, and none of `not eligible`,
+  `rejected`, `fails`, `approved`, `qualifies` appears.
+
+The two tiers must be visibly separated in the test file — separate functions, each naming its tier —
+so the next person editing it can see which half they are allowed to touch. **A golden that pins
+everything equally teaches its readers that no part of it may be touched, and the first person who
+needs to change a comma either stops the line or quietly weakens the invariant. Both outcomes are
+worse than tiering it.**
+
+### Ruling R10 — the validation error page: line 58 is satisfied; the real defect is the back link
+
+Added 2026-07-26, on UAT's report that the page has no header, nav or skip link.
+
+**Line 58 conformance: satisfied, and this is not a line-58 question.** Ruling R2 above already
+settled that the clause protects exactly one string and the mechanism that renders it. `CAVEAT` is
+imported from `app.services` and rendered at `app/form_utils.py:285`, with a test asserting it appears
+nowhere as a literal in that module. That is full conformance. Line 58 says nothing about page
+furniture and must not be stretched to cover it.
+
+**The skip-link finding does not hold, on the facts.** A skip link exists to let a keyboard user jump
+*over* repeated navigation to reach the content. This page has no navigation: `app/form_utils.py:274-276`
+opens `<main>` immediately, and the first thing inside it is `<h1>Check the submitted values</h1>`.
+Adding a skip link here would add a keyboard stop that skips nothing. The page already carries
+`<html lang="en">`, a `<title>`, a single `<h1>`, a `<main>` landmark and a footer. Applying a
+nav-page checklist to a page with no nav is what produced this item.
+
+**There is a real defect, and it is the one that matters to a keyboard user.** The back link at
+`:279` defaults to `back_href = "javascript:history.back()"` (`:245`). That is not a URL: it does
+nothing when scripts are blocked or a CSP is tightened, it gives assistive technology no destination
+to announce, and it is the default every caller that passes no path inherits. "A way back" and "a way
+back if JavaScript runs" are different things, and only the first is acceptable on an error page.
+
+Ruled, and bounded:
+
+- The default becomes a real path — `/`, the workflow home — and `javascript:` must never be the
+  destination of a link the Hub renders. Callers that already pass a specific origin path keep doing
+  so; that is the better behaviour and needs no change.
+- Test: the rendered document contains no `javascript:` scheme, and the back link's `href` starts with
+  `/`.
+- **In scope for this epic** as a G4 remediation item: it is small, it is in a page this epic modified,
+  and the harm is a dead end for a subset of users.
+
+**Header and nav parity is a separate UX item and is explicitly not authorised here.** Giving this page
+the real header would mean converting a hand-built HTML string into a template that extends
+`base.html` — a template-architecture change with its own verification burden, landing at G4
+remediation while three Principals are mid-flight. The hand-built string is also deliberate: it is the
+one page assembled without Jinja, which is exactly why ADR-0004 D7 mandates explicit escaping there.
+Rewriting it as a template moves that security-relevant boundary and must not be done as a UX
+tidy-up. Raise it as its own item for a later epic.
+
 ### Related ADRs
 
 - ADR-0003 — term-matching precision and the decision-support boundary. Does not amend this ADR.
