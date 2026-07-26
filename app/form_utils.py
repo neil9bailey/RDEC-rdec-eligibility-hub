@@ -7,6 +7,12 @@ import math
 
 from fastapi.responses import HTMLResponse
 
+# ADR-0002 Ruling R2 names app/services.py CAVEAT as the single definition of the preserved
+# string. Imported rather than repeated: a second literal in this module is a second thing to
+# keep in step, and this page exists precisely because it does not inherit the shared layout.
+# No cycle: app.services and everything it imports are independent of this module.
+from app.services import CAVEAT
+
 
 # Any RDEC cost line above this is a data-entry error, not a real figure. The cap
 # also keeps a sum of many thousands of lines a very long way from float overflow,
@@ -244,6 +250,17 @@ def validation_error_response(errors: list[str], back_href: str = "javascript:hi
     escaped here, at the boundary that builds the markup, so no caller can be the reason
     an injection lands: a caller that starts passing uploaded or otherwise attacker-shaped
     text must not have to know that this page is hand-built.
+
+    It inherits nothing from ``base.html`` either, which is why the ADR-0002 line 58
+    preserve-clause had to be reached for explicitly: every other page in the Hub, and all
+    three Markdown exports, carried the caveat and this one did not. The footer below mirrors
+    ``app/templates/base.html`` -- the same two sentences in the same order, using the existing
+    ``footer`` / ``footer-inner`` classes -- so it reads as the same page furniture rather than
+    as a new element, and no stylesheet change is needed.
+
+    Behaviour is otherwise unchanged: still one complete HTML document, still status 400 for
+    the non-htmx callers this serves (htmx callers take ``partial_validation_response``), and
+    still ``html.escape`` on every message and on ``back_href``.
     """
     items = "".join(f"<li>{html.escape(str(error))}</li>" for error in errors)
     document = f"""<!doctype html>
@@ -262,6 +279,12 @@ def validation_error_response(errors: list[str], back_href: str = "javascript:hi
         <p><a href="{html.escape(str(back_href), quote=True)}">Go back and correct the form</a></p>
       </section>
     </main>
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>Decision support and evidence capture only. Not tax advice.</span>
+        <span>{CAVEAT}</span>
+      </div>
+    </footer>
   </body>
 </html>"""
     return HTMLResponse(document, status_code=400)
