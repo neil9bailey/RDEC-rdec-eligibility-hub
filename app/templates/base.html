@@ -97,6 +97,19 @@
         {% endif %}
         {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}
         {% if flash_notice %}<div class="flash-message success" role="status">{{ flash_notice }}</div>{% endif %}
+        {#- E1-HTMX. The one place an htmx form reports a refused save.
+
+            It is rendered empty on every page and stays in the DOM. A live region has to
+            exist before its content arrives to be announced reliably, which is why this is a
+            persistent empty container swapped with innerHTML rather than a container created
+            on demand. It is empty, has no padding and no border of its own, so it occupies no
+            space until a save is refused; the visual panel comes with the message.
+
+            role="alert" here, unlike the integrity banner above, is correct: a refused save is
+            an event the user caused a moment ago, not a standing condition, so an assertive
+            announcement is what a screen reader user needs. It carries no focusable element,
+            so it costs no tab stop on any page. -#}
+        <div id="save-errors" role="alert"></div>
         {% block content %}{% endblock %}
       </main>
       <footer class="footer">

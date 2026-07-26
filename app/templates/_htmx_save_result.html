@@ -1,0 +1,17 @@
+{#- E1-HTMX. The whole response to a successful htmx cost or evidence save.
+
+    Three parts, in one response, because a save changes three things on the screen:
+
+    1. ``saved_list_partial`` is the row list the form targets. It is the main swap, so it
+       replaces the element named by hx-target exactly as it did before this increment.
+    2. ``_score_panel.html`` re-renders out of band. Without it the panel kept whatever
+       rating the page was loaded with, which is how a project could show "No linked costs
+       for a claimed project" immediately after a cost was added.
+    3. #save-errors is emptied out of band, so a message from an earlier rejected attempt
+       does not stay on screen contradicting a save that has just succeeded.
+
+    The score is resolved by the route with sync=False -- the same call the GET route makes --
+    so the panel this fragment carries is the panel a fresh full-page GET would render. -#}
+{% include saved_list_partial %}
+{% include "_score_panel.html" %}
+<div id="save-errors" hx-swap-oob="innerHTML"></div>

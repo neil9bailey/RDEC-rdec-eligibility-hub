@@ -1,0 +1,21 @@
+{#- E1-HTMX. What an htmx form shows when the Hub refused the save.
+
+    ``validation_error_response`` returns a whole HTML document with status 400. htmx 2.0.4's
+    default responseHandling maps ``[45]..`` to ``swap:false``, so that response was parsed,
+    discarded, and never reached the page: the form stayed exactly as it was, no message
+    appeared anywhere, and the cost or evidence item was not saved. The user had no signal at
+    all that the Hub had rejected the figure they typed.
+
+    This fragment is returned instead, for htmx callers only, and the route retargets it into
+    the page-level #save-errors region declared in base.html. The full-page POST is untouched:
+    a browser without htmx still gets the 400 and the existing validation page.
+
+    Rendered through Jinja, so every message is autoescaped by the environment rather than by
+    hand. ADR-0002 line 19: plain business language, no stack trace, no database wording. -#}
+<div class="danger-panel save-errors-panel">
+  <p class="save-errors-title">This was not saved</p>
+  <p class="save-errors-lede">One or more values could not be understood, so nothing was added or changed. Correct them and submit again.</p>
+  <ul>
+    {% for message in save_errors %}<li>{{ message }}</li>{% endfor %}
+  </ul>
+</div>

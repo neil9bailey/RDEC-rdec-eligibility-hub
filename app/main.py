@@ -213,6 +213,69 @@ def wants_partial(request: Request) -> bool:
     return request.headers.get("HX-Request", "").lower() == "true"
 
 
+#: The page-level live region declared in base.html that a refused htmx save is reported into.
+SAVE_ERROR_REGION = "#save-errors"
+
+
+def partial_validation_response(request: Request, errors: list[str]) -> Response:
+    """Report a refused save to an htmx caller in a form the page can actually show.
+
+    ``validation_error_response`` returns a complete HTML document with status 400. htmx
+    2.0.4's default ``responseHandling`` maps ``[45]..`` to ``swap:false``, so for an htmx
+    request that response was received and then discarded: the page did not change, no message
+    appeared anywhere, and nothing was saved. Proven by driving it -- posting the add-cost form
+    with ``HX-Request: true`` and an unparseable gross cost returned 400 with a
+    ``<!doctype html>`` body and the cost line count stayed at 0, with no visible difference on
+    screen. A rejection the user cannot see is worse than no validation at all, because the
+    user believes the figure went in.
+
+    The status code is deliberately 200 here and only here. It is not a claim that the save
+    succeeded -- the body says the opposite in the first line -- it is the transport condition
+    htmx imposes for showing the body at all. The alternative, reconfiguring
+    ``htmx.config.responseHandling`` to swap 4xx globally, would make every future 4xx from any
+    htmx request splat its body into whatever element happened to be the target, which is a far
+    larger change to behaviour than this one.
+
+    ``validation_error_response`` is untouched and still serves every non-htmx caller with the
+    same 400 and the same page, so a browser with JavaScript disabled behaves exactly as before.
+    """
+    response = templates.TemplateResponse(
+        request,
+        "_save_errors.html",
+        template_context(request, save_errors=errors),
+    )
+    # Retarget, because the form's own hx-target is the row list: swapping an error message
+    # in place of the records would delete the user's view of their data to show a message.
+    response.headers["HX-Retarget"] = SAVE_ERROR_REGION
+    # innerHTML keeps the role="alert" container in the DOM across swaps, which is what makes
+    # the announcement reliable; replacing the live region itself is not dependable. show:
+    # brings the region into view, because both forms are long enough that the top of the page
+    # is off screen by the time the submit button is reached.
+    response.headers["HX-Reswap"] = "innerHTML show:window:top"
+    return response
+
+
+def partial_save_response(request: Request, context, score, list_partial: str) -> Response:
+    """The response to a successful htmx save: the list, the score panel, and a cleared error.
+
+    Before this, only ``list_partial`` was returned, so the eligibility panel kept the rating
+    the page had been loaded with. Proven by driving it: after a valid cost was added to demo
+    project 3 the swapped page still read "35/100" with the blocker "No linked costs for a
+    claimed project", while a fresh GET of the same URL returned "45/100" without it.
+    """
+    return templates.TemplateResponse(
+        request,
+        "_htmx_save_result.html",
+        template_context(
+            request,
+            context=context,
+            score=score,
+            saved_list_partial=list_partial,
+            score_panel_oob=True,
+        ),
+    )
+
+
 FRAMEWORK_SOURCE_TYPES = configured_framework_source_types()
 FRAMEWORK_OPPORTUNITY_STATUSES = ["new", "watching", "bid_review", "archived", "rejected"]
 FRAMEWORK_REVIEW_STATUSES = ["pending", "accepted", "challenged", "rejected"]
@@ -2182,11 +2245,22 @@ async def add_project_cost(project_id: int, request: Request, session: Session =
     errors: list[str] = []
     cost = cost_line_from_form(form, project_id, errors)
     if errors:
+        # E1-HTMX: same rejection, same messages, same refusal to save; only the delivery
+        # differs, because htmx discards the 400 page and the full-page POST does not.
+        if wants_partial(request):
+            return partial_validation_response(request, errors)
         return validation_error_response(errors, f"/projects/{project_id}/costs")
     save_with_audit(session, cost, "create", f"Created cost line for project {project_id}")
     context = get_project_context(session, project_id)
     if wants_partial(request):
-        return templates.TemplateResponse(request, "_cost_lines.html", template_context(request, context=context))
+        # sync=False is the same call the GET route at :2160 makes, so the panel swapped in
+        # here is the panel a fresh full-page GET renders (ADR-0006 D1/D2, ADR-0005 A1).
+        return partial_save_response(
+            request,
+            context,
+            calculate_project_score(session, project_id, sync=False),
+            "_cost_lines.html",
+        )
     return redirect(f"/projects/{project_id}/costs")
 
 
@@ -2249,6 +2323,9 @@ async def add_project_evidence(project_id: int, request: Request, session: Sessi
     relevance_tag = parse_enum(form.get("relevance_tag"), domain.RELEVANCE_TAGS, "Relevance tag", errors, "uncertainty")
     strength = parse_enum(form.get("strength"), domain.EVIDENCE_STRENGTHS, "Evidence strength", errors, "moderate")
     if errors:
+        # E1-HTMX, as for the cost form above.
+        if wants_partial(request):
+            return partial_validation_response(request, errors)
         return validation_error_response(errors, f"/projects/{project_id}/evidence")
     evidence = EvidenceItem(
         project_id=project_id,
@@ -2264,7 +2341,12 @@ async def add_project_evidence(project_id: int, request: Request, session: Sessi
     save_with_audit(session, evidence, "create", f"Created evidence item for project {project_id}")
     context = get_project_context(session, project_id)
     if wants_partial(request):
-        return templates.TemplateResponse(request, "_evidence_items.html", template_context(request, context=context))
+        return partial_save_response(
+            request,
+            context,
+            calculate_project_score(session, project_id, sync=False),
+            "_evidence_items.html",
+        )
     return redirect(f"/projects/{project_id}/evidence")
 
 

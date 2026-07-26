@@ -1,4 +1,17 @@
-<section class="panel">
+{#- E1-HTMX. The id and the out-of-band flag exist so that an htmx cost or evidence save can
+    replace this panel in the same response that replaces the list.
+
+    Before this, a successful htmx save swapped only the list partial, so the panel kept the
+    rating it was rendered with. Observed on project 3 of the demo data: the page went on
+    showing "35/100" with the blocker "No linked costs for a claimed project" while a fresh
+    GET of the same URL returned "45/100" without it. Two contradictory ratings for one
+    project, on the screen whose entire job is the number.
+
+    ``score_panel_oob`` is only ever true for an htmx save fragment, so a full page render is
+    byte-identical to what it produced before. ``default(false)`` rather than a bare truth
+    test because the templates render under StrictUndefined, where reading an unset name
+    raises. -#}
+<section class="panel" id="eligibility-score"{% if score_panel_oob | default(false) %} hx-swap-oob="true"{% endif %}>
   <h2>Eligibility Score</h2>
   {# ADR-0002 R2: score.rating stays in the class attribute -- it is the CSS
      class and the dashboard_metrics key. Only the badge TEXT changes, to the
