@@ -86,7 +86,7 @@ def test_invalid_company_email_returns_validation_error(session):
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
-    assert "Senior R&D contact email must look like an email address." in response.text
+    assert "Senior R&amp;D contact email must look like an email address." in response.text
 
 
 def test_accounting_period_auto_label_and_submission_status(session):
