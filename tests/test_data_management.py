@@ -587,8 +587,159 @@ def test_a_link_to_a_parent_in_the_same_file_is_named_from_that_file(session):
     moved = {change["field"]: (change["before"], change["after"]) for change in customer_row["changed_fields"]}
     before, after = moved["Business unit"]
     assert before == "Highways and Traffic"
-    assert after == "Digital Signalling", "the AFTER name was re-resolved against the live database"
+    # Expectation updated under ADR-0004 D1.4 as amended 2026-07-26: a parent this file will
+    # create is labelled as new, because the operator cannot look it up in the Hub.
+    assert after == "Digital Signalling (new in this file)", (
+        "the AFTER name was re-resolved against the live database"
+    )
     assert after != rail.name
+
+
+def test_a_relink_to_an_in_file_parent_is_disclosed_when_nothing_else_moves(session):
+    """ADR-0004 D1.4 as amended, R1 first failure mode: the link IS the change.
+
+    Comparing the declared integer against the stored one found them equal and reported no
+    change, so the row was marked ``skip``, counted under skipped, and the relink the
+    operator asked for was quietly dropped. The declared identifier belongs to the exporting
+    database's namespace, and under D2.1's L1-over-L3 precedence it denotes the business
+    unit this file creates, not the live one that happens to carry the same number.
+    """
+    rail = BusinessUnit(name="Rail Systems")
+    session.add(rail)
+    session.commit()
+    session.refresh(rail)
+    customer = Customer(customer_name="Colliding Customer", business_unit_id=rail.id)
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {
+            "business_units": [{"id": rail.id, "name": "Digital Signalling"}],
+            # The declared link is byte-identical to the stored one, and is the ONLY thing
+            # this row carries beyond its natural key.
+            "customers": [{"customer_name": "Colliding Customer", "business_unit_id": rail.id}],
+        },
+        "add_update",
+    )
+    unit_row, customer_row = preview["rows"]
+
+    assert unit_row["status"] == "create"
+    # ADR-0004 Ruling R2: this row previewed as ``skip`` before the fix. The movement in
+    # status and in the summary counts is the correction, not drift.
+    assert customer_row["status"] == "update"
+    assert customer_row["no_change"] is False
+    assert preview["summary"]["update"] == 1
+    moved = {change["field"]: (change["before"], change["after"]) for change in customer_row["changed_fields"]}
+    assert moved["Business unit"] == ("Rail Systems", "Digital Signalling (new in this file)")
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode)
+
+    created = session.exec(select(BusinessUnit).where(BusinessUnit.name == "Digital Signalling")).first()
+    assert created is not None and created.id != rail.id
+    session.expire_all()
+    assert session.get(Customer, customer.id).business_unit_id == created.id
+    assert session.get(BusinessUnit, rail.id).name == "Rail Systems"
+
+
+def test_a_relink_cannot_hide_behind_another_changed_field(session):
+    """ADR-0004 D1.4 as amended, R1 second failure mode: finding C2 through the link path.
+
+    Another field moves, so the row is an ``update``; apply reaches ``_resolve_links`` and
+    the foreign key IS rewritten to the in-file parent. Comparing raw values skipped the
+    link field, so an operator who reviewed "Sector: Rail -> Bus" and clicked apply also
+    silently re-parented the record. This test fails on the pre-fix tree: no
+    ``Business unit`` entry is disclosed, yet the write below still happens.
+    """
+    rail = BusinessUnit(name="Rail Systems")
+    session.add(rail)
+    session.commit()
+    session.refresh(rail)
+    customer = Customer(customer_name="Colliding Customer", business_unit_id=rail.id, sector="Rail")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+
+    preview = build_import_plan(
+        session,
+        {
+            "business_units": [{"id": rail.id, "name": "Digital Signalling"}],
+            "customers": [
+                {
+                    "customer_name": "Colliding Customer",
+                    "business_unit_id": rail.id,
+                    "sector": "Bus",
+                }
+            ],
+        },
+        "add_update",
+    )
+    customer_row = preview["rows"][1]
+    moved = {change["field"]: (change["before"], change["after"]) for change in customer_row["changed_fields"]}
+
+    assert customer_row["status"] == "update"
+    assert moved["Sector"] == ("Rail", "Bus")
+    assert "Business unit" in moved, "the relink below was applied without ever being disclosed"
+    assert moved["Business unit"] == ("Rail Systems", "Digital Signalling (new in this file)")
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode)
+
+    created = session.exec(select(BusinessUnit).where(BusinessUnit.name == "Digital Signalling")).first()
+    session.expire_all()
+    assert created is not None
+    # The write the preview now discloses: the record really is re-parented.
+    assert session.get(Customer, customer.id).business_unit_id == created.id
+
+
+def test_two_declared_identifiers_that_resolve_to_one_parent_are_not_a_change(session):
+    """ADR-0004 R2's negative control: the comparison is on the target, not the integer.
+
+    A file exported from another database carries that database's identifiers. Where the
+    parent row matches a live record by natural key, a different integer resolves to the
+    same parent, nothing moves, and disclosing a change would be noise the operator learns
+    to ignore.
+    """
+    unit = BusinessUnit(name="Rail Systems")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    customer = Customer(customer_name="Steady Customer", business_unit_id=unit.id, sector="Rail")
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    exported_id = int(unit.id) + 900
+
+    preview = build_import_plan(
+        session,
+        {
+            "business_units": [{"id": exported_id, "name": "Rail Systems"}],
+            "customers": [
+                {
+                    "customer_name": "Steady Customer",
+                    "business_unit_id": exported_id,
+                    "sector": "Bus",
+                }
+            ],
+        },
+        "add_update",
+    )
+    unit_row, customer_row = preview["rows"]
+    moved = {change["field"]: (change["before"], change["after"]) for change in customer_row["changed_fields"]}
+
+    assert unit_row["status"] == "skip"
+    assert customer_row["status"] == "update"
+    assert set(moved) == {"Sector"}
+
+    mode, approved = decode_import_payload(encode_import_payload(preview))
+    apply_import(session, approved, mode)
+
+    session.expire_all()
+    assert len(list(session.exec(select(BusinessUnit)))) == 1
+    assert session.get(Customer, customer.id).business_unit_id == unit.id
+    assert session.get(Customer, customer.id).sector == "Bus"
 
 
 def test_an_update_that_moves_nothing_is_not_counted_as_an_update(session):

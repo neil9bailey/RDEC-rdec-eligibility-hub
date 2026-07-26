@@ -65,6 +65,9 @@ CREATE_ONLY_NOTICE = (
     "Records in this area are always added as new. Importing the same file twice will create duplicates."
 )
 CHANGED_VALUE_LIMIT = 120
+# ADR-0004 D1.4 as amended 2026-07-26: a parent that this file will create is labelled as
+# new, because it cannot be looked up in the Hub by the operator checking the preview.
+NEW_PARENT_SUFFIX = " (new in this file)"
 
 
 class DataOperationError(ValueError):
@@ -767,6 +770,71 @@ def _stored_link_display(session: Session, target_key: str, value: Any) -> str:
     return _readable_value(_live_link_display(session, target_key, target_id))
 
 
+def _live_link_target(value: Any) -> tuple[Any, ...]:
+    """The parent a live foreign key points at (ADR-0004 D1.4 as amended 2026-07-26).
+
+    Used for the stored side of a comparison, which always resolves to
+    ``("live", <stored id>)``, and for an incoming value that apply will write unchanged.
+    """
+    if value in (None, ""):
+        return ("none",)
+    try:
+        return ("live", int(value))
+    except (TypeError, ValueError):
+        return ("raw", str(value))
+
+
+def _incoming_link_target(link: dict[str, str] | None, target_key: str, value: Any) -> tuple[Any, ...]:
+    """The parent an uploaded foreign key will actually point at once written.
+
+    ADR-0004 D1.4 as amended: the comparison is on the RESOLVED target, never on the
+    declared integer, because the declared integer belongs to the exporting database's
+    namespace. Two equal integers that resolve to different parents are a change; two
+    different integers that resolve to the same parent are not.
+
+    A parent this file has yet to create resolves to a ``new_in_file`` marker, which can
+    never equal a live link and is therefore always a change. The marker carries the
+    declared identifier rather than the parent's row number: inside ``_plan_links``'s
+    ``len(declared_parents) == 1`` branch exactly one in-file row declares that identifier,
+    so the two name the same row, and this avoids widening the link shape the preview
+    payload and template already consume.
+
+    With no plan entry the value is either inherited from the record being updated or a
+    link the preview could not resolve -- an error row, which never applies. Either way
+    ``_resolve_links`` writes it unchanged, so it is compared as a live link.
+    """
+    if link is None:
+        return _live_link_target(value)
+    resolved = link.get("resolved_id") or ""
+    if resolved:
+        return _live_link_target(resolved)
+    return ("new_in_file", target_key, str(value))
+
+
+def _incoming_link_display(link: dict[str, str] | None, value: Any) -> str:
+    """The AFTER side of a link change, as the parent's name (ADR-0004 D1.4)."""
+    parent = str(link.get("parent") or "") if link is not None else ""
+    if not parent:
+        return _readable_value(value)
+    if link is not None and not link.get("resolved_id"):
+        return _new_parent_display(parent)
+    return _readable_value(parent)
+
+
+def _new_parent_display(name: str) -> str:
+    """Label a parent that this file will create, e.g. ``Acme Rail Ltd (new in this file)``.
+
+    The suffix is fitted INSIDE the 120-character budget rather than appended after it, so
+    an uploaded parent name long enough to reach the truncation limit cannot push the marker
+    off the end of the disclosure and make a new parent read like an existing one.
+    """
+    limit = CHANGED_VALUE_LIMIT - len(NEW_PARENT_SUFFIX)
+    text = str(name)
+    if len(text) > limit:
+        text = text[: limit - 1] + "…"
+    return text + NEW_PARENT_SUFFIX
+
+
 def _changed_fields(
     session: Session,
     spec: DatasetSpec,
@@ -788,9 +856,15 @@ def _changed_fields(
     identifier against the live database and name the wrong parent -- the exact C2 confusion
     this disclosure exists to prevent. A link the preview could not resolve has no entry, so
     its raw value is shown beside the issue that explains it.
+
+    A link field is COMPARED on the same basis it is rendered: the resolved target, not the
+    declared integer (D1.4 as amended 2026-07-26). Comparing raw values here let a child row
+    declaring ``customer_id=4`` against a stored ``customer_id=4`` report no change while
+    ``_resolve_links`` rewrote that link to an in-file parent at apply time -- an undisclosed
+    re-parenting, finding C2 arriving through the link path.
     """
     before_values = existing.model_dump(mode="json")
-    link_parents = {str(link["field"]): _readable_value(link["parent"]) for link in links}
+    link_entries = {str(link["field"]): link for link in links}
     link_targets = dict(spec.foreign_keys)
     changed: list[dict[str, str]] = []
     for name in spec.model.model_fields:
@@ -798,12 +872,16 @@ def _changed_fields(
             continue
         before = before_values.get(name)
         after = values.get(name)
-        if before == after:
-            continue
         if name in link_targets:
-            rendered_before = _stored_link_display(session, link_targets[name], before)
-            rendered_after = link_parents.get(name) or _readable_value(after)
+            target_key = link_targets[name]
+            link = link_entries.get(name)
+            if _live_link_target(before) == _incoming_link_target(link, target_key, after):
+                continue
+            rendered_before = _stored_link_display(session, target_key, before)
+            rendered_after = _incoming_link_display(link, after)
         else:
+            if before == after:
+                continue
             rendered_before = _readable_value(before)
             rendered_after = _readable_value(after)
         changed.append(
