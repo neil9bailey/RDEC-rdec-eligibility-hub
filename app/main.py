@@ -2099,6 +2099,17 @@ async def create_business_unit(request: Request, session: Session = Depends(get_
     form = await request.form()
     errors: list[str] = []
     parent_id = parse_optional_int(form.get("parent_id"), "Parent business unit", errors)
+    # G5b E6-REQUIRED-FIELDS. The sibling class of the customer finding (E6-REQUIRED-NAME):
+    # this route accepted an empty POST body and stored a blank record plus an audit row for
+    # it. A blank business unit, contract, solution or project propagates into the claim pack
+    # and the project memo -- the documents handed to HMRC and to Ayming -- and a blank
+    # competent professional is worse still, because that name is the sign-off on the R&D
+    # judgement. The templates mark these inputs `required`, which is browser-side only and
+    # absent from any non-browser POST. Guarded on the stripped value so whitespace alone is
+    # not a name; the value STORED is left unstripped, matching the framework-source and
+    # customer routes, so nothing changes for a submission that was already valid.
+    if not str(form.get("name") or "").strip():
+        errors.append("Business unit name is required.")
     if errors:
         return validation_error_response(errors, "/business-units")
     unit = BusinessUnit(
@@ -2124,6 +2135,10 @@ async def update_business_unit(unit_id: int, request: Request, session: Session 
         return redirect_missing("business_unit")
     errors: list[str] = []
     parent_id = parse_optional_int(form.get("parent_id"), "Parent business unit", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("name") or "").strip():
+        errors.append("Business unit name is required.")
     if errors:
         return validation_error_response(errors, "/business-units")
     # The snapshot is taken before the fields change: a rename record that cannot say
@@ -2162,6 +2177,10 @@ async def create_contract(request: Request, session: Session = Depends(get_sessi
     contract_type = parse_enum(form.get("contract_type"), domain.CONTRACT_TYPES, "Contract type", errors, "other")
     start_date = parse_optional_date(form.get("start_date"), "Start date", errors)
     end_date = parse_optional_date(form.get("end_date"), "End date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("contract_name") or "").strip():
+        errors.append("Contract name is required.")
     if errors:
         return validation_error_response(errors, "/contracts")
     contract = Contract(
@@ -2193,6 +2212,10 @@ async def update_contract(contract_id: int, request: Request, session: Session =
     contract_type = parse_enum(form.get("contract_type"), domain.CONTRACT_TYPES, "Contract type", errors, "other")
     start_date = parse_optional_date(form.get("start_date"), "Start date", errors)
     end_date = parse_optional_date(form.get("end_date"), "End date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("contract_name") or "").strip():
+        errors.append("Contract name is required.")
     if errors:
         return validation_error_response(errors, "/contracts")
     before_snapshot = compact_snapshot(contract)
@@ -2245,6 +2268,10 @@ async def create_solution(request: Request, session: Session = Depends(get_sessi
     customer_id = parse_required_int(form.get("customer_id"), "Customer", errors)
     contract_id = parse_optional_int(form.get("contract_id"), "Contract", errors)
     radar_status = parse_enum(form.get("initial_radar_status"), domain.RADAR_STATUSES, "Radar status", errors, "amber")
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("solution_name") or "").strip():
+        errors.append("Solution name is required.")
     if errors:
         return validation_error_response(errors, "/solutions")
     constraints = ", ".join(form.getlist("transport_environment_constraints"))
@@ -2273,6 +2300,10 @@ async def update_solution(solution_id: int, request: Request, session: Session =
     customer_id = parse_required_int(form.get("customer_id"), "Customer", errors)
     contract_id = parse_optional_int(form.get("contract_id"), "Contract", errors)
     radar_status = parse_enum(form.get("initial_radar_status"), domain.RADAR_STATUSES, "Radar status", errors, "amber")
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("solution_name") or "").strip():
+        errors.append("Solution name is required.")
     if errors:
         return validation_error_response(errors, "/solutions")
     before_snapshot = compact_snapshot(solution)
@@ -2365,6 +2396,10 @@ async def create_project(request: Request, session: Session = Depends(get_sessio
     outcome = parse_enum(form.get("outcome"), domain.PROJECT_OUTCOMES, "Outcome", errors, "unresolved")
     rd_start_date = parse_optional_date(form.get("rd_start_date"), "R&D start date", errors)
     rd_end_date = parse_optional_date(form.get("rd_end_date"), "R&D end date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("project_title") or "").strip():
+        errors.append("Project title is required.")
     if errors:
         return validation_error_response(errors, "/projects")
     project = RDProject(
@@ -2397,6 +2432,10 @@ async def update_project(project_id: int, request: Request, session: Session = D
     outcome = parse_enum(form.get("outcome"), domain.PROJECT_OUTCOMES, "Outcome", errors, "unresolved")
     rd_start_date = parse_optional_date(form.get("rd_start_date"), "R&D start date", errors)
     rd_end_date = parse_optional_date(form.get("rd_end_date"), "R&D end date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("project_title") or "").strip():
+        errors.append("Project title is required.")
     if errors:
         return validation_error_response(errors, "/projects")
     before_snapshot = compact_snapshot(project)
@@ -2703,6 +2742,10 @@ async def add_competent_professional(project_id: int, request: Request, session:
     years = parse_optional_int(form.get("years_relevant_experience"), "Years of relevant experience", errors) or 0
     signoff_status = parse_enum(form.get("signoff_status"), domain.SIGNOFF_STATUSES, "Sign-off status", errors, "draft")
     signoff_date = parse_optional_date(form.get("signoff_date"), "Sign-off date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("professional_name") or "").strip():
+        errors.append("Professional name is required.")
     if errors:
         return validation_error_response(errors, f"/projects/{project_id}/competent-professional")
     opinion = CompetentProfessionalOpinion(
@@ -2731,6 +2774,10 @@ async def update_competent_professional(opinion_id: int, request: Request, sessi
     years = parse_optional_int(form.get("years_relevant_experience"), "Years of relevant experience", errors) or 0
     signoff_status = parse_enum(form.get("signoff_status"), domain.SIGNOFF_STATUSES, "Sign-off status", errors, "draft")
     signoff_date = parse_optional_date(form.get("signoff_date"), "Sign-off date", errors)
+    # G5b E6-REQUIRED-FIELDS, as create_business_unit: guarded on the stripped value, stored
+    # unstripped.
+    if not str(form.get("professional_name") or "").strip():
+        errors.append("Professional name is required.")
     if errors:
         return validation_error_response(errors, f"/projects/{opinion.project_id}/competent-professional")
     before_snapshot = compact_snapshot(opinion)
