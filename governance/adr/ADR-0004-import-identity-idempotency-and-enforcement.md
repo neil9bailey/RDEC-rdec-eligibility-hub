@@ -411,3 +411,131 @@ ADR-0002 lines. No stored record changes shape.
 - Cross-cutting: partly. It amends an approved ADR and weakens a security control, so G5 must review
   the ruling. No CTO escalation required; the change stays inside the local data-management domain
   that ADR-0002 already owns.
+
+## Amendments and G1 Rulings
+
+Amended 2026-07-26 by the Enterprise Architect under G1 authority, on an escalation raised from G2
+about `_changed_fields` and link resolution. D1.4 is amended for precision and a new D1.6 is added.
+The original text is retained so the change is auditable. Where an amendment and the original Decision
+section conflict, the amendment governs from 2026-07-26.
+
+### Ruling R1 — the defect is upheld, but it is not the one that was reported, and the ADR is not wrong
+
+**Upheld: `app/data_management.py:800-802` is a live breach of D1.4.** The comparison is
+
+```python
+before = before_values.get(name)   # the stored record
+after = values.get(name)           # the RAW uploaded value, before link resolution
+if before == after:
+    continue
+```
+
+so a child row that declares `customer_id=4` against a stored `customer_id=4` produces no
+`changed_fields` entry, even where `_plan_links` has already decided (`:846-860`) that the `4` denotes
+an **in-file** parent under D2.1's L1-over-L3 precedence and will therefore resolve to a different
+record.
+
+**The reported harm is not what the code does, and the real harm is worse.** The escalation stated
+that the row is reported as no-change "yet apply-time `_resolve_links` rewrites the link". It does not:
+`apply_import:1380-1384` `continue`s a `skip` row before reaching `_resolve_links` at `:1386`, so a
+skipped row is never rewritten. The one line at `:801` produces two distinct failures instead, and the
+second is the serious one:
+
+- **Silent discard.** Where the link is the *only* thing that moves, the row is marked `skip`, the
+  preview says no change, the summary counts it under `skipped`, and the relink the operator asked for
+  is quietly dropped. The operator is told nothing happened, and nothing did — but not for the reason
+  shown.
+- **Undisclosed relink — the C2 class of defect, reopened.** Where *any other* field moves, the row is
+  `update`, apply calls `_resolve_links` at `:1386`, and the foreign key **is** rewritten from the live
+  parent to the in-file parent. That write was never disclosed, because `:801` skipped the field. An
+  operator who reviewed the preview and saw only "Contract name: A -> B" has just re-parented an RDEC
+  record. This is precisely what D1.4 exists to prevent, arriving through the link path instead of the
+  identity path.
+
+**The ADR is not wrong here, and this is the difference from ADR-0003 Amendment A1.** D1.4 already says
+`changed_fields` covers "every field where `existing` differs from the **merged candidate**", and the
+merged candidate is `spec.model.model_validate(values)` at `:1387` — built *after* `_resolve_links` has
+run at `:1386`. D1.4's own words already require comparison against the value that will be written. The
+implementation compares against the pre-resolution upload. So D1.4 is amended for **precision**, not
+because its decision was wrong; a Principal must not read this as licence to treat a specified
+mechanism as advisory.
+
+**In scope for EPIC-RDEC-2026-07-VERIFIED-FIXES**, not deferred. It is a hole in the disclosure control
+that is the centrepiece of this ADR, the information needed to close it is already computed by
+`_plan_links`, and the fix touches one function plus one apply-time assertion.
+
+### Amendment A1 — D1.4, third bullet
+
+Original text:
+
+> - `changed_fields` — a list of `{"field": <label>, "before": <str>, "after": <str>}` for every field
+>   where `existing` differs from the merged candidate, each value truncated to 120 characters.
+
+Amended text, effective 2026-07-26:
+
+> - `changed_fields` — a list of `{"field": <label>, "before": <str>, "after": <str>}` for every field
+>   where `existing` differs from the merged candidate, each value truncated to 120 characters. The
+>   **merged candidate is the row as it will be written** — that is, after D2.1 link resolution, never
+>   the raw uploaded values. For a foreign-key field the comparison is therefore on the **resolved
+>   target**, not on the declared integer:
+>
+>   - the stored side always resolves to `("live", <stored id>)`;
+>   - an incoming link whose `_plan_links` entry carries a non-empty `resolved_id` resolves to
+>     `("live", <resolved_id>)`;
+>   - an incoming link whose parent is an in-file row not yet created resolves to
+>     `("new_in_file", <dataset key>, <row number>)`, which can never equal a stored live link and is
+>     therefore always a change.
+>
+>   Two equal declared integers that resolve to different targets **are** a change. Two different
+>   declared integers that resolve to the same target are **not**. Rendering stays as it is today:
+>   before and after are shown as the parent's **name**, taken from the `links` entry and never
+>   re-resolved against the live database; a parent that this file will create is labelled as new, for
+>   example `Acme Rail Ltd (new in this file)`.
+
+### Amendment A2 — new D1.6, disclosure/outcome equivalence
+
+Added 2026-07-26 as the invariant the two failures above share. D1.5 enforces the identity of the
+record written; D1.6 does for links what D1.5 does for identity.
+
+> **D1.6 — what the preview discloses and what apply performs must be the same row.**
+>
+> 1. A row disclosed as `skip` or `no change` results in **no write of any kind**, including no link
+>    rewrite.
+> 2. A row whose link will be rewritten is disclosed as an `update` whose `changed_fields` names that
+>    field and both parents by name.
+> 3. **Enforced, not merely displayed.** In `apply_import`, immediately after `_resolve_links` and
+>    before `session.add`, every foreign key whose resolved value differs from the value on the stored
+>    record must have a matching entry in that row's `changed_fields`. A mismatch raises
+>    `DataOperationError` and the whole import rolls back, through the existing `try/except`. The
+>    message is the plain-language form already used for undisclosed writes: "This import would change
+>    a record that the preview did not show. Preview the file again and check the records listed before
+>    applying."
+>
+> Rationale: a disclosure control that the write path can diverge from is a display feature, not a
+> control. This is the same reasoning as D1.5 and the same reasoning that made restore-by-identifier
+> opt-in.
+
+### Ruling R2 — the movement in `status` and summary counts is a correction, not drift
+
+Rows whose only real change is a link move from `skip` to `update`, and the `skip`/`update` counts in
+the summary move with them. **That is the defect being corrected, and it is expected.** It is not a
+reason to defer, and a Principal must not preserve the old counts to keep a test green.
+
+Binding constraints on the test work:
+
+- Tests that assert `skip`/`update` counts on a fixture containing an in-file parent whose declared
+  identifier collides with a live identifier may be updated, each with a comment naming this ruling.
+- Verification items 2 (C2 regression), 3 (disclosure), and 4 (C1 regression, both modes) remain
+  binding and must not be weakened to accommodate the new counts.
+- Two new regression tests are required, one per failure mode in R1: a file whose child row's **only**
+  change is an in-file relink must preview as `update`, name both parents, and apply the relink; and a
+  file whose child row moves another field **and** carries a colliding declared link must disclose the
+  link change in `changed_fields` before it is applied. The second test must be shown to fail on the
+  pre-fix tree — it is the undisclosed-write case and a test that passes before the fix is testing
+  nothing.
+- A negative control: two different declared integers that resolve to the same live parent produce no
+  `changed_fields` entry for that field.
+
+No baseline change. No schema change, no new dependency, no signature change outside
+`app/data_management.py`.
+

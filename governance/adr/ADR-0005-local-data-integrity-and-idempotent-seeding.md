@@ -342,3 +342,133 @@ the guarding code is removed, and no record shape changes.
 - Cross-cutting: partly — `tests/conftest.py` is shared by every test module, and D6 touches the
   dashboard hot path that Epic 7 also owns. Sequencing is a Delivery Lead concern; no CTO escalation
   required.
+
+## Amendments and G1 Rulings
+
+Amended 2026-07-26 by the Enterprise Architect under G1 authority, on two escalations raised from G2.
+One Decision clause is amended and one placement ruling is recorded. Original text is retained so the
+change is auditable. Where an amendment and the original Decision section conflict, the amendment
+governs from 2026-07-26.
+
+### Ruling R1 — D3.1 file placement: the relocation to `app/data_integrity.py` is required
+
+`scan_orphans` and `OrphanRecord` were implemented in `app/database.py` (`:228`, `:164`) rather than
+in `app/data_integrity.py` as D3.1 names. **The cause of the deviation was the orchestrator's
+file-ownership assignment, which did not grant `app/data_integrity.py` to the implementing Principal.
+It is recorded here as an orchestration deviation, not an implementation defect.** The Principal
+conformed to every name and signature D3.1 specifies and wrote the intended relocation into the
+module (`app/database.py:137-144`), so the fix is a move with no call-site change.
+
+**Ruled: the placement is not ratified. The relocation to `app/data_integrity.py` is required, and it
+is required before the D3.3/D3.4 startup-and-banner wiring and before D4.**
+
+The reason is not tidiness. Three things in the delivered code are evidence that the layer is wrong,
+and each of them gets worse if the placement is ratified:
+
+- `app/database.py:236-238` imports `app.data_management` **inside the function body**, with a
+  comment stating that this is to avoid the low-level module taking a package-level dependency on a
+  much higher-level one. A deferred import used to dodge a dependency inversion is the inversion,
+  reported. It also moves an `ImportError` from process start to scan time.
+- `DISPLAY_FIELD_ORDER` (`:147-160`) and `_display_for` (`:216`) are presentation concerns —
+  choosing the human label for a record — now resident in the module that owns the engine, the
+  session, and the schema.
+- D4.1 requires `require_parent` in the same module, explicitly *not* in `form_utils.py`, which must
+  stay free of persistence imports. Ratifying `app/database.py` means either every create and update
+  route in `app/main.py` imports form validation from the engine module, or the ADR-0005 surface
+  splits across two modules. Both are worse than a move.
+
+The move is cheap **now** and will not be later: at the time of this ruling the only consumers are
+`app/database.py` itself and `tests/test_startup.py`, which refers to the names through the
+`database.` module prefix. `app/main.py` does not yet import them, because the wiring increment has
+not run.
+
+Conditions on the relocation, which make it a pure move:
+
+- Move `OrphanRecord`, `IntegrityScanResult`, `DISPLAY_FIELD_ORDER`, `_display_for`,
+  `missing_foreign_key_constraints`, `scan_orphans`, `orphan_warning_text`,
+  `apply_foreign_key_policy`, `INTEGRITY_REPORT`, and `INTEGRITY_WARNING` to
+  `app/data_integrity.py`, unchanged in name, signature, and behaviour.
+- `app/data_integrity.py` imports `app.data_management` at **module level**. The function-local
+  import is removed, not carried across.
+- `FK_ENFORCEMENT`, `_set_sqlite_pragma`, `make_engine`, `engine`, `set_fk_enforcement`,
+  `init_db`, `apply_sqlite_schema_updates`, and `get_session` stay in `app/database.py`. D1 is
+  unaffected: the pragma listener is registered on the `Engine` class and does not move.
+- **No re-export shim.** `app/database.py` must not import these names back for compatibility; a
+  shim would preserve the inversion under a different spelling. A grep for `scan_orphans` in
+  `app/database.py` returns nothing.
+- `tests/test_startup.py` updates its module prefix. No assertion changes. The suite count is
+  unchanged by this move; if it changes, the move was not pure.
+- Scheduled through the `app/main.py` serial baton only insofar as the later wiring increment needs
+  it; the move itself touches `app/database.py`, `app/data_integrity.py`, and
+  `tests/test_startup.py`.
+
+### Amendment A1 — D6 (the conservative reading is confirmed; scope is extended by ADR-0006)
+
+**The escalation is upheld and the Principal's conservative reading is confirmed as the required
+behaviour.** D6's mechanism clause ("treats a missing `EntitlementAssessment` as 'not yet reviewed'
+rather than creating one") and its Consequences clause ("may now show 'not yet reviewed' where it
+previously created an assessment on the fly") were written about the *stored review record*. Read as
+an instruction to the *scoring model*, they would make a published score depend on whether a row
+happened to exist yet — that is, on render history rather than on the project's facts — so the
+dashboard and the project page could publish different ratings for the same project on the same data.
+D6 permitted that divergence; it never required it, and determinism of a published rating outranks
+it.
+
+Original text:
+
+> **Approved here so that Epic 7 does not have to return to G1:** `calculate_project_score` gains a
+> `sync: bool = True` parameter. `dashboard_metrics` (`app/services.py:597`) calls it with
+> `sync=False` and treats a missing `EntitlementAssessment` as "not yet reviewed" rather than creating
+> one. Assessments continue to be created on the project assessment page, where the user is performing
+> a write.
+
+Amended text, effective 2026-07-26:
+
+> **Approved here so that Epic 7 does not have to return to G1:** `calculate_project_score` gains a
+> `sync: bool = True` parameter, and `dashboard_metrics` (`app/services.py:597`) calls it with
+> `sync=False`, so no `EntitlementAssessment` is created or committed during a render.
+>
+> "Not yet reviewed" is a statement about the **stored record**, not about the **score**. Where no
+> assessment is stored:
+>
+> - anything that reports whether a review has been recorded must say it has not been, and must never
+>   imply a completed review; and
+> - the score resolves the identical entitlement position in memory, through
+>   `entitlement_facts_for_context` — the same pure resolver `sync_entitlement_for_project` persists —
+>   so a project's rating is a function of its facts alone and is the same on every read path.
+>
+> Assessments are created on write paths only. `POST /projects/{project_id}/assessment` already calls
+> `sync_entitlement_for_project` at `app/main.py:2077`, so the record's genesis is a user action, not
+> a page view.
+
+The Consequences bullet "`dashboard_metrics` may now show 'not yet reviewed' where it previously
+created an assessment on the fly. This is a visible behaviour change and belongs in G4 UAT." is
+amended to: "`dashboard_metrics` no longer creates an assessment during a render. Published ratings
+are unchanged, because the read-only branch resolves the same position; what changes is that rows and
+audit events are no longer created by a page view. Any screen reporting a count of recorded
+assessments will show lower numbers, and that is the G4 UAT item."
+
+### Ruling R2 — the vacuous guard, and what replaces it
+
+The Principal reported that the existing golden-dataset invariant could never reach the branch D6
+changes, because `app/seed.py:686` runs `sync_entitlement_for_project` for every seeded project, so
+no seeded project ever lacks an assessment. **Confirmed, and the point generalises: a golden-output
+invariant only guards a branch its fixture actually reaches, and a seeded fixture routinely
+pre-satisfies the very condition a change is about.**
+
+The replacement test at `tests/test_scoring_golden_output.py:338`, which deletes an assessment and
+renders with one genuinely absent, is the binding conformance proof for D6. It must not be removed or
+weakened, and Verification item 11 is read as including it.
+
+### Ruling R3 — D6's scope
+
+D6 approved the removal for the dashboard render only, and the Principal was correct to escalate
+rather than extend it to the claim-period pack. The extension to every HTTP GET route, and the
+consequent decision about the pack's own content, is taken in **ADR-0006: Read Routes Do Not Write —
+Deterministic Claim-Evidence Outputs**, which extends D6 and does not amend it.
+
+### Related ADRs
+
+- ADR-0006 — read routes do not write. Extends D6 from the dashboard to every GET route and decides
+  the pack's entitlement-note content. Confirms A1 above.
+

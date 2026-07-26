@@ -247,9 +247,95 @@ baseline was not reproducible and no ADR could be amended against a reviewable b
 Committing the working tree is therefore a precondition of amendments A1 and A2, not merely repository
 hygiene. Conditions are recorded in the G1 handoff for EPIC-RDEC-2026-07-VERIFIED-FIXES.
 
+### Ruling R6 — the monetary bound is ratified at 1e12, and derived figures must be bounded too
+
+Added 2026-07-26 under G1 authority, on an escalation from the Principal implementing B1.
+
+`MAX_MONETARY_AMOUNT = 1_000_000_000_000.0` (`app/form_utils.py:13`) was introduced as the upper
+bound for `parse_money` without an approved decision behind it. The Principal was right to escalate:
+an upper bound on a claim figure is a policy choice, and a Principal choosing a number is drift even
+when the number is sensible.
+
+**Ruled: the value is ratified at `1_000_000_000_000.0`, and the reasoning is recorded so it is a
+decision rather than a habit.** Two properties make it the right order of magnitude, and both are
+about safety rather than about tax:
+
+- IEEE-754 doubles represent integers exactly up to 2^53, so a value expressed in pence stays exact
+  up to roughly 9.0e13. A cap at 1e12 keeps every accepted figure, and sums of many thousands of
+  them, inside the exactly-representable range and a very long way from the overflow that turned a
+  stored 1e308 gross cost into an `inf` qualifying amount.
+- It is several orders of magnitude above any figure that can appear on a real RDEC cost line, so it
+  refuses data-entry errors without ever refusing real work.
+
+Binding constraints:
+
+- The name, the value, and the module stay as they are. The bound is a **safety** limit on data
+  entry. Its message must remain plain and must never read as a tax, accounting, or eligibility
+  statement (line 59).
+- **A per-call `maximum` may only tighten the bound, never raise it.** Today
+  `parse_money(..., maximum=None)` yields an *unbounded* monetary value, and a caller may pass a
+  larger ceiling — a control that a caller can switch off is not a control. Required behaviour: the
+  effective maximum is `MAX_MONETARY_AMOUNT` when `maximum` is `None`, and `min(maximum,
+  MAX_MONETARY_AMOUNT)` otherwise. Conformance test: a call passing `maximum=None` and a call passing
+  a larger ceiling both still refuse `MAX_MONETARY_AMOUNT + 1`.
+- Validation applies at input time only. Nothing under this ruling rejects, rewrites, or re-validates
+  a figure already stored, and there is no migration.
+
+**Derived figures: ruled in scope, and they must be bounded.** The Principal flagged that a
+people-time gross derived from hours and rates is not subject to the cap a typed gross is refused at,
+and declined to change it because bounding a derived figure is new validation semantics. Correct to
+flag; the answer is that it must be bounded.
+
+The reported mitigation does not in fact hold. `app/main.py:334` and `:336` parse `Hours` and `Days`
+through `parse_decimal_amount` with **no `maximum` at all**, so each is bounded only by finiteness.
+With `hourly_rate` at the 1e12 cap, a large enough `hours` overflows the product to `inf`, which is
+exactly the defect B1 closed, re-entering through a second input path. A bound a user can step around
+by typing two numbers instead of one is a formality, not a control.
+
+Required, additive, no signature change to `parse_money` or `parse_float`:
+
+- `Hours` and `Days` gain an explicit quantity bound. **`MAX_QUANTITY_AMOUNT = 1_000_000.0`**,
+  defined beside `MAX_MONETARY_AMOUNT` in `app/form_utils.py` and passed as `maximum` at
+  `app/main.py:334` and `:336`. One million hours is roughly 500 person-years on a single cost line;
+  above that it is a typing error.
+- The **resolved** people-time gross is checked immediately after `resolve_people_time_gross`
+  returns (`app/main.py:341`) and before it is assigned to `cost.gross_cost`, so the check covers
+  both the calculated branch and the deliberate-override branch. It rejects a non-finite value and any
+  value above `MAX_MONETARY_AMOUNT`, appending to the same `errors` list and surfacing through the
+  existing `validation_error_response` pattern.
+- Message, using the existing `_format_bound` phrasing with the field name
+  `Calculated people time cost`, followed by one plain sentence:
+  `Calculated people time cost must be 1,000,000,000,000 or less. Check the hours, days, and rates.`
+- Conformance tests: hours above the quantity bound are refused with a message and nothing is
+  written; hours and a rate that are each individually valid but whose product exceeds the monetary
+  cap are refused with the message above and nothing is written; a valid people-time line is
+  unaffected.
+
+### Ruling R7 — standing rule for an internally inconsistent Approved ADR
+
+Added 2026-07-26 under G1 authority. Generalised from ADR-0003 Amendment A1, where the mechanism
+clause (D5.1) and the twice-stated conformance outcome (D5.3, D8) could not both hold for the same
+proven string.
+
+An Approved ADR that both specifies a mechanism and enumerates required test outcomes will
+occasionally contain an outcome its own mechanism cannot produce, and this is normally discovered
+only while implementing. Ruled, for every ADR in this repository:
+
+1. Implement the clause stated as the required **testable outcome**. It is what the next gate
+   asserts against, and it is the clause the author reasoned about twice.
+2. Do not delete the other clause. Keep it load-bearing by re-scoping it to the strongest role it can
+   still play.
+3. Record the reconciliation in a docstring at the implementation site, naming both clauses.
+4. Escalate to the Enterprise Architect as an explicit open concern in the handoff. Do not silently
+   choose, and do not halt the increment waiting for the ruling.
+5. The EA then amends the losing clause verbatim, so the next reader is not required to rediscover
+   the conflict.
+
 ### Related ADRs
 
 - ADR-0003 — term-matching precision and the decision-support boundary. Does not amend this ADR.
 - ADR-0004 — import identity, idempotency and enforcement. Amends lines 27 and 30 (A1, A2 above).
 - ADR-0005 — local data integrity: foreign-key enforcement and idempotent seeding. Operates within
   line 54; does not amend this ADR.
+- ADR-0006 — read routes do not write; deterministic claim-evidence outputs. Extends ADR-0005 D6 to
+  every GET route. Operates within line 54; does not amend this ADR.

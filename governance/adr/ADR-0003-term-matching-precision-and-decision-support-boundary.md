@@ -381,3 +381,72 @@ A Principal proves conformance by producing all of the following.
   `app/rules/eligibility_weights.yml`, `app/rules/blockers.yml`, `app/rules_engine.py`,
   `tests/test_rules_engine.py`, project assessment templates, Markdown reports.
 - Cross-cutting: no. Contained within the rules/scoring domain. No CTO escalation required.
+
+## Amendments and G1 Rulings
+
+Amended 2026-07-26 by the Enterprise Architect under G1 authority, on an escalation raised from G2 by
+the Principal implementing E6-4. One Decision clause is amended. The original text is retained so the
+change is auditable. Where this amendment and the original Decision section conflict, the amendment
+governs from 2026-07-26.
+
+### Amendment A1 — D5.1 (stop phrases apply to corroboration, not to theme presence)
+
+**The escalation is upheld. This ADR was internally inconsistent and D5.1 was the clause that was
+wrong.**
+
+D5.1 as written directs theme matching through matcher Stages 0-2, and Stage 2 discards a term hit
+whose span sits inside a stop-phrase span. The required stop phrase `station platform` (D5.2)
+contains the only `software development` pattern that `"Station platform resurfacing and drainage
+works"` matches. Under the literal mechanism that string therefore yields **no theme at all**. D5.3
+and D8 both state the required outcome for that same string as exactly one `software development`
+requirement at `confidence="low"` with zero `RDECOpportunitySignal` rows. Both cannot hold. The
+conflict is in this ADR, not in the implementation.
+
+Original text:
+
+> **D5.1** Theme matching uses the shared matcher (Stages 0-2), so compounds behave consistently.
+
+Amended text, effective 2026-07-26:
+
+> **D5.1** Theme matching uses the shared matcher, and it uses it at two different strengths, which
+> must not be conflated:
+>
+> - **Theme presence** — whether the theme is surfaced for a human at all — is decided by Stages 0-1
+>   only (normalise, then whole-token match with hyphen-compound awareness). Stop phrases are **not**
+>   applied here. A theme that a human would see mentioned in the text is still reported.
+> - **Corroboration** — whether the evidence is strong enough to raise an `RDECOpportunitySignal` and
+>   to record the requirement at `confidence="medium"` — is decided by Stages 0-2, so a hit lying
+>   inside a theme stop phrase (D5.2) does not corroborate, and by D5.3, so a lone member of
+>   `WEAK_PATTERNS` does not corroborate either.
+>
+> A theme with no corroborating evidence yields one `ExtractedRequirement` at `confidence="low"` and
+> zero `RDECOpportunitySignal` rows. Suppression removes the *conclusion*, never the *observation*.
+
+This is the reading already delivered and proven:
+`"Station platform resurfacing and drainage works"` -> `themes=['software development']`,
+`matched=('platform',)`, `corroborating=()`, `confidence=low`, `requirements=1`, signal rows `0`;
+control `"Bespoke software development platform"` -> `confidence=medium`, one signal. D5.2 and D5.3
+are **confirmed unchanged**, and D5.2's stop-phrase list stays load-bearing — it is what stops
+`platform` corroborating.
+
+The amended reading is also the one this ADR's own guardrails require. Suppressing the theme
+entirely would delete a mention from a review queue that ADR-0001 line 67 requires to show "signal
+rationale and matched terms/themes". Recording the mention while withholding the signal is the
+decision-support posture; silently seeing nothing is not.
+
+### Ruling R1 — the Principal's handling is confirmed as the standard
+
+The implementer chose the clause stated as the required **testable outcome** (D5.3/D8), kept the
+other clause load-bearing by re-scoping it rather than deleting it, wrote the reconciliation into the
+`requirement_theme_matches` docstring (`app/framework_intelligence.py:945-952`) naming both clauses,
+and escalated to G1 instead of closing the question silently. **That is correct and it becomes the
+standard.** The general form of the rule is recorded as ADR-0002 Ruling R7.
+
+The docstring's "Raised for EA at G1" sentence is now stale. Replace it with a reference to this
+amendment — for example, `ADR-0003 Amendment A1 (2026-07-26) confirms this reading and amends D5.1.`
+The rest of the docstring stays: it is the explanation of a non-obvious two-strength rule, not a
+temporary note.
+
+No code change is required by this amendment. `tests/test_text_matching.py`'s D8 cases remain the
+conformance proof and must not be weakened.
+
