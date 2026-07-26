@@ -242,7 +242,15 @@ def parse_enum(
     return raw
 
 
-def validation_error_response(errors: list[str], back_href: str = "javascript:history.back()") -> HTMLResponse:
+# ADR-0002 Ruling R10. The workflow home, and a real URL. The previous default,
+# "javascript:history.back()", is not one: it does nothing when scripts are blocked or a CSP is
+# tightened, and it gives assistive technology no destination to announce. "A way back" and "a way
+# back if JavaScript runs" are different things, and only the first is acceptable on an error page.
+# Callers that pass a specific origin path keep doing so; that is the better behaviour.
+DEFAULT_BACK_HREF = "/"
+
+
+def validation_error_response(errors: list[str], back_href: str = DEFAULT_BACK_HREF) -> HTMLResponse:
     """Render validation failures as HTML (ADR-0004 D7: escaping is mandatory).
 
     This is the one page in the Hub assembled by string interpolation rather than by
