@@ -11,5 +11,11 @@ services:
       DATA_EXPORT_ENABLED: ${DATA_EXPORT_ENABLED:-true}
       DATA_CLEANUP_ENABLED: ${DATA_CLEANUP_ENABLED:-true}
       DATA_PURGE_ENABLED: ${DATA_PURGE_ENABLED:-false}
+      # ADR-0004 D1. Makes an identifier in an uploaded file authoritative, so a file can overwrite
+      # a live record it never named. Same posture as purge: off by default, never a release default.
+      DATA_RESTORE_BY_IDENTIFIER_ENABLED: ${DATA_RESTORE_BY_IDENTIFIER_ENABLED:-false}
+      # ADR-0005 D3.6. Operator escape hatch: setting this false is the rollback lever for
+      # referential-integrity enforcement, without a code change or redeploy. Defaults on.
+      ENFORCE_FOREIGN_KEYS: ${ENFORCE_FOREIGN_KEYS:-true}
     volumes:
       - ./data:/app/data
