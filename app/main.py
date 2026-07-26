@@ -1925,6 +1925,13 @@ async def create_customer(request: Request, session: Session = Depends(get_sessi
         str(form.get("corporation_tax_status") or ""),
         errors,
     )
+    # G5b E6-REQUIRED-NAME. Every sibling create route guards its required field; this one
+    # did not, so an empty POST body created a blank customer and an audit row for it. A
+    # G5b probe did exactly that against the live database. Guarded on the stripped value so
+    # whitespace alone is not a name; the value STORED is left unstripped, matching the
+    # framework-source routes, so nothing changes for a submission that was already valid.
+    if not str(form.get("customer_name") or "").strip():
+        errors.append("Customer name is required.")
     if errors:
         return validation_error_response(errors, "/customers")
     customer = Customer(
@@ -1975,6 +1982,13 @@ async def update_customer(customer_id: int, request: Request, session: Session =
         str(form.get("corporation_tax_status") or ""),
         errors,
     )
+    # G5b E6-REQUIRED-NAME. Every sibling create route guards its required field; this one
+    # did not, so an empty POST body created a blank customer and an audit row for it. A
+    # G5b probe did exactly that against the live database. Guarded on the stripped value so
+    # whitespace alone is not a name; the value STORED is left unstripped, matching the
+    # framework-source routes, so nothing changes for a submission that was already valid.
+    if not str(form.get("customer_name") or "").strip():
+        errors.append("Customer name is required.")
     if errors:
         return validation_error_response(errors, "/customers")
     before_snapshot = compact_snapshot(customer)
