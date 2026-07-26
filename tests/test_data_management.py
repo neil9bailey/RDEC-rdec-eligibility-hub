@@ -32,6 +32,7 @@ from app.models import (
     AuditEvent,
     BusinessUnit,
     Company,
+    CompetentProfessionalOpinion,
     Contract,
     CostLine,
     Customer,
@@ -1402,6 +1403,212 @@ def test_apply_refuses_an_in_file_link_whose_parent_is_not_written_yet(session):
 
     assert "appears later in this file" in str(exc.value)
     assert list(session.exec(select(BusinessUnit))) == []
+
+
+def link_chain(session):
+    """One valid parent chain, so a row's ONLY defect can be its blank name.
+
+    Without a real project the professional_opinions row below would fail on its link instead,
+    and the test would pass for the wrong reason -- the measured finding was on rows whose
+    links all resolved.
+    """
+    unit = BusinessUnit(name="Rail Systems")
+    session.add(unit)
+    session.commit()
+    session.refresh(unit)
+    customer = Customer(customer_name="Live Customer", business_unit_id=unit.id)
+    session.add(customer)
+    session.commit()
+    session.refresh(customer)
+    solution = Solution(customer_id=customer.id, solution_name="Live Solution")
+    session.add(solution)
+    session.commit()
+    session.refresh(solution)
+    project = RDProject(solution_id=solution.id, project_title="Live Project")
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    return {"unit": unit.id, "customer": customer.id, "solution": solution.id, "project": project.id}
+
+
+# The six areas whose form handlers E6-REQUIRED-FIELDS guarded, each as a row that is valid in
+# every other respect: label the operator would read, and a row builder taking the live chain.
+REQUIRED_NAME_CASES = {
+    "business_units": ("Name", lambda ids: {"name": "   "}),
+    "customers": ("Customer name", lambda ids: {"customer_name": ""}),
+    "contracts": ("Contract name", lambda ids: {"customer_id": ids["customer"], "contract_name": " "}),
+    "solutions": ("Solution name", lambda ids: {"customer_id": ids["customer"], "solution_name": "\t\n "}),
+    "projects": ("Project title", lambda ids: {"solution_id": ids["solution"], "project_title": "  "}),
+    "professional_opinions": (
+        "Professional name",
+        lambda ids: {"project_id": ids["project"], "professional_name": "", "signoff_status": "approved"},
+    ),
+}
+
+
+def test_a_blank_required_name_is_refused_at_preview_and_writes_nothing(session):
+    """The measured finding: the import path is the second door into the guarded models.
+
+    E6-REQUIRED-FIELDS guarded ten form handlers so a required name cannot be blank. Measured
+    on the pre-fix tree, this exact call returned ``has_errors: False`` with
+    ``{create: 2, error: 0}`` and no issues, and apply then stored a competent professional
+    with ``professional_name = ''`` whose ``signoff_status`` was "approved" -- the sign-off on
+    the R&D judgement, with no signatory -- alongside a blank customer.
+    """
+    ids = link_chain(session)
+    datasets = {
+        "professional_opinions": [
+            {"project_id": ids["project"], "professional_name": "", "signoff_status": "approved"}
+        ],
+        "customers": [{"customer_name": ""}],
+    }
+
+    preview = build_import_plan(session, datasets, "add_only")
+
+    assert preview["has_errors"] is True
+    assert preview["summary"] == {"create": 0, "update": 0, "skip": 0, "error": 2}
+    assert {(issue.field, issue.message, issue.code) for issue in _all_issues(preview)} == {
+        ("Customer name", "Customer name is required.", "required_value"),
+        ("Professional name", "Professional name is required.", "required_value"),
+    }
+    # ADR-0004 D7: an errored preview issues no payload, so the normal path cannot apply it.
+    assert encode_import_payload(preview) == ""
+
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, datasets, "add_only")
+
+    assert "is required." in str(exc.value)
+    assert list(session.exec(select(CompetentProfessionalOpinion))) == []
+    assert [item.customer_name for item in session.exec(select(Customer))] == ["Live Customer"]
+    assert session.exec(select(AuditEvent).where(AuditEvent.action == "import_create")).first() is None
+
+
+@pytest.mark.parametrize("dataset_key", sorted(REQUIRED_NAME_CASES))
+def test_a_blank_name_is_refused_in_every_area_the_forms_guard(session, dataset_key):
+    """Whitespace alone is not a name, in each of the six areas, at preview and at apply.
+
+    The row is otherwise entirely valid, so the only thing that can make it an error is the
+    name. The apply half calls ``apply_import`` DIRECTLY, which is the shape a hand-crafted
+    payload takes: going through HTTP would only ever exercise the preview layer, because a
+    preview carrying this row issues no payload to post.
+    """
+    ids = link_chain(session)
+    label, build_row = REQUIRED_NAME_CASES[dataset_key]
+    model = data_management.DATASET_BY_KEY[dataset_key].model
+    before = len(list(session.exec(select(model))))
+
+    preview = build_import_plan(session, {dataset_key: [build_row(ids)]}, "add_only")
+
+    assert preview["summary"] == {"create": 0, "update": 0, "skip": 0, "error": 1}
+    assert [(issue.field, issue.message, issue.code) for issue in _all_issues(preview)] == [
+        (label, f"{label} is required.", "required_value")
+    ]
+
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, {dataset_key: [build_row(ids)]}, "add_only")
+
+    assert str(exc.value) == f"{label} is required. Preview the file again."
+    session.expire_all()
+    assert len(list(session.exec(select(model)))) == before
+
+
+def test_the_apply_layer_holds_when_the_plan_stops_reporting_a_blank_name(session, monkeypatch):
+    """The second layer, driven apart from the first as the D1.6 test drives its pair apart.
+
+    The plan apply re-builds is made to report a clean create for a row whose name is blank,
+    which is what a divergence between the two layers would look like. Apply must still refuse
+    on the values it is about to write: a control that lives only in the layer that builds the
+    preview is a display feature, and this is the layer standing between a hand-crafted payload
+    and the write.
+    """
+    real_plan = data_management.build_import_plan
+    seen = {}
+
+    def plan_without_the_blank_name_issue(session_, datasets, mode, **kwargs):
+        plan = real_plan(session_, datasets, mode, **kwargs)
+        for row in plan["rows"]:
+            row["issues"] = [issue for issue in row["issues"] if issue.code != "required_value"]
+            if row["status"] == "error" and not row["issues"]:
+                row["status"] = "create"
+        plan["summary"] = {
+            status: sum(1 for row in plan["rows"] if row["status"] == status)
+            for status in ("create", "update", "skip", "error")
+        }
+        plan["has_errors"] = bool(plan["summary"]["error"])
+        seen["plan"] = plan
+        return plan
+
+    monkeypatch.setattr(data_management, "build_import_plan", plan_without_the_blank_name_issue)
+
+    with pytest.raises(DataOperationError) as exc:
+        apply_import(session, {"customers": [{"customer_name": "   "}]}, "add_only")
+
+    # The plan apply worked from really was clean, so the refusal came from the apply layer.
+    assert seen["plan"]["has_errors"] is False
+    assert seen["plan"]["summary"] == {"create": 1, "update": 0, "skip": 0, "error": 0}
+    assert str(exc.value) == "Customer name is required. Preview the file again."
+    session.expire_all()
+    assert list(session.exec(select(Customer))) == []
+
+
+def test_the_preview_page_shows_the_operator_the_blank_name_before_they_apply(session):
+    """The disclosure is the control: the operator must see it, and get no apply button."""
+    bundle = json.dumps(
+        {"datasets": {"customers": [{"customer_name": ""}, {"customer_name": "Named Customer"}]}}
+    ).encode("utf-8")
+    client = client_for(session)
+    try:
+        response = client.post(
+            "/data-management/import/preview",
+            data={"import_mode": "add_only"},
+            files={"import_file": ("bundle.json", bundle, "application/json")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert "Customer name is required." in response.text
+    assert 'data-issue-code="required_value"' in response.text
+    assert "Fix the listed errors in the source file and preview it again." in response.text
+    assert 'action="/data-management/import/apply"' not in response.text
+    assert list(session.exec(select(Customer))) == []
+
+
+def test_a_required_name_is_declared_per_dataset_and_is_not_the_natural_key():
+    """The declaration is the mechanism, so its own shape is pinned.
+
+    Two separate hazards. First, every declared column must be a real text column of its model
+    with a human label, or the guard silently checks nothing. Second, ``required_text`` must
+    never be mistaken for ``natural_key``: the tuples that look like required-column lists ARE
+    the upsert matching keys, and rewriting one to express a non-empty rule would change which
+    live record an import overwrites -- the ADR-0004 identity model. These natural keys are
+    pinned here so that swap cannot be made quietly.
+    """
+    declared = {spec.key: spec.required_text for spec in data_management.DATASETS if spec.required_text}
+    assert declared == {
+        "business_units": ("name",),
+        "customers": ("customer_name",),
+        "contracts": ("contract_name",),
+        "solutions": ("solution_name",),
+        "projects": ("project_title",),
+        "professional_opinions": ("professional_name",),
+    }
+    assert {
+        spec.key: spec.natural_key for spec in data_management.DATASETS if spec.required_text
+    } == {
+        "business_units": ("name",),
+        "customers": ("customer_name",),
+        "contracts": ("customer_id", "contract_name"),
+        "solutions": ("customer_id", "solution_name"),
+        "projects": ("solution_id", "project_title"),
+        "professional_opinions": ("project_id", "professional_name"),
+    }
+    for spec in data_management.DATASETS:
+        for name in spec.required_text:
+            assert name in spec.model.model_fields, f"{spec.key}.{name} is not a column"
+            assert spec.model.model_fields[name].annotation is str, f"{spec.key}.{name} is not text"
+            label = data_management._field_label(spec, name)
+            assert label and "_" not in label, f"a column name would reach the operator: {label}"
 
 
 def test_cleanup_only_removes_selected_unlinked_records(session):

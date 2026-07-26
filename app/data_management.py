@@ -97,6 +97,22 @@ class DatasetSpec:
     natural_key: tuple[str, ...] = ()
     foreign_keys: tuple[tuple[str, str], ...] = ()
     importable: bool = True
+    # E6-IMPORT-REQUIRED-NAME. Columns holding the NAME a person identifies this record by --
+    # the text that reaches a claim pack, a project memo or a sign-off -- and which therefore
+    # may not arrive blank.
+    #
+    # Deliberately a tuple of its own, even though it usually names columns ``natural_key``
+    # also names. ``natural_key`` decides which live record an uploaded row MATCHES (ADR-0004
+    # D1); moving it would silently change what an import overwrites. This decides only whether
+    # a value is acceptable, and nothing reads it for matching. The two must never be conflated:
+    # a tuple that looks like a required-column list is exactly how this gap stayed invisible.
+    #
+    # Declared per dataset, never derived from the schema. "Required" in the model means the
+    # column must be PRESENT, and Pydantic is satisfied by ""; deriving non-blankness from that
+    # would extend this refusal to 16 further columns across datasets no form guards and no
+    # finding measured, changing which files import today. A new dataset states its own
+    # requirement here instead of inheriting a silent gap.
+    required_text: tuple[str, ...] = ()
     # ADR-0004 D7. Additive: overrides for columns the generic humaniser renders badly.
     # compare=False keeps DatasetSpec hashable despite the mutable default.
     field_labels: dict[str, str] = field(default_factory=dict, compare=False)
@@ -131,7 +147,15 @@ DATASETS = (
         ("accounting_period_id",),
         (("accounting_period_id", "accounting_periods"),),
     ),
-    DatasetSpec("business_units", "Business units", "Work context", BusinessUnit, ("name",), (("parent_id", "business_units"),)),
+    DatasetSpec(
+        "business_units",
+        "Business units",
+        "Work context",
+        BusinessUnit,
+        ("name",),
+        (("parent_id", "business_units"),),
+        required_text=("name",),
+    ),
     DatasetSpec(
         "customers",
         "Customers",
@@ -139,6 +163,7 @@ DATASETS = (
         Customer,
         ("customer_name",),
         (("business_unit_id", "business_units"),),
+        required_text=("customer_name",),
     ),
     DatasetSpec(
         "contracts",
@@ -147,6 +172,7 @@ DATASETS = (
         Contract,
         ("customer_id", "contract_name"),
         (("customer_id", "customers"),),
+        required_text=("contract_name",),
     ),
     DatasetSpec(
         "solutions",
@@ -155,6 +181,7 @@ DATASETS = (
         Solution,
         ("customer_id", "solution_name"),
         (("customer_id", "customers"), ("contract_id", "contracts")),
+        required_text=("solution_name",),
     ),
     DatasetSpec(
         "projects",
@@ -163,6 +190,7 @@ DATASETS = (
         RDProject,
         ("solution_id", "project_title"),
         (("solution_id", "solutions"), ("accounting_period_id", "accounting_periods")),
+        required_text=("project_title",),
     ),
     DatasetSpec(
         "technical_uncertainties",
@@ -187,6 +215,9 @@ DATASETS = (
         CompetentProfessionalOpinion,
         ("project_id", "professional_name"),
         (("project_id", "projects"),),
+        # That name is the sign-off on the R&D judgement. An approved opinion with no
+        # signatory is precisely what an HMRC enquiry would question.
+        required_text=("professional_name",),
     ),
     DatasetSpec(
         "evidence_items",
@@ -593,6 +624,36 @@ def _validation_issues(spec: DatasetSpec, error: ValidationError) -> list[Import
         label = _field_label(spec, column) if column else spec.label
         template, code = _PYDANTIC_ISSUE_MESSAGES.get(str(item.get("type", "")), _PYDANTIC_FALLBACK)
         issues.append(ImportIssue(field=label, message=template.format(label=label), code=code))
+    return issues
+
+
+def _required_text_issues(spec: DatasetSpec, values: dict[str, Any]) -> list[ImportIssue]:
+    """Every required name this row would leave blank (E6-IMPORT-REQUIRED-NAME).
+
+    E6-REQUIRED-FIELDS guarded ten form handlers so a required name cannot be blank. The
+    import path is the second door into the same models and was unguarded: Pydantic accepts
+    "" for a ``str`` field, so a CSV or JSON file could store an unnamed competent
+    professional whose sign-off status was "approved", or a blank customer, contract,
+    solution or project that then propagates into the claim pack and the project memo.
+
+    Whitespace alone is not a name, matching the form routes, which test the stripped value.
+    Nothing is stripped here: what the file says is still what the preview shows and what
+    apply writes, so a row that was already valid is unchanged in every respect.
+
+    A column the file does not mention is left alone -- on an update that means "do not change
+    this", and on a create Pydantic already reports it as missing in these same words. A null
+    is Pydantic's case too (``none_not_allowed``). So one operator situation, "this record has
+    no name", produces one message and one ``code``, whichever way the value went absent.
+    """
+    issues: list[ImportIssue] = []
+    for name in spec.required_text:
+        if name not in values:
+            continue
+        value = values[name]
+        if value is None or str(value).strip():
+            continue
+        label = _field_label(spec, name)
+        issues.append(ImportIssue(field=label, message=f"{label} is required.", code="required_value"))
     return issues
 
 
@@ -1122,6 +1183,14 @@ def build_import_plan(
                 values = _derived_values(spec, candidate.model_dump(mode="json"))
             except ValidationError as exc:
                 issues.extend(_validation_issues(spec, exc))
+            # E6-IMPORT-REQUIRED-NAME layer 1, at PREVIEW, so the operator is told before
+            # applying rather than after -- that disclosure is the control here, exactly as it
+            # is for an overwrite. Checked on ``values``, which is what apply would write: on a
+            # restore-by-identifier update those are the stored values with the file's values
+            # merged over them, so a file blanking an existing name is caught as well as a file
+            # creating a nameless record. The row's status becomes "error", which also empties
+            # the apply payload, so this alone puts the import out of reach.
+            issues.extend(_required_text_issues(spec, values))
             if not restore_by_identifier:
                 # Belt and braces on D1.2: whatever the merge produced, no identifier from an
                 # uploaded file travels on in the values that get written or re-posted.
@@ -1481,6 +1550,22 @@ def apply_import(
         issue = _rejected_dataset_issue(str(key))
         if issue is not None:
             raise DataOperationError(issue.message)
+    # E6-IMPORT-REQUIRED-NAME layer 2. ``row["values"]`` is the dict the write loop below
+    # copies, so this inspects exactly what would be stored, before anything is written and
+    # for every row whatever its status. It sits ahead of the generic revalidation raise on
+    # purpose: a hand-crafted payload that never passed a preview is then refused by name, in
+    # the words the preview would have used, instead of behind a message about data changing
+    # after a preview it never had. Same posture as D5 layer 4 above, and reached the same way
+    # -- by a caller invoking apply_import directly; over HTTP the preview layer has already
+    # refused to issue a payload for such a row.
+    for row in plan["rows"]:
+        # A key the Hub does not know can only be a dataset-level rejection row, and the loop
+        # immediately above is the control for those; skipping here keeps this loop's single
+        # responsibility rather than raising a second, less specific refusal for it.
+        spec = DATASET_BY_KEY.get(str(row["dataset_key"]))
+        blank_names = _required_text_issues(spec, row["values"]) if spec else []
+        if blank_names:
+            raise DataOperationError(f"{blank_names[0].message} Preview the file again.")
     if plan["has_errors"]:
         raise DataOperationError("The data changed after preview or no longer passes validation. Preview the file again.")
     # ADR-0004 D1.5: disclosure is enforced, not merely displayed. A row may only update the
