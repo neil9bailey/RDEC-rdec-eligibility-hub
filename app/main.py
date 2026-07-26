@@ -28,9 +28,9 @@ from app.data_management import (
     DataOperationError,
     apply_import,
     cleanup_candidates,
+    consume_import_payload,
     csv_export_zip_bytes,
     data_inventory,
-    decode_import_payload,
     delete_unused_records,
     encode_import_payload,
     json_export_bytes,
@@ -623,7 +623,11 @@ async def apply_data_import(request: Request, session: Session = Depends(get_ses
         # in a payload that was issued while it was on and is being applied after it was turned
         # off, and apply_import refuses it again rather than trusting the decode that preceded it.
         restore_enabled = get_settings().data_restore_by_identifier_enabled
-        mode, datasets = decode_import_payload(
+        # ADR-0004 D4: a preview is single-use. `decode_import_payload` was kept as a
+        # *consuming* alias so this route was fail-closed against replay before the wiring
+        # moved; the route has now moved, so the name says what it does. The alias itself is
+        # owned by app/data_management.py and is deletable once no caller is left.
+        mode, datasets = consume_import_payload(
             str(form.get("import_payload") or ""),
             restore_by_identifier_enabled=restore_enabled,
         )
