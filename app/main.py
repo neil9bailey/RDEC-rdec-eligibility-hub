@@ -40,6 +40,8 @@ from app.data_management import (
     build_import_plan,
 )
 from app.form_utils import (
+    MAX_QUANTITY_AMOUNT,
+    check_calculated_amount,
     parse_bool as parse_form_bool,
     parse_decimal_amount,
     parse_enum,
@@ -364,14 +366,26 @@ def cost_line_from_form(
     # -1000; 1e308 stored inf; and "nan" returned HTTP 500. These value fields now use
     # the bounded, finite parsers, so a nonsensical figure is refused at the form with
     # a message instead of being written to the claim.
-    hours = parse_decimal_amount(form.get("hours"), "Hours", errors)
+    # ADR-0002 Ruling R6: Hours and Days used to be parsed with no maximum at all, so each
+    # was bounded only by finiteness. Proven before this change: hours=1e300 with the rate
+    # at its 1e12 cap stored a gross of `inf`, and hours=1e300 at 1000/hour stored 1e303.
+    # A bound a user can step around by typing two numbers instead of one is a formality.
+    hours = parse_decimal_amount(form.get("hours"), "Hours", errors, maximum=MAX_QUANTITY_AMOUNT)
     hourly_rate = parse_money(form.get("hourly_rate"), "Hourly rate", errors)
-    days = parse_decimal_amount(form.get("days"), "Days", errors)
+    days = parse_decimal_amount(form.get("days"), "Days", errors, maximum=MAX_QUANTITY_AMOUNT)
     day_rate = parse_money(form.get("day_rate"), "Day rate", errors)
     gross_cost = parse_money(form.get("gross_cost"), "Gross cost", errors)
     cost_input_type = str(form.get("cost_input_type") or "direct_cost")
     if cost_input_type == "people_time":
         gross_cost = resolve_people_time_gross(gross_cost, hours, hourly_rate, days, day_rate, existing)
+        # Checked on the *resolved* figure and before it is assigned, so it covers the
+        # calculated branch and the deliberate "Gross cost override" branch alike.
+        check_calculated_amount(
+            gross_cost,
+            "Calculated people time cost",
+            errors,
+            "Check the hours, days, and rates.",
+        )
     cost = cost or CostLine(project_id=project_id)
     cost.project_id = project_id
     cost.activity = str(form.get("activity") or "")

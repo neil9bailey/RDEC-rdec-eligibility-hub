@@ -11,7 +11,30 @@ from fastapi.responses import HTMLResponse
 # Any RDEC cost line above this is a data-entry error, not a real figure. The cap
 # also keeps a sum of many thousands of lines a very long way from float overflow,
 # which is what turned a stored 1e308 gross cost into an `inf` qualifying amount.
+# Ratified at this value by ADR-0002 Ruling R6: IEEE-754 doubles are exact for
+# integers to 2^53, so a figure in pence stays exact to roughly 9.0e13, and 1e12 is
+# several orders of magnitude above any real RDEC cost line.
 MAX_MONETARY_AMOUNT = 1_000_000_000_000.0
+
+# A quantity bound for Hours and Days (ADR-0002 Ruling R6). One million hours is
+# roughly 500 person-years on a single cost line; above that it is a typing error.
+# Without it, hours and rates that are each individually acceptable multiply into a
+# people-time gross that no monetary cap ever saw: 1e300 hours at the 1e12 rate cap
+# stored `inf`, which is finding B1 re-entering through a second input path.
+MAX_QUANTITY_AMOUNT = 1_000_000.0
+
+
+def effective_maximum(maximum: float | None) -> float:
+    """The bound a call actually gets. A per-call maximum may only tighten it.
+
+    ADR-0002 Ruling R6: a control a caller can switch off is not a control. Before this,
+    ``maximum=None`` meant *unbounded* -- fail-open by construction -- and a caller could
+    also pass a ceiling above ``MAX_MONETARY_AMOUNT``. Neither is possible now: ``None``
+    resolves to ``MAX_MONETARY_AMOUNT`` and anything else is intersected with it.
+    """
+    if maximum is None:
+        return MAX_MONETARY_AMOUNT
+    return min(maximum, MAX_MONETARY_AMOUNT)
 
 
 def _clean(value: Any) -> str:
@@ -77,6 +100,10 @@ def parse_decimal_amount(
 
     Every rejection appends a human-readable message to ``errors`` and returns
     ``default``; nothing is silently coerced.
+
+    ``maximum`` is a *tightening* argument only (ADR-0002 Ruling R6). Passing ``None``
+    no longer means unbounded, and passing a ceiling above ``MAX_MONETARY_AMOUNT`` no
+    longer raises it: see ``effective_maximum``.
     """
     raw = _clean(value)
     if not raw:
@@ -98,10 +125,39 @@ def parse_decimal_amount(
     if minimum is not None and parsed < minimum:
         errors.append(f"{field_name} must be {_format_bound(minimum)} or more.")
         return default
-    if maximum is not None and parsed > maximum:
-        errors.append(f"{field_name} must be {_format_bound(maximum)} or less.")
+    bound = effective_maximum(maximum)
+    if parsed > bound:
+        errors.append(f"{field_name} must be {_format_bound(bound)} or less.")
         return default
     return parsed
+
+
+def check_calculated_amount(
+    value: float,
+    field_name: str,
+    errors: list[str],
+    hint: str,
+    maximum: float = MAX_MONETARY_AMOUNT,
+) -> bool:
+    """Bound a figure the Hub derived, not one the user typed (ADR-0002 Ruling R6).
+
+    Bounding each input is not the same as bounding the product of two of them, and it is
+    the product that is written to the claim. This applies the same limit and the same
+    plain phrasing to a resolved figure, appending to the caller's ``errors`` list so the
+    rejection surfaces through the existing ``validation_error_response`` path.
+
+    ``hint`` names the fields to look at, because the number in the message is not one the
+    user typed anywhere on the form.
+    """
+    if not math.isfinite(value):
+        errors.append(
+            f"{field_name} must be a real number. Values such as nan, inf and -inf are not accepted. {hint}"
+        )
+        return False
+    if value > maximum:
+        errors.append(f"{field_name} must be {_format_bound(maximum)} or less. {hint}")
+        return False
+    return True
 
 
 def parse_money(
