@@ -33,14 +33,27 @@ an xfail; an invariant may not":
   1.15s-3.33s here, unchanged. A budget that only holds on an idle machine is not a verified
   budget, and neither is one whose threshold has been raised until the machine it runs on passes.
 
-So the wall-clock tests below state their own precondition and check it: a fixed reference
-workload of ORM+SQLite queries, run in the same process immediately before the samples. On a quiet
-host it costs a few tens of milliseconds; on this host, loaded, it measured 0.110s-0.810s. Above
-REFERENCE_CEILING_SECONDS the render time is reported and the assertion is skipped, because the
-number is evidence about the host. At or below it the budget is asserted at its stated value, and
-because the render/reference ratio for these two routes never exceeded 5x across 12 measured
-samples, a host that passes the precondition renders both routes in well under 0.5s -- so a
-failure there is the code, which is what a budget is for.
+So the wall-clock tests below state their own precondition and check it. A fixed reference workload
+of ORM+SQLite queries -- touching none of the code under test, so it can only move when the machine
+does -- is timed in the same process immediately before the samples. Above
+REFERENCE_CEILING_SECONDS the measured render times are reported and the budget is not asserted,
+because the number is evidence about the host. At or below it the budget is asserted at its stated
+value, unchanged.
+
+The ceiling is calibrated, not guessed. Measured in this container, full suite each time:
+
+| host state                          | reference workload  | best of 3 renders   | budgets |
+|-------------------------------------|---------------------|---------------------|---------|
+| several agents' containers competing | 0.464s / 0.502s     | GET / 1.35s         | missed  |
+|                                      | 0.472s / 0.657s     | pack 0.83s          | missed  |
+| host quiet                           | 0.114s / 0.175s     | GET / 0.32s         | met     |
+|                                      |                     | pack 0.40s          | met     |
+
+0.20s sits between the two states with room either side. The ratio of the best render to the
+reference stayed between 1.3x and 2.8x across every sample taken in all three states, so a host
+that only just passes the precondition renders both routes in about 0.6s -- inside the 0.70s pack
+budget and well inside the 1.00s dashboard one. A red from these tests is therefore the code, which
+is the only thing a budget is worth asserting about.
 """
 
 from __future__ import annotations
@@ -84,7 +97,11 @@ TIMED_SAMPLES = 3
 #: PROJECT_COUNT becomes, so it measures the machine and never the benchmark.
 REFERENCE_ROUNDS = 40
 REFERENCE_ROW_LIMIT = 20
-REFERENCE_CEILING_SECONDS = 0.10
+
+#: The precondition for reading a wall clock at all, calibrated against the measured host states
+#: in the module docstring. Lower it and the budgets go dormant on a host that could have proved
+#: them; raise it and a contended host produces a red that says nothing about the code.
+REFERENCE_CEILING_SECONDS = 0.20
 
 
 def build_dataset(session: Session, project_count: int = PROJECT_COUNT) -> int:
