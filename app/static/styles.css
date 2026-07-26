@@ -1424,6 +1424,19 @@ pre {
 }
 
 /* Workflow-led application shell and data controls */
+/* E5-NAVMENU. The scroll container is .workflow-steps, not .workflow-nav.
+
+   While .workflow-nav itself scrolled, the More button was the last item inside it and so
+   scrolled out with the steps: measured at left 889 / right 961 on a 900px viewport, and the
+   same 961 at 681px. A menu holding six destinations, one of them the only route to change
+   history, cannot be off the edge of the screen with nothing to say so. .nav-menu is now a
+   sibling of the scroll container instead of a child of it, so it is in-viewport at every
+   width and cannot be reached by scrolling at all -- there is nothing to reach.
+
+   The panel keeps its containing block: it is position: absolute against the sticky .topbar
+   (nothing here is positioned), which is what lets it escape the strip's overflow and track
+   the real header height. Moving the button OUT of the overflow container only makes that
+   safer, because the panel no longer has a scrollable ancestor between it and .topbar. */
 .workflow-nav {
   width: 100%;
   max-width: 1480px;
@@ -1433,14 +1446,37 @@ pre {
   display: flex;
   align-items: stretch;
   gap: 4px;
-  overflow-x: auto;
-  overflow-y: hidden;
   background: #fff;
-  scrollbar-width: thin;
   min-width: 0;
 }
 
-.workflow-nav > a,
+/* The steps still overflow a narrow screen (983px of content at 900px), so the scroll is
+   announced rather than left to be discovered. The local/scroll background pair is the
+   standard CSS-only answer: the two white panes are attached to the content and slide away
+   as it scrolls, uncovering a shadow attached to the viewport at exactly the edge that has
+   more content behind it, and nothing at an edge that does not. It is needed because the
+   container reserves no scrollbar height at any width -- measured offsetHeight - clientHeight
+   = 0 at 360, 681, 900, 1100, 1280 and 1480px -- so at rest the strip gave no sign at all
+   that it could move. No JavaScript, no layout shift, and it costs no tab stop. */
+.workflow-steps {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  background:
+    linear-gradient(to right, #fff 40%, rgba(255, 255, 255, 0)) left center,
+    linear-gradient(to left, #fff 40%, rgba(255, 255, 255, 0)) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(24, 33, 43, 0.22), rgba(24, 33, 43, 0)) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(24, 33, 43, 0.22), rgba(24, 33, 43, 0)) right center;
+  background-repeat: no-repeat;
+  background-size: 30px 100%, 30px 100%, 12px 100%, 12px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+.workflow-steps > a,
 .nav-menu > summary {
   display: inline-flex;
   align-items: center;
@@ -1454,8 +1490,8 @@ pre {
   text-decoration: none;
 }
 
-.workflow-nav > a:hover,
-.workflow-nav > a.active {
+.workflow-steps > a:hover,
+.workflow-steps > a.active {
   color: var(--telent-purple);
   border-bottom-color: var(--telent-cyan);
   background: #f7f9fa;
@@ -1473,19 +1509,24 @@ pre {
   font-size: 11px;
 }
 
-.workflow-nav > a.active .nav-step {
+.workflow-steps > a.active .nav-step {
   border-color: var(--telent-purple);
   color: #fff;
   background: var(--telent-purple);
 }
 
-/* The panel is positioned against .topbar, not against .nav-menu. .nav-menu is
-   a child of .workflow-nav, which is an overflow-x: auto scroll container, so a
-   panel whose containing block is inside it would be clipped -- that is why the
-   panel was position: fixed with a hard-coded top: 132px. Overflow only clips a
-   positioned descendant whose containing block is the overflow element or below
-   it, so anchoring to the sticky .topbar escapes the clip AND tracks the real
-   header height at every viewport width. */
+/* The panel is positioned against .topbar, not against .nav-menu, and .nav-menu
+   therefore must not become a containing block. Overflow clips a positioned
+   descendant only when that descendant's containing block is the overflow
+   element or below it, so anchoring to the sticky .topbar escapes any clip AND
+   tracks the real header height at every viewport width; a hard-coded
+   position: fixed; top: 132px assumed one header height and put the panel 93px
+   above its own button in the 681-1100px band, where the header wraps to 225px.
+
+   E5-NAVMENU moved .nav-menu out of the scroll container (it is now a sibling of
+   .workflow-steps rather than a child), so there is no scrollable ancestor
+   between the panel and .topbar at all. margin-left: auto still pins it right,
+   now against .workflow-nav. */
 .nav-menu {
   margin: 0 0 0 auto;
   flex: 0 0 auto;
@@ -2616,7 +2657,7 @@ button.danger-button:hover {
     padding: 0 16px;
   }
 
-  .workflow-nav > a,
+  .workflow-steps > a,
   .nav-menu > summary {
     padding: 0 9px;
     font-size: 12px;

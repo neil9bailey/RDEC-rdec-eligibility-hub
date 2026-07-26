@@ -29,25 +29,43 @@
             <a class="header-action primary" href="/framework-intelligence">Opportunities</a>
           </div>
         </div>
+        {#- E5-NAVMENU. The six workflow steps scroll; the More menu does not.
+
+            Measured before this change: at a 900px viewport the More button rendered at
+            left 889 / right 961, outside a 900px viewport, because it was the last item in
+            .workflow-nav and .workflow-nav is the overflow-x: auto scroll container. The
+            panel itself was correct (in-viewport, 6px below its button at every width) --
+            it was the button that could not be seen. Same at 681px (right 961) and 360px
+            (right 870).
+
+            The steps still have to scroll on a narrow screen, so the scroll is now
+            announced instead of hidden: .workflow-steps carries the local/scroll gradient
+            pair, which shows a shadow at exactly the edge that has content beyond it and
+            nothing when there is not. The measured reason it needed announcing is that the
+            container reserved no room for a scrollbar at any width (offsetHeight -
+            clientHeight was 0 at 360, 681, 900, 1100, 1280 and 1480), so at rest there was
+            no mark on the screen of any kind. -#}
         <nav class="workflow-nav" aria-label="R&D claim workflow">
-          <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">
-            <span class="nav-step">0</span><span>Overview</span>
-          </a>
-          <a class="{{ 'active' if request.url.path.startswith('/companies') else '' }}" href="/companies">
-            <span class="nav-step">1</span><span>Company setup</span>
-          </a>
-          <a class="{{ 'active' if request.url.path.startswith('/customers') or request.url.path.startswith('/contracts') or request.url.path.startswith('/solutions') or request.url.path.startswith('/business-units') else '' }}" href="/customers">
-            <span class="nav-step">2</span><span>Work context</span>
-          </a>
-          <a class="{{ 'active' if request.url.path.startswith('/projects') and '/costs' not in request.url.path and '/evidence' not in request.url.path and '/competent-professional' not in request.url.path and '/report' not in request.url.path else '' }}" href="/projects">
-            <span class="nav-step">3</span><span>R&D review</span>
-          </a>
-          <a class="{{ 'active' if request.url.path.startswith('/costs') or request.url.path.startswith('/evidence-index') or '/costs' in request.url.path or '/evidence' in request.url.path or '/competent-professional' in request.url.path else '' }}" href="/costs">
-            <span class="nav-step">4</span><span>Evidence and costs</span>
-          </a>
-          <a class="{{ 'active' if request.url.path.startswith('/final-review') or request.url.path.startswith('/claim-periods') or '/report' in request.url.path else '' }}" href="/final-review">
-            <span class="nav-step">5</span><span>Final review</span>
-          </a>
+          <div class="workflow-steps">
+            <a class="{{ 'active' if request.url.path == '/' else '' }}" href="/">
+              <span class="nav-step">0</span><span>Overview</span>
+            </a>
+            <a class="{{ 'active' if request.url.path.startswith('/companies') else '' }}" href="/companies">
+              <span class="nav-step">1</span><span>Company setup</span>
+            </a>
+            <a class="{{ 'active' if request.url.path.startswith('/customers') or request.url.path.startswith('/contracts') or request.url.path.startswith('/solutions') or request.url.path.startswith('/business-units') else '' }}" href="/customers">
+              <span class="nav-step">2</span><span>Work context</span>
+            </a>
+            <a class="{{ 'active' if request.url.path.startswith('/projects') and '/costs' not in request.url.path and '/evidence' not in request.url.path and '/competent-professional' not in request.url.path and '/report' not in request.url.path else '' }}" href="/projects">
+              <span class="nav-step">3</span><span>R&D review</span>
+            </a>
+            <a class="{{ 'active' if request.url.path.startswith('/costs') or request.url.path.startswith('/evidence-index') or '/costs' in request.url.path or '/evidence' in request.url.path or '/competent-professional' in request.url.path else '' }}" href="/costs">
+              <span class="nav-step">4</span><span>Evidence and costs</span>
+            </a>
+            <a class="{{ 'active' if request.url.path.startswith('/final-review') or request.url.path.startswith('/claim-periods') or '/report' in request.url.path else '' }}" href="/final-review">
+              <span class="nav-step">5</span><span>Final review</span>
+            </a>
+          </div>
           <details class="nav-menu">
             <summary>More</summary>
             <div class="nav-menu-panel">
