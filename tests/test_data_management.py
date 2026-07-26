@@ -101,15 +101,79 @@ def test_every_formula_lead_is_neutralised_including_the_newly_added_line_feed(v
     assert _safe_csv_value(value) == "'" + value
 
 
-def test_the_signed_number_exemption_is_a_whole_cell_anchored_match():
-    """ADR-0004 D3 binding guardrail: never a search, never whitespace tolerant."""
-    assert PLAIN_SIGNED_NUMBER.pattern.startswith("^")
-    assert PLAIN_SIGNED_NUMBER.pattern.endswith("$")
-    assert PLAIN_SIGNED_NUMBER.match("-500 ") is None
-    assert PLAIN_SIGNED_NUMBER.match(" -500") is None
-    assert PLAIN_SIGNED_NUMBER.match("-1,000") is None
-    assert PLAIN_SIGNED_NUMBER.match("-£500") is None
-    assert PLAIN_SIGNED_NUMBER.match("−500") is None
+# Every ASCII character except the digits, plus the non-ASCII line terminators Python's `$`
+# does not treat specially today. Digits are excluded because appending one to a plain signed
+# number yields another plain signed number, which is legitimately exempt.
+NON_DIGIT_SUFFIXES = tuple(chr(code) for code in range(128) if not chr(code).isdigit()) + (
+    " ",  # line separator
+    " ",  # paragraph separator
+    "\x85",  # next line
+    "−",  # Unicode minus
+)
+PLAIN_SIGNED_NUMBERS = ("-500", "-1.5", "-0.25", "-1.5e3", "-.5")
+
+
+@pytest.mark.parametrize("number", PLAIN_SIGNED_NUMBERS)
+def test_no_trailing_character_can_re_admit_a_plain_signed_number(number):
+    """ADR-0004 D3 binding guardrail, asserted as BEHAVIOUR rather than as pattern text.
+
+    The predecessor of this test asserted ``PLAIN_SIGNED_NUMBER.pattern.endswith("$")``. That is
+    a property of a string, not of the control: it passed identically whether the code called
+    ``.match`` or ``.fullmatch``, which is exactly why G5 finding L1 survived it. It is the third
+    vacuous test found in this epic, so the replacement is deliberately general -- it sweeps every
+    non-digit ASCII suffix instead of naming the one character that happened to be wrong.
+
+    A future re-anchoring mistake (``$`` for ``\\Z``, ``re.MULTILINE``, ``.match`` for
+    ``.fullmatch``, a search) re-admits some suffix, and this goes red naming it.
+    """
+    admitted = [
+        suffix for suffix in NON_DIGIT_SUFFIXES if _safe_csv_value(number + suffix) == number + suffix
+    ]
+
+    assert not admitted, (
+        f"the exemption is not whole-cell: {number!r} followed by {[s for s in admitted]!r} "
+        f"exported un-neutralised"
+    )
+
+
+def test_a_trailing_line_feed_does_not_re_admit_a_signed_number():
+    """G5 finding L1, named explicitly so the repair is traceable to the finding.
+
+    Measured before the fix: ``_safe_csv_value("-500\\n")`` returned ``"-500\\n"`` and
+    ``_safe_csv_value("-1.5e3\\n")`` returned ``"-1.5e3\\n"``, because Python's ``$`` also matches
+    immediately before a trailing newline -- re-admitting the very character ADR-0004 D3 added to
+    ``CSV_FORMULA_LEADS``.
+    """
+    assert _safe_csv_value("-500\n") == "'-500\n"
+    assert _safe_csv_value("-1.5e3\n") == "'-1.5e3\n"
+    # Never affected, and asserted here so the repair is visibly not a widening of coverage.
+    assert _safe_csv_value("-500\r") == "'-500\r"
+    assert _safe_csv_value("-500\r\n") == "'-500\r\n"
+    assert _safe_csv_value("-500\n=1+1") == "'-500\n=1+1"
+
+
+def test_the_pattern_object_is_anchored_to_the_end_of_the_cell_not_the_last_line():
+    """The other half of the repair, pinned separately.
+
+    ``_safe_csv_value`` is safe if EITHER the pattern uses ``\\Z`` or the call site uses
+    ``.fullmatch``. Both were changed, so without this assertion a maintainer could put ``$``
+    back and no test would notice -- reopening the hole for any future ``.match`` caller.
+    """
+    assert PLAIN_SIGNED_NUMBER.match("-500\n") is None
+    assert PLAIN_SIGNED_NUMBER.fullmatch("-500\n") is None
+
+
+def test_the_signed_number_exemption_is_not_whitespace_or_currency_tolerant():
+    """ADR-0004 D3: the exemption must never grow to accept these forms."""
+    assert PLAIN_SIGNED_NUMBER.fullmatch("-500 ") is None
+    assert PLAIN_SIGNED_NUMBER.fullmatch(" -500") is None
+    assert PLAIN_SIGNED_NUMBER.fullmatch("-1,000") is None
+    assert PLAIN_SIGNED_NUMBER.fullmatch("-£500") is None
+    assert PLAIN_SIGNED_NUMBER.fullmatch("−500") is None
+    # And the ones a reviewer actually sees: still text in the exported cell.
+    assert _safe_csv_value("-500 ") == "'-500 "
+    assert _safe_csv_value("-1,000") == "'-1,000"
+    assert _safe_csv_value("−500") == "'−500"
 
 
 def test_negative_money_survives_a_csv_export_as_a_number(session):

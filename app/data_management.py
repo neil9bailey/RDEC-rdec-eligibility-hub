@@ -398,10 +398,22 @@ def json_export_bytes(session: Session, dataset_keys: list[str]) -> bytes:
 # satisfying it contains no letters and none of ! ( ) , : ; \ | + = @ " so it cannot carry
 # formula syntax, a DDE payload or a cell reference.
 #
-# BINDING GUARDRAIL (ADR-0004 D3 residual risk, reviewed at G5): this pattern is anchored
-# ^...$ and must never be changed to a search; it must never permit leading or trailing
+# BINDING GUARDRAIL (ADR-0004 D3 residual risk, reviewed at G5): this pattern is fully
+# anchored and must never be changed to a search; it must never permit leading or trailing
 # whitespace, thousands separators, currency symbols, or Unicode minus signs.
-PLAIN_SIGNED_NUMBER = re.compile(r"^-(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$")
+#
+# G5 finding L1: the end anchor was `$`, which in Python also matches immediately BEFORE a
+# trailing newline, so `-500\n` and `-1.5e3\n` satisfied the exemption and exported
+# un-neutralised. Not exploitable -- nothing can follow the LF and still match, and
+# `-500\n=1+1` was always neutralised -- but it contradicted this guardrail and re-admitted
+# precisely the LF that D3 ADDED to CSV_FORMULA_LEADS below, so it is repaired rather than
+# accepted. `\Z` matches only at the true end of the string.
+#
+# Repaired on both sides on purpose, and each side is pinned by its own test: `\Z` makes the
+# pattern object safe under any call style, and `.fullmatch` at the call site makes the call
+# safe whatever the pattern says. Neither narrows the exemption: the set of admitted values is
+# unchanged except for the trailing-line-feed forms, which were never intended to be in it.
+PLAIN_SIGNED_NUMBER = re.compile(r"^-(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?\Z")
 
 # Always neutralised, whatever follows. LF is ADDED by the amendment: it was missing before,
 # so narrowing the "-" rule is not a net reduction in coverage.
@@ -421,7 +433,7 @@ def _safe_csv_value(value: Any) -> Any:
     text = str(value)
     if text.startswith(CSV_FORMULA_LEADS) or text.startswith(CSV_UNICODE_MINUS_LEADS):
         return "'" + text
-    if text.startswith("-") and not PLAIN_SIGNED_NUMBER.match(text):
+    if text.startswith("-") and not PLAIN_SIGNED_NUMBER.fullmatch(text):
         return "'" + text
     return text
 
