@@ -170,6 +170,75 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+# E5-DELETED-MSG. Every record a route can be asked for and not find.
+#
+# Since E3-D1/E3-D2 a request for a record that is no longer in the database redirects to the
+# list instead of raising (HTTP 500 on an ordinary journey: delete a project, press Back, click
+# any of its tabs). The redirect was right and silent: the user pressed a tab and simply arrived
+# somewhere else, with nothing on the screen to say why. That is the whole of this table's job.
+#
+# The value is (what the user asked for, the list they are sent to, the heading that list shows).
+# The heading is carried here so the sentence can name where they have landed in the same words
+# as the page they are now looking at -- a reviewer should not have to work out whether the page
+# in front of them is the one the message means.
+#
+# Codes, not sentences, travel in the URL. ``flash_error`` renders whatever ``?error=`` holds
+# through this function, so a free-text message in the query string would let any link put any
+# words on the page; an unknown code falls through to the generic sentence below.
+MISSING_RECORD_COPY: dict[str, tuple[str, str, str]] = {
+    "project": ("project", "/projects", "R&D Project Register"),
+    "claim_period": ("claim period", "/companies", "Company setup"),
+    "company": ("company", "/companies", "Company setup"),
+    "customer": ("customer", "/customers", "Customer Setup"),
+    "business_unit": ("business unit", "/business-units", "Business Units"),
+    "contract": ("contract", "/contracts", "Contract / SOW Capture"),
+    "solution": ("solution", "/solutions", "Solution Intake"),
+    "cost_line": ("cost line", "/costs", "Costs"),
+    "evidence_item": ("evidence item", "/evidence-index", "Evidence Index"),
+    "professional_opinion": ("competent professional opinion", "/projects", "R&D Project Register"),
+    "opportunity": ("opportunity", "/framework-intelligence/opportunities", "Opportunity Catalogue"),
+    "requirement": (
+        "requirement",
+        "/framework-intelligence/requirements",
+        "Requirement And RDEC Signal Catalogue",
+    ),
+    "signal": (
+        "RDEC signal",
+        "/framework-intelligence/requirements",
+        "Requirement And RDEC Signal Catalogue",
+    ),
+    "report": ("report", "/framework-intelligence/reports", "Framework Intelligence Reports"),
+    "source": ("source", "/framework-intelligence/sources", "Framework Intelligence Sources"),
+    "portal_platform": (
+        "portal platform",
+        "/framework-intelligence/portal-platforms",
+        "Portal Platforms",
+    ),
+    "watch_profile": (
+        "watch profile",
+        "/framework-intelligence/watch-profiles",
+        "Customer Watch Profiles",
+    ),
+}
+
+
+def missing_record_message(kind: str) -> str:
+    """The sentence a reviewer reads after a record they asked for turned out to be gone.
+
+    Plain English on purpose. "404" and "not found" are the machine's words for this, and a
+    Finance reviewer reading a claim has no reason to know them. It does not assert that the
+    record was deleted, because the Hub cannot see that from a missing row -- an out-of-date
+    bookmark reaches this same sentence. It does state that nothing was changed, which is the
+    one thing a user who has just pressed Delete or Save most needs to know, and which
+    ADR-0006 P1 and the regression net in tests/test_edit_delete_routes.py both hold true.
+    """
+    noun, _path, heading = MISSING_RECORD_COPY[kind]
+    return (
+        f"That {noun} is no longer in this workspace. It may have been deleted, or this link "
+        f"may be out of date. Nothing has been changed, and you are now on the {heading} page."
+    )
+
+
 def friendly_query_error(value: str) -> str:
     if not value:
         return ""
@@ -178,6 +247,8 @@ def friendly_query_error(value: str) -> str:
     if value.startswith("delete_blocked_"):
         linked_area = value.removeprefix("delete_blocked_").replace("_", " ")
         return f"This record is still used by {linked_area}. Remove or reassign those links first."
+    if value.startswith("missing_") and value.removeprefix("missing_") in MISSING_RECORD_COPY:
+        return missing_record_message(value.removeprefix("missing_"))
     return "The requested change could not be completed. Review the record and try again."
 
 
@@ -213,6 +284,18 @@ def template_context(request: Request, **extra):
 
 def redirect(path: str) -> RedirectResponse:
     return RedirectResponse(path, status_code=303)
+
+
+def redirect_missing(kind: str) -> RedirectResponse:
+    """Send the user to the record's list and say why they are there.
+
+    Still a 303 and still writes nothing: the reason is the only thing that travels with it, as
+    a code in the query string that ``friendly_query_error`` turns back into a sentence. Taking
+    the destination from ``MISSING_RECORD_COPY`` rather than from the call site is what stops a
+    route naming one record while sending the reader to another list.
+    """
+    _noun, path, _heading = MISSING_RECORD_COPY[kind]
+    return redirect(f"{path}?error=missing_{kind}")
 
 
 def safe_framework_return_path(value: object, default: str) -> str:
@@ -511,10 +594,29 @@ def deleted_record_summary(model, item_id: int) -> str:
     return f"Deleted {label.lower()} record {item_id}"
 
 
+# E5-DELETED-MSG. Which record each delete route is deleting, so that pressing Delete on a
+# record a second tab has already deleted says so rather than silently reloading the list.
+MISSING_RECORD_KIND_BY_MODEL = {
+    Company: "company",
+    AccountingPeriod: "claim_period",
+    Customer: "customer",
+    BusinessUnit: "business_unit",
+    Contract: "contract",
+    Solution: "solution",
+    FrameworkSource: "source",
+    BuyerPortalInstance: "portal_platform",
+    CustomerWatchProfile: "watch_profile",
+    FrameworkOpportunity: "opportunity",
+}
+
+
 def delete_or_block(session: Session, model, item_id: int, redirect_path: str) -> RedirectResponse:
     item = session.get(model, item_id)
     if not item:
-        return redirect(redirect_path)
+        kind = MISSING_RECORD_KIND_BY_MODEL.get(model)
+        # Falls back to the silent redirect for a model not in the table, rather than raising on
+        # a delete: an unnamed record is a missing sentence, not a reason to fail the request.
+        return redirect_missing(kind) if kind else redirect(redirect_path)
     for child_model, child_field, label in DEPENDENCY_RULES.get(model, []):
         child = session.exec(select(child_model).where(child_field == item_id)).first()
         if child:
@@ -981,7 +1083,7 @@ async def update_framework_source(source_id: int, request: Request, session: Ses
     form = await request.form()
     source = session.get(FrameworkSource, source_id)
     if not source:
-        return redirect("/framework-intelligence/sources")
+        return redirect_missing("source")
     errors: list[str] = []
     source_type = parse_enum(
         form.get("source_type"),
@@ -1106,7 +1208,7 @@ async def update_portal_instance(portal_id: int, request: Request, session: Sess
     form = await request.form()
     portal = session.get(BuyerPortalInstance, portal_id)
     if not portal:
-        return redirect("/framework-intelligence/portal-platforms")
+        return redirect_missing("portal_platform")
     errors: list[str] = []
     platform_id = parse_required_int(form.get("platform_id"), "Platform", errors)
     customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
@@ -1190,7 +1292,7 @@ async def update_watch_profile(profile_id: int, request: Request, session: Sessi
     form = await request.form()
     profile = session.get(CustomerWatchProfile, profile_id)
     if not profile:
-        return redirect("/framework-intelligence/watch-profiles")
+        return redirect_missing("watch_profile")
     errors: list[str] = []
     customer_id = parse_optional_int(form.get("customer_id"), "Customer", errors)
     business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
@@ -1266,7 +1368,7 @@ def framework_opportunities(request: Request, status: str | None = None, session
 def framework_opportunity_workbench(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
     opportunity = session.get(FrameworkOpportunity, opportunity_id)
     if not opportunity:
-        return redirect("/framework-intelligence/opportunities")
+        return redirect_missing("opportunity")
     requirements = list(
         session.exec(
             select(ExtractedRequirement)
@@ -1325,7 +1427,7 @@ async def update_framework_opportunity(opportunity_id: int, request: Request, se
     form = await request.form()
     opportunity = session.get(FrameworkOpportunity, opportunity_id)
     if not opportunity:
-        return redirect("/framework-intelligence/opportunities")
+        return redirect_missing("opportunity")
     errors: list[str] = []
     status = parse_enum(
         form.get("status"),
@@ -1358,7 +1460,7 @@ def delete_framework_opportunity(opportunity_id: int, session: Session = Depends
 def opportunity_documents(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
     opportunity = session.get(FrameworkOpportunity, opportunity_id)
     if not opportunity:
-        return redirect("/framework-intelligence/opportunities")
+        return redirect_missing("opportunity")
     documents = list(
         session.exec(
             select(OpportunityDocument)
@@ -1399,7 +1501,7 @@ async def create_opportunity_document(opportunity_id: int, request: Request, ses
     form = await request.form()
     opportunity = session.get(FrameworkOpportunity, opportunity_id)
     if not opportunity:
-        return redirect("/framework-intelligence/opportunities")
+        return redirect_missing("opportunity")
     errors: list[str] = []
     title = str(form.get("title") or "").strip()
     if not title:
@@ -1444,7 +1546,7 @@ async def create_opportunity_document(opportunity_id: int, request: Request, ses
 async def create_retrieval_run(opportunity_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     if not session.get(FrameworkOpportunity, opportunity_id):
-        return redirect("/framework-intelligence/opportunities")
+        return redirect_missing("opportunity")
     errors: list[str] = []
     portal_instance_id = parse_optional_int(form.get("portal_instance_id"), "Portal instance", errors)
     if errors:
@@ -1481,7 +1583,7 @@ async def review_framework_requirement(requirement_id: int, request: Request, se
     form = await request.form()
     requirement = session.get(ExtractedRequirement, requirement_id)
     if not requirement:
-        return redirect("/framework-intelligence/requirements")
+        return redirect_missing("requirement")
     errors: list[str] = []
     status = parse_enum(
         form.get("human_review_status"),
@@ -1510,7 +1612,7 @@ async def review_framework_signal(signal_id: int, request: Request, session: Ses
     form = await request.form()
     signal = session.get(RDECOpportunitySignal, signal_id)
     if not signal:
-        return redirect("/framework-intelligence/requirements")
+        return redirect_missing("signal")
     errors: list[str] = []
     status = parse_enum(
         form.get("human_review_status"),
@@ -1578,7 +1680,7 @@ def framework_report_detail(
 ):
     report = session.get(IntelligenceReport, report_id)
     if not report:
-        return redirect("/framework-intelligence/reports")
+        return redirect_missing("report")
     if format == "md":
         filename = f"framework-intelligence-report-{report_id}.md"
         return Response(
@@ -1640,7 +1742,7 @@ async def update_company(company_id: int, request: Request, session: Session = D
     form = await request.form()
     company = session.get(Company, company_id)
     if not company:
-        return redirect("/companies")
+        return redirect_missing("company")
     payload = normalize_company_payload(form)
     errors = validate_company_payload(payload)
     if errors:
@@ -1732,7 +1834,7 @@ async def update_accounting_period(period_id: int, request: Request, session: Se
     form = await request.form()
     period = session.get(AccountingPeriod, period_id)
     if not period:
-        return redirect("/companies")
+        return redirect_missing("claim_period")
     errors: list[str] = []
     company_id = parse_required_int(form.get("company_id"), "Company", errors)
     start_date = parse_required_date(form.get("start_date"), "Accounting period start", errors)
@@ -1851,7 +1953,7 @@ async def update_customer(customer_id: int, request: Request, session: Session =
     form = await request.form()
     customer = session.get(Customer, customer_id)
     if not customer:
-        return redirect("/customers")
+        return redirect_missing("customer")
     errors: list[str] = []
     business_unit_id = parse_optional_int(form.get("business_unit_id"), "Business unit", errors)
     transport_domain = parse_enum(
@@ -1942,7 +2044,7 @@ async def update_business_unit(unit_id: int, request: Request, session: Session 
     form = await request.form()
     unit = session.get(BusinessUnit, unit_id)
     if not unit:
-        return redirect("/business-units")
+        return redirect_missing("business_unit")
     errors: list[str] = []
     parent_id = parse_optional_int(form.get("parent_id"), "Parent business unit", errors)
     if errors:
@@ -2008,7 +2110,7 @@ async def update_contract(contract_id: int, request: Request, session: Session =
     form = await request.form()
     contract = session.get(Contract, contract_id)
     if not contract:
-        return redirect("/contracts")
+        return redirect_missing("contract")
     errors: list[str] = []
     customer_id = parse_required_int(form.get("customer_id"), "Customer", errors)
     contract_type = parse_enum(form.get("contract_type"), domain.CONTRACT_TYPES, "Contract type", errors, "other")
@@ -2089,7 +2191,7 @@ async def update_solution(solution_id: int, request: Request, session: Session =
     form = await request.form()
     solution = session.get(Solution, solution_id)
     if not solution:
-        return redirect("/solutions")
+        return redirect_missing("solution")
     errors: list[str] = []
     customer_id = parse_required_int(form.get("customer_id"), "Customer", errors)
     contract_id = parse_optional_int(form.get("contract_id"), "Contract", errors)
@@ -2211,7 +2313,7 @@ async def update_project(project_id: int, request: Request, session: Session = D
     form = await request.form()
     project = session.get(RDProject, project_id)
     if not project:
-        return redirect("/projects")
+        return redirect_missing("project")
     errors: list[str] = []
     solution_id = parse_required_int(form.get("solution_id"), "Solution", errors)
     accounting_period_id = parse_optional_int(form.get("accounting_period_id"), "Accounting period", errors)
@@ -2246,7 +2348,7 @@ def delete_project(project_id: int, session: Session = Depends(get_session)):
             return redirect(f"/projects?error={error}")
     project = session.get(RDProject, project_id)
     if not project:
-        return redirect("/projects")
+        return redirect_missing("project")
     entitlement = session.exec(select(EntitlementAssessment).where(EntitlementAssessment.project_id == project_id)).first()
     if entitlement:
         delete_with_audit(session, entitlement, f"Deleted entitlement assessment for project {project_id}")
@@ -2261,7 +2363,7 @@ def project_detail(project_id: int, request: Request, session: Session = Depends
     # Every project and claim-period page below therefore looks the record up first and redirects
     # to the list, the same way the delete routes do (delete_or_block).
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     context = get_project_context(session, project_id)
     # ADR-0006 D1/D2: a GET must not commit. With the default sync=True, scoring a project that
     # has no EntitlementAssessment created and committed one from inside a page render, so an
@@ -2279,7 +2381,7 @@ def project_detail(project_id: int, request: Request, session: Session = Depends
 @app.get("/projects/{project_id}/assessment", response_class=HTMLResponse)
 def project_assessment(project_id: int, request: Request, session: Session = Depends(get_session)):
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     context = get_project_context(session, project_id)
     # ADR-0006 D2 includes this route deliberately, amending ADR-0005 D6: on the *GET* of the
     # assessment page the user is not performing a write. The POST below still calls
@@ -2298,7 +2400,7 @@ async def update_project_assessment(project_id: int, request: Request, session: 
     form = await request.form()
     project = session.get(RDProject, project_id)
     if not project:
-        return redirect("/projects")
+        return redirect_missing("project")
     errors: list[str] = []
     accounting_period_id = parse_optional_int(form.get("accounting_period_id"), "Accounting period", errors)
     outcome = parse_enum(form.get("outcome"), domain.PROJECT_OUTCOMES, "Outcome", errors, "unresolved")
@@ -2339,7 +2441,7 @@ async def update_project_assessment(project_id: int, request: Request, session: 
 @app.get("/projects/{project_id}/costs", response_class=HTMLResponse)
 def project_costs(project_id: int, request: Request, session: Session = Depends(get_session)):
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
@@ -2357,7 +2459,7 @@ async def add_project_cost(project_id: int, request: Request, session: Session =
     # submission status pointing at a project or period that does not exist - an orphan that no
     # screen can reach but that still counts towards claim totals and change history.
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     errors: list[str] = []
     cost = cost_line_from_form(form, project_id, errors)
     if errors:
@@ -2385,7 +2487,7 @@ async def update_cost_line(cost_id: int, request: Request, session: Session = De
     form = await request.form()
     cost = session.get(CostLine, cost_id)
     if not cost:
-        return redirect("/costs")
+        return redirect_missing("cost_line")
     errors: list[str] = []
     before_snapshot = compact_snapshot(cost)
     candidate = cost_line_from_form(
@@ -2417,7 +2519,7 @@ def delete_cost_line(cost_id: int, session: Session = Depends(get_session)):
 @app.get("/projects/{project_id}/evidence", response_class=HTMLResponse)
 def project_evidence(project_id: int, request: Request, session: Session = Depends(get_session)):
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
@@ -2431,7 +2533,7 @@ def project_evidence(project_id: int, request: Request, session: Session = Depen
 async def add_project_evidence(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     errors: list[str] = []
     date_created = parse_optional_date(form.get("date_created"), "Evidence date created", errors)
     source_system = parse_enum(form.get("source_system"), domain.SOURCE_SYSTEMS, "Source system", errors, "Manual upload / note")
@@ -2471,7 +2573,7 @@ async def update_evidence_item(evidence_id: int, request: Request, session: Sess
     form = await request.form()
     evidence = session.get(EvidenceItem, evidence_id)
     if not evidence:
-        return redirect("/evidence-index")
+        return redirect_missing("evidence_item")
     errors: list[str] = []
     date_created = parse_optional_date(form.get("date_created"), "Evidence date created", errors)
     source_system = parse_enum(form.get("source_system"), domain.SOURCE_SYSTEMS, "Source system", errors, "Manual upload / note")
@@ -2505,7 +2607,7 @@ def delete_evidence_item(evidence_id: int, session: Session = Depends(get_sessio
 @app.get("/projects/{project_id}/competent-professional", response_class=HTMLResponse)
 def project_competent_professional(project_id: int, request: Request, session: Session = Depends(get_session)):
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     context = get_project_context(session, project_id)
     score = calculate_project_score(session, project_id, sync=False)  # ADR-0006 D1/D2
     return templates.TemplateResponse(
@@ -2519,7 +2621,7 @@ def project_competent_professional(project_id: int, request: Request, session: S
 async def add_competent_professional(project_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     errors: list[str] = []
     years = parse_optional_int(form.get("years_relevant_experience"), "Years of relevant experience", errors) or 0
     signoff_status = parse_enum(form.get("signoff_status"), domain.SIGNOFF_STATUSES, "Sign-off status", errors, "draft")
@@ -2547,7 +2649,7 @@ async def update_competent_professional(opinion_id: int, request: Request, sessi
     form = await request.form()
     opinion = session.get(CompetentProfessionalOpinion, opinion_id)
     if not opinion:
-        return redirect("/projects")
+        return redirect_missing("professional_opinion")
     errors: list[str] = []
     years = parse_optional_int(form.get("years_relevant_experience"), "Years of relevant experience", errors) or 0
     signoff_status = parse_enum(form.get("signoff_status"), domain.SIGNOFF_STATUSES, "Sign-off status", errors, "draft")
@@ -2582,7 +2684,7 @@ def project_report(project_id: int, request: Request, format: str | None = None,
     # Guarded ahead of the markdown build, which reads the project context itself, so the
     # ?format=md download path is covered too.
     if not session.get(RDProject, project_id):
-        return redirect("/projects")
+        return redirect_missing("project")
     markdown = generate_project_memo_markdown(session, project_id)
     if format == "md":
         filename = f"project-{project_id}-eligibility-memo.md"
@@ -2605,7 +2707,7 @@ def claim_period_readiness(period_id: int, request: Request, session: Session = 
     # Accounting periods are managed from the companies page, so that is the list to fall back to
     # (the same target update_accounting_period and delete_accounting_period already use).
     if not session.get(AccountingPeriod, period_id):
-        return redirect("/companies")
+        return redirect_missing("claim_period")
     readiness = aif_readiness_for_period(session, period_id)
     return templates.TemplateResponse(
         request,
@@ -2618,7 +2720,7 @@ def claim_period_readiness(period_id: int, request: Request, session: Session = 
 async def update_claim_period_submission(period_id: int, request: Request, session: Session = Depends(get_session)):
     form = await request.form()
     if not session.get(AccountingPeriod, period_id):
-        return redirect("/companies")
+        return redirect_missing("claim_period")
     submission = session.exec(
         select(ClaimPeriodSubmissionStatus).where(ClaimPeriodSubmissionStatus.accounting_period_id == period_id)
     ).first()
@@ -2649,7 +2751,7 @@ async def update_claim_period_submission(period_id: int, request: Request, sessi
 @app.get("/claim-periods/{period_id}/pack", response_class=HTMLResponse)
 def claim_period_pack(period_id: int, request: Request, format: str | None = None, session: Session = Depends(get_session)):
     if not session.get(AccountingPeriod, period_id):
-        return redirect("/companies")
+        return redirect_missing("claim_period")
     markdown = generate_claim_period_pack_markdown(session, period_id)
     if format == "md":
         filename = f"claim-period-{period_id}-pack.md"
