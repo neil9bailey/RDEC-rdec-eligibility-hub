@@ -36,8 +36,14 @@ http://localhost:8080
 Run the test suite:
 
 ```powershell
-docker compose run --rm app pytest -q
+docker compose build test
+docker compose run --rm --no-deps test pytest -q
 ```
+
+Test tooling is deliberately absent from the runtime image, so `docker compose run --rm app pytest`
+fails with `exec: "pytest": executable file not found`. The `test` service builds the same code and
+settings plus `requirements-dev.txt`. Always build first: the Dockerfile bakes source with `COPY . .`
+and only `./data` is mounted, so `run` without `build` tests the last built image, not your tree.
 
 Compile-check application code:
 

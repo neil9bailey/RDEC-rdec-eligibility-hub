@@ -126,8 +126,12 @@ http://localhost:8080
 Run tests:
 
 ```powershell
-docker compose run --rm app pytest -q
+docker compose build test
+docker compose run --rm --no-deps test pytest -q
 ```
+
+Test tooling is not installed in the runtime image, so `docker compose run --rm app pytest` no longer
+works. Build the `test` service first; it runs the same code and settings.
 
 Stop:
 
