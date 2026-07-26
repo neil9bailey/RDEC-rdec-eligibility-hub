@@ -275,3 +275,98 @@ already created by earlier renders remain valid and are simply reported as `(rec
   increment, so D2's call-site changes must be scheduled through that baton. No CTO arbitration
   required: this extends an already-approved decision on its own stated reasoning and changes no
   boundary, dependency, or data model.
+
+## Amendments and G1 Rulings
+
+Amended 2026-07-26 by the Enterprise Architect under G1 authority, on a QA finding raised at G3
+(593 passed, 0 failed, at `cdb5830`). Verification item 5 is amended and D2 gains an explicit clause.
+Original text is retained so the change is auditable.
+
+### Ruling R1 — Verification item 5 was over-broad. `sync=False` on a POST re-render is conformant
+
+`sync=False` appears on two POST handlers: `app/main.py:2377` (`POST /projects/{id}/costs`) and
+`:2463` (`POST /projects/{id}/evidence`). QA is right that this contradicts Verification item 5 as
+written. **The clause is wrong, not the code.**
+
+Both sites are the htmx branch, and in both the write has already completed and committed —
+`save_with_audit` at `:2369` and `:2457` respectively — before `get_project_context` and the score
+call. What follows the save is a **render**, and it re-renders the same eligibility panel that a
+fresh full-page GET produces. The Principal recorded this in-code at `:2372-2373`, naming the GET
+route it must match.
+
+`sync=True` there would be the defect, for three reasons:
+
+- It would create and commit an `EntitlementAssessment`, plus an audit event, **as a side effect of
+  saving a cost line**. D1's whole purpose is that a record's genesis is a decision a person took,
+  not a panel that happened to render. Saving a cost is not an entitlement review.
+- The full-page path for the same POST is a redirect to a GET that scores with `sync=False`. If the
+  htmx branch used `sync=True`, the same user action would produce a different database outcome
+  depending on whether htmx was active — a behaviour difference driven by transport, which is the
+  render-history dependence this ADR exists to eliminate, wearing a different hat.
+- It removes no intended write. D3 names `POST /projects/{project_id}/assessment` as the sole
+  creation site and it calls `sync_entitlement_for_project` unconditionally, untouched by this.
+
+**Item 5's real intent was "no intended write is removed and no unintended write is added". It was
+written as a grep because a grep is cheap, and the grep was a bad proxy.** A textual rule over a
+2,400-line module cannot distinguish a handler's write phase from its render phase, and the
+distinction is the entire subject of this ADR.
+
+### Amendment A1 — D2 gains an explicit clause on POST render phases
+
+Appended to D2, after "Signatures are unchanged. `sync: bool = True` stays the default so that write
+paths keep today's behaviour without edit.":
+
+> A POST handler has two phases, and D1 governs the second. Once the handler's own write has
+> committed, anything it renders is a read: a POST branch that re-renders a fragment — the htmx
+> partial-response path — scores with `sync=False`, exactly as the GET that renders the same panel
+> does. This is required, not merely permitted, so that one user action cannot produce two different
+> database outcomes depending on whether htmx was active. `sync=True` in a POST handler is reserved
+> for a write the route exists to perform.
+
+### Amendment A2 — Verification item 5, restated as three machine-checkable properties
+
+QA is right that "`sync=False` appears nowhere on a POST path" is a proxy, and that the property that
+matters is behavioural. Replaced accordingly.
+
+Original text:
+
+> 5. `grep -n "sync=" app/main.py app/reports.py` shows `sync=False` at every GET-reachable site named
+>    in D2 and nowhere on a POST path.
+
+Amended text, effective 2026-07-26:
+
+> 5. Three behavioural properties, each a test, together replacing the grep. Where any of them
+>    conflicts with a textual or structural check, **these govern**:
+>
+>    **P1 — no GET writes.** The D5.6 route-level test: every GET route the suite can call issues
+>    zero commits. This is the conformance proof for D1.
+>
+>    **P2 — the intended write still happens.** `POST /projects/{project_id}/assessment` creates
+>    exactly one `EntitlementAssessment` and one `AuditEvent` (Verification item 6, unchanged).
+>
+>    **P3 — no unintended write is added.** A POST that is *not* the assessment route — specifically
+>    `POST /projects/{id}/costs` and `POST /projects/{id}/evidence`, each exercised on **both** the
+>    htmx and the full-page branch — creates no `EntitlementAssessment`. P3 is what item 5 was
+>    actually trying to assert, and unlike the grep it is true by measurement rather than by spelling.
+>
+>    A `grep -n "sync=" app/main.py app/reports.py` remains useful as a cheap structural aid when
+>    reviewing a diff, and every GET-reachable site named in D2 must still carry `sync=False`. It is
+>    **not** a conformance criterion and a `sync=False` on a POST render branch is not a violation.
+
+### Ruling R2 — the two additional sites fixed beyond D2's list are ratified
+
+`app/reports.py:145` and `:272` were changed under D1 although D2's list named seven sites in
+`app/main.py`. **Ratified, and the behaviour was correct.** D1 is an invariant; D2's list is the
+enumeration that was known when the ADR was written, introduced as "Named sites, all of which
+change", not as an exhaustive boundary. Finding further sites that violate the invariant, fixing
+them, and flagging rather than silently absorbing them is precisely the intended response. An
+invariant that a Principal may only apply to a list is a list, not an invariant.
+
+### Record corrections noted at G3
+
+- The golden scoring invariant is a byte-exact comparison against hard-coded expected values, not a
+  SHA-256 digest as previously described to me. No ADR text relied on the mechanism: ADR-0005 Ruling
+  R2 and D5.7 above bind the **test** at `tests/test_scoring_golden_output.py:338`, and QA re-ran it.
+  The D6 conformance record stands unchanged.
+- ADR-0004 D2.1's `new_in_file` marker keys on the declared identifier rather than the row number.
+  Ruled and amended in ADR-0004's own amendment section; the binding property is unaffected.

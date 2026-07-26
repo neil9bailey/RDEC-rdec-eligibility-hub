@@ -539,3 +539,45 @@ Binding constraints on the test work:
 No baseline change. No schema change, no new dependency, no signature change outside
 `app/data_management.py`.
 
+### Ruling R3 — correction to A1: the `new_in_file` marker keys on the declared identifier
+
+Added 2026-07-26, on QA's G3 report. My Amendment A1 above specified the not-yet-created marker as
+`("new_in_file", <dataset key>, <row number>)`. The implementation keys it on the declared identifier
+instead — the `_plan_links` entry carrying `source: "this file"` with an empty `resolved_id`.
+
+**Ratified, and A1's third bullet is corrected to match, because the two must not disagree.** The
+binding property is that the marker uniquely identifies one in-file parent and can never equal a
+stored live link. Both keys satisfy it: `(dataset key, declared id)` is unique within a dataset
+because `_plan_links` already rejects a second in-file row declaring the same identifier with the
+`ambiguous_link` issue (`app/data_management.py:861-868`), so the ambiguity the row number was
+guarding against is unreachable by construction. The declared identifier is also the key `id_remap`
+uses at apply time, so keying the marker the same way means preview and apply reason over one key
+rather than two.
+
+Corrected third bullet of A1, effective 2026-07-26:
+
+> - an incoming link whose parent is an in-file row not yet created resolves to
+>   `("new_in_file", <dataset key>, <declared identifier>)` — in practice, the `_plan_links` entry
+>   with `source: "this file"` and an empty `resolved_id` — which can never equal a stored live link
+>   and is therefore always a change. The key is unique because a second in-file row declaring the
+>   same identifier is already rejected as `ambiguous_link`.
+
+I am correcting my own text rather than the code for the same reason the ADR-0006 htmx finding was
+ruled the way it was: where an ADR and a conformant implementation disagree on an incidental
+mechanism, the ADR is what moves.
+
+### Ruling R4 — `decode_import_payload` surviving as an alias is accepted, with a G5 condition
+
+`app/main.py` no longer calls `decode_import_payload`; the apply route goes through
+`consume_import_payload`, which is what D4 required. The function survives at
+`app/data_management.py:1359` with 15 test call sites.
+
+**Accepted. D4 required replacement of the call on the apply route, not deletion of the function**,
+and a nonce-free decoder is legitimate for tests that exercise decoding in isolation.
+
+Condition, routed to G5 rather than blocking G6: the residual risk is that a future route re-adopts
+the nonce-free path and silently reopens the C3 replay defect. G5 should confirm a structural guard —
+for example, a test asserting no module under `app/` other than `data_management` itself references
+`decode_import_payload`. This is a cheap, machine-checkable guard of the same kind as ADR-0006
+Amendment A2, and it is a recommendation to G5, not a new G6 gate condition.
+
