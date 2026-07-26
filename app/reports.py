@@ -14,6 +14,7 @@ from app.services import (
     cost_summary_by_category,
     cost_validation_warnings,
     entitlement_facts_for_context,
+    entitlement_label,
     get_project_context,
     money,
     project_qualifying_spend,
@@ -31,6 +32,16 @@ ENTITLEMENT_CAVEAT = "Contracted-out and irrelievable-client treatment requires 
 RECORDED_ASSESSMENT_LABEL = "(recorded assessment)"
 RESOLVED_ASSESSMENT_LABEL = "(resolved from current project facts; no assessment recorded yet)"
 ASSESSMENT_NOT_RECORDED = "no - resolved from current project facts"
+
+
+def yes_no(value: bool) -> str:
+    """Render a stored flag for a reviewer, not for a programmer.
+
+    These documents are handed to HMRC and to the external tax advisor. ``AIF described True``
+    is Python's repr of a boolean leaking into claim evidence; ``Assessment recorded: yes``
+    above is the wording the rest of this module already uses for the same kind of fact.
+    """
+    return "yes" if value else "no"
 
 
 def entitlement_position(context: ProjectContext) -> tuple[str, str, bool]:
@@ -108,12 +119,20 @@ def cost_warning_lines(costs: list[CostLine], project_title: str = "") -> list[s
 
 def project_review_checklist(context, score) -> list[str]:
     project = context.project
+    # The stored status is shown by its label, and its provenance comes from the same
+    # ``entitlement_position`` resolver the memo's entitlement section uses. Reading
+    # ``context.entitlement`` directly here made this one line say "not assessed" while the
+    # section above it stated a resolved position for the same project, and printed the raw
+    # stored value into a document sent to HMRC.
+    entitlement_status, _, entitlement_recorded = entitlement_position(context)
+    entitlement_provenance = RECORDED_ASSESSMENT_LABEL if entitlement_recorded else RESOLVED_ASSESSMENT_LABEL
     checklist = [
         f"Project owner: resolve {len(score.blockers)} blocker(s) and {len(score.warnings)} warning(s) before pack reliance.",
         f"Competent professional: {'signed opinion captured' if signed_opinion(context.opinions) else 'signed opinion required'}.",
         f"Evidence owner: {len(context.evidence)} evidence item(s) captured; add strong evidence for each weak or missing relevance area.",
         f"Finance owner: {len(context.costs)} cost line(s) captured; review apportionment, paid status, evidence links and overseas/EPW flags.",
-        f"Tax/Ayming owner: entitlement status is {context.entitlement.status if context.entitlement else 'not assessed'}; review contracted-out and irrelievable-client facts.",
+        f"Tax/Ayming owner: entitlement position is {entitlement_label(entitlement_status)} "
+        f"{entitlement_provenance}; review contracted-out and irrelievable-client facts.",
         f"AIF owner: project is {'marked as described' if project.described_in_aif else 'not yet marked as described'} in the AIF selection workflow.",
         CAVEAT,
     ]
@@ -157,8 +176,13 @@ def generate_project_memo_markdown(session: Session, project_id: int) -> str:
     evidence_matrix = evidence_matrix_lines(context.evidence)
     cost_warnings = cost_warning_lines(context.costs)
     checklist = project_review_checklist(context, score)
+    # ADR-0002 Ruling R2: ``score.rating`` is a CSS class and a ``dashboard_metrics`` key, so it
+    # keeps its value everywhere it is stored or looked up; only the text shown to a reviewer
+    # changes, and it changes to ``rating_label``, which the screen already shows. Both come from
+    # the ``description`` values in app/rules/eligibility_weights.yml, so the pack, the memo and
+    # the eligibility panel cannot describe one score in two ways.
     executive_summary = [
-        f"Current status: {score.rating} ({score.rating_label}).",
+        f"Current status: {score.rating_label}.",
         f"Captured qualifying expenditure for review: {money(total_spend)}.",
         f"Evidence items captured: {len(context.evidence)}.",
         f"Cost warnings requiring review: {len(cost_warnings)}.",
@@ -226,13 +250,13 @@ Total qualifying amount captured: {money(total_spend)}
 ## Entitlement assessment
 {ENTITLEMENT_CAVEAT}
 
-- Status: {entitlement_status}
+- Status: {entitlement_label(entitlement_status)}
 - Rationale: {entitlement_rationale}
 - Assessment recorded: {"yes" if entitlement_recorded else ASSESSMENT_NOT_RECORDED}
 
 ## Score and risk rating
 - Score: {score.score}
-- Rating: {score.rating} ({score.rating_label})
+- Rating: {score.rating_label}
 
 ## Blockers
 {bullet_list(score.blockers)}
@@ -278,16 +302,20 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
         # silently absent from this list.
         status, rationale, recorded = entitlement_position(context)
         label = RECORDED_ASSESSMENT_LABEL if recorded else RESOLVED_ASSESSMENT_LABEL
-        entitlement_notes.append(f"{project.project_title}: {status} - {rationale} {label}")
+        entitlement_notes.append(f"{project.project_title}: {entitlement_label(status)} - {rationale} {label}")
         people_time.extend([f"{project.project_title}: {line}" for line in people_time_lines(context.costs)])
         cost_warnings.extend(cost_warning_lines(context.costs, project.project_title))
+        # ADR-0002 Ruling R2: label only. ``score.rating`` is unchanged in the ScoreResult, in the
+        # CSS class and in the dashboard counts; what a reviewer reads is ``rating_label``, the same
+        # text the screen shows. "red / 7" told an HMRC or Ayming reader nothing they could act on.
         project_lines.append(
-            f"{project.project_title}: {score.rating} / {score.score}, spend {money(project_qualifying_spend(context.costs))}"
+            f"{project.project_title}: {score.rating_label}, score {score.score}/100, "
+            f"spend {money(project_qualifying_spend(context.costs))}"
         )
         project_readiness_lines.append(
-            f"{project.project_title}: rating {score.rating}, blockers {len(score.blockers)}, "
+            f"{project.project_title}: rating {score.rating_label}, blockers {len(score.blockers)}, "
             f"warnings {len(score.warnings)}, evidence {len(context.evidence)}, costs {len(context.costs)}, "
-            f"AIF described {project.described_in_aif}"
+            f"AIF described {yes_no(project.described_in_aif)}"
         )
 
     cost_summary = cost_summary_by_category(all_costs)
@@ -301,8 +329,8 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
     submission_line = "No submission status captured."
     if submission:
         submission_line = (
-            f"AIF submitted: {submission.aif_submitted} ({submission.aif_submission_date or 'n/a'}); "
-            f"CT600 submitted: {submission.ct600_submitted} ({submission.ct600_submission_date or 'n/a'})"
+            f"AIF submitted: {yes_no(submission.aif_submitted)} ({submission.aif_submission_date or 'n/a'}); "
+            f"CT600 submitted: {yes_no(submission.ct600_submitted)} ({submission.ct600_submission_date or 'n/a'})"
         )
 
     return f"""# Claim Period Pack: {period.label}
@@ -318,7 +346,7 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 - UTR: {company.utr if company else "Missing"}
 - PAYE reference: {company.paye_reference if company else "Missing"}
 - Senior R&D contact: {company.senior_rd_contact_name if company else "Missing"}
-- Northern Ireland registered: {company.northern_ireland_registered if company else "Unknown"}
+- Northern Ireland registered: {yes_no(company.northern_ireland_registered) if company else "Unknown"}
 
 ## Accounting period
 - Start: {period.start_date}
@@ -340,7 +368,7 @@ def generate_claim_period_pack_markdown(session: Session, period_id: int) -> str
 ## People time detail
 {bullet_list(people_time)}
 ## AIF readiness
-- Ready: {readiness["ready"]}
+- Ready: {yes_no(bool(readiness["ready"]))}
 - Project count: {readiness["selection"].project_count}
 - Selected project IDs: {", ".join(map(str, readiness["selection"].selected_project_ids)) or "None"}
 - Selected expenditure coverage: {readiness["selection"].coverage_percentage}%

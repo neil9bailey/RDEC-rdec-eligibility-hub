@@ -1,3 +1,7 @@
+import ast
+import re
+from pathlib import Path
+
 import pytest
 from sqlalchemy import inspect
 
@@ -34,6 +38,12 @@ from app.models import (
     TechnicalUncertainty,
 )
 from app.reports import generate_claim_period_pack_markdown, generate_project_memo_markdown
+from app.services import (
+    ENTITLEMENT_LABEL_FALLBACK,
+    ENTITLEMENT_STATUS_LABELS,
+    calculate_project_score,
+    entitlement_label,
+)
 from tests.test_rules_engine import project_by_title
 
 
@@ -295,4 +305,124 @@ def test_report_generation_smoke(seeded_session):
     assert "Total qualifying spend by category" in pack
     assert "Selection method" in pack
     assert "AIF project-selection notes" in pack
+    assert "Requires competent professional and tax review." in pack
+
+
+# --- E5-EXPORT-1: the exports speak the reviewer's language ----------------------------------
+# The G4 rejection: the eligibility panel was humanised and the export builders were not, so a
+# UI-only walkthrough passed while `/claim-periods/{id}/pack?format=md` and `/projects/{id}/report`
+# -- the artefacts handed to HMRC and to Ayming -- still printed `ambiguous_tax_review` and a bare
+# `red / 7`. These tests pin the label SOURCE, not just the current output text: a label that the
+# screen and the export take from two places will drift apart again the next time one is edited.
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LABELS_TEMPLATE = REPO_ROOT / "app" / "templates" / "_labels.html"
+SERVICES_SOURCE = REPO_ROOT / "app" / "services.py"
+JINJA_ENTITLEMENT_LABELS = re.compile(
+    r"\{%\s*set\s+ENTITLEMENT_LABELS\s*=\s*(\{.*?\})\s*%\}", re.DOTALL
+)
+
+
+def template_entitlement_labels() -> dict[str, str]:
+    """The mapping ``app/templates/_labels.html`` actually renders, read out of the template."""
+    match = JINJA_ENTITLEMENT_LABELS.search(LABELS_TEMPLATE.read_text(encoding="utf-8"))
+    assert match, "ENTITLEMENT_LABELS is no longer declared as a literal in _labels.html"
+    return ast.literal_eval(match.group(1))
+
+
+def statuses_assess_entitlement_can_return() -> set[str]:
+    """Every status literal reachable out of ``assess_entitlement``, read from its own source.
+
+    Derived rather than listed, so a status added to the engine tomorrow is covered by this test
+    on the day it is added instead of on the day someone remembers to extend a hardcoded list.
+    """
+    tree = ast.parse(SERVICES_SOURCE.read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "assess_entitlement"
+    )
+    statuses: set[str] = set()
+    for node in ast.walk(function):
+        # EntitlementResult(status="supplier_likely", ...)
+        if isinstance(node, ast.keyword) and node.arg == "status":
+            for value in ast.walk(node.value):
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    statuses.add(value.value)
+        # status = "customer_likely" if ... else "ambiguous_tax_review"
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "status" for target in node.targets
+        ):
+            for value in ast.walk(node.value):
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    statuses.add(value.value)
+    assert statuses, "no status literals found; the AST walk has stopped matching the source"
+    return statuses
+
+
+def test_the_export_and_the_screen_read_entitlement_labels_from_one_source():
+    """ADR-0002 Ruling R2: one mapping, two surfaces. Divergence here is the G4 defect itself."""
+    assert ENTITLEMENT_STATUS_LABELS == template_entitlement_labels(), (
+        "app/services.py ENTITLEMENT_STATUS_LABELS and app/templates/_labels.html "
+        "ENTITLEMENT_LABELS must stay byte-identical: the Markdown pack and the eligibility "
+        "panel describe the same stored status and must not word it differently"
+    )
+
+
+def test_every_entitlement_status_the_engine_can_produce_has_a_label():
+    """The ``.get`` fallback must be unreachable for a status the engine can actually return.
+
+    Without this, a new status would silently render as the fallback wording on both surfaces --
+    a degrade nobody sees, on a document sent to HMRC.
+    """
+    unlabelled = statuses_assess_entitlement_can_return() - set(ENTITLEMENT_STATUS_LABELS)
+
+    assert not unlabelled, (
+        f"entitlement statuses with no reviewer-facing label: {sorted(unlabelled)}. "
+        f"Add each to ENTITLEMENT_STATUS_LABELS and to _labels.html rather than letting it "
+        f"fall back to {ENTITLEMENT_LABEL_FALLBACK!r}"
+    )
+    assert EntitlementAssessment.model_fields["status"].default in ENTITLEMENT_STATUS_LABELS
+
+
+def test_an_unknown_entitlement_status_still_gets_the_template_fallback():
+    """Parity with the macro is what stops the two surfaces disagreeing on an unknown value."""
+    assert entitlement_label("not_a_status") == ENTITLEMENT_LABEL_FALLBACK
+    assert entitlement_label("") == ENTITLEMENT_LABEL_FALLBACK
+    assert entitlement_label(None) == ENTITLEMENT_LABEL_FALLBACK
+
+
+def test_the_memo_states_the_position_in_words_and_keeps_the_stored_rating(seeded_session):
+    project = project_by_title(seeded_session, "Passenger Flow")
+    score = calculate_project_score(seeded_session, project.id, sync=False)
+
+    memo = generate_project_memo_markdown(seeded_session, project.id)
+
+    # ADR-0002 Ruling R2: the VALUE is untouched -- it is a CSS class and a dashboard_metrics key.
+    assert score.rating in {"green", "amber", "weak", "red"}
+    assert f"- Rating: {score.rating_label}" in memo
+    assert f"- Rating: {score.rating}" not in memo
+    assert f"- Current status: {score.rating_label}." in memo
+    assert "- Status: Supplier indicators" in memo
+    assert "- Status: supplier_likely" not in memo
+    assert "entitlement position is Supplier indicators" in memo
+    assert "entitlement status is supplier_likely" not in memo
+    # ADR-0002 line 58 preserve-clause is untouched by the copy change.
+    assert "Requires competent professional and tax review." in memo
+
+
+def test_the_pack_states_each_project_in_words_and_keeps_the_stored_rating(seeded_session):
+    project = project_by_title(seeded_session, "Passenger Flow")
+    score = calculate_project_score(seeded_session, project.id, sync=False)
+
+    pack = generate_claim_period_pack_markdown(seeded_session, project.accounting_period_id)
+
+    assert f"{project.project_title}: {score.rating_label}, score {score.score}/100" in pack
+    assert f"{project.project_title}: {score.rating} /" not in pack
+    assert f"rating {score.rating_label}, blockers" in pack
+    assert f"rating {score.rating}, blockers" not in pack
+    assert "AIF described yes" in pack
+    assert "AIF described True" not in pack
+    assert "- Ready: no" in pack
+    assert "ambiguous_tax_review" not in pack
     assert "Requires competent professional and tax review." in pack

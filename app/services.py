@@ -30,6 +30,38 @@ from app.text_matching import TermMatch, find_matches
 
 CAVEAT = "Requires competent professional and tax review."
 
+# ADR-0002 Ruling R2: the DISPLAYED text for a stored entitlement status, and nothing else.
+# The stored value stays exactly as ``assess_entitlement`` produced it -- it is the ``.badge``
+# CSS class, the value the assessment form submits, and the column written to the database --
+# so nothing here changes what is stored, submitted or scored.
+#
+# This mapping is byte-identical to ``ENTITLEMENT_LABELS`` in ``app/templates/_labels.html``,
+# and ``tests/test_reports_and_models.py`` parses that template and asserts they still match.
+# The screen and the Markdown exports handed to HMRC and to the tax advisor therefore cannot
+# describe the same stored status in two different ways, which is exactly what happened when
+# the eligibility panel was humanised and the export builders were not.
+#
+# The wording is the ADR-0001 line 72 vocabulary ("review required", "blocked") and states an
+# indicator, never an approval, a rejection or a verdict (ADR-0002 line 59).
+ENTITLEMENT_STATUS_LABELS = {
+    "blocked": "Blocked",
+    "supplier_likely": "Supplier indicators",
+    "customer_likely": "Customer indicators",
+    "ambiguous_tax_review": "Review required",
+}
+
+# Mirrors the template macro's fallback so the two surfaces cannot diverge on an unknown value.
+# It is not a silent degrade: ``test_every_entitlement_status_the_engine_can_produce_has_a_label``
+# asserts every status ``assess_entitlement`` can return is an explicit key above, so this
+# default is unreachable for any status the engine actually produces, and a new status added
+# without a label turns that test red rather than quietly rendering as "Review required".
+ENTITLEMENT_LABEL_FALLBACK = "Review required"
+
+
+def entitlement_label(status: str | None) -> str:
+    """The reviewer-facing label for a stored entitlement status."""
+    return ENTITLEMENT_STATUS_LABELS.get(str(status or ""), ENTITLEMENT_LABEL_FALLBACK)
+
 
 @dataclass
 class ProjectContext:
