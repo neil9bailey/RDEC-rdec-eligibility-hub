@@ -63,6 +63,38 @@
         </nav>
       </header>
       <main class="container" id="main-content" tabindex="-1">
+        {#- ADR-0005 D3.4. Persistent on every page for as long as the startup scan's report
+            stands. ``data_integrity_warning`` is injected into every template context from one
+            place, so this single block covers the whole application.
+
+            Placed inside <main>, ahead of the page heading, rather than above it. The skip link
+            is the first focusable element on every page and it targets <main>, so anything
+            rendered before <main> is precisely what a keyboard or screen-reader user jumps over.
+            A notice about a condition in the operator's own data cannot live in the region the
+            interface is built to skip. (GOV.UK's notification banner is positioned the same way,
+            immediately before the page heading.)
+
+            role="region" with an accessible name makes it a landmark that can be returned to.
+            role="alert" is deliberately not used: this is a standing condition, not an event, and
+            an assertive interruption on every page load would train the operator to ignore it.
+
+            Copy discipline (ADR-0005 D3.5 and Guardrails): the Hub reports and withholds, it never
+            repairs. Nothing here may claim that anything has been fixed or will be fixed, and
+            nothing here is a statement about whether the records themselves are correct -- only
+            that some links point at records the Hub cannot find, and that link checking is
+            therefore switched off. The sentence itself is the backend's
+            ``data_integrity.orphan_warning_text``; this template does not compose or edit it.
+
+            D3.4 also calls for a read-only /data-integrity page listing every orphan. That route
+            does not exist yet and creating it means editing app/main.py, which is outside this
+            increment's ownership, so no link is rendered to it -- a link to a route that 404s
+            would be worse than none. Reported as outstanding at handoff. -#}
+        {% if data_integrity_warning %}
+          <div class="integrity-banner" role="region" aria-labelledby="data-integrity-banner-title">
+            <p class="integrity-banner-title" id="data-integrity-banner-title">Some record links need attention</p>
+            <p class="integrity-banner-body">{{ data_integrity_warning }}</p>
+          </div>
+        {% endif %}
         {% if flash_error %}<div class="flash-message error" role="alert">{{ flash_error }}</div>{% endif %}
         {% if flash_notice %}<div class="flash-message success" role="status">{{ flash_notice }}</div>{% endif %}
         {% block content %}{% endblock %}

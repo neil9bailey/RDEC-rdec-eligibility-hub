@@ -986,6 +986,198 @@ def test_compliance_caveat_mechanism_is_intact() -> None:
     )
 
 
+# ==========================================================================
+# E5-BANNER: the ADR-0005 D3.4 data-integrity banner
+#
+# app/main.py injects ``data_integrity_warning`` into every template context.
+# Until this increment no template read it, so the entire signal that link
+# enforcement had been withheld was one startup log line. These tests pin the
+# markup; tests/test_data_integrity_banner_and_restore_affordance.py drives it
+# through a real request in its non-None state, which is the part that proves
+# the banner has actually been seen rendered.
+# ==========================================================================
+
+#: Words that would turn an operational report into a claim of repair or a
+#: verdict on the operator's records. ADR-0005 D3.5 (no automatic repair, ever)
+#: and the ADR-0005 Guardrails (operational information only).
+BANNER_FORBIDDEN_COPY = (
+    "repair",
+    "fixed",
+    "fix them",
+    "corrected",
+    "cleaned up",
+    "removed for you",
+    "we will",
+    "invalid",
+    "corrupt",
+    "damaged",
+)
+
+
+def base_banner_block() -> str:
+    """The rendered banner markup from base.html, comments stripped.
+
+    A Jinja comment is never rendered, and the comment above this block names
+    every identifier under test, so a source-level assertion made against the
+    unstripped file would pass on the explanation alone.
+    """
+    source = re.sub(r"\{#.*?#\}", "", BASE_TEMPLATE.read_text(encoding="utf-8"), flags=re.S)
+    match = re.search(
+        r"\{%\s*if data_integrity_warning\s*%\}(.*?)\{%\s*endif\s*%\}", source, re.S
+    )
+    assert match, (
+        "base.html does not render the ADR-0005 D3.4 banner. app/main.py injects "
+        "data_integrity_warning into every context; with no template reading it the "
+        "only signal that link enforcement was withheld is a startup log line."
+    )
+    return match.group(1)
+
+
+def test_base_renders_the_injected_integrity_warning() -> None:
+    block = base_banner_block()
+    assert "{{ data_integrity_warning }}" in block, (
+        "the banner must render the injected string itself, not a re-composed one; "
+        f"got: {block.strip()!r}"
+    )
+    assert 'class="integrity-banner"' in block
+
+
+def test_the_banner_detector_fires_on_the_pre_fix_base_template() -> None:
+    """Non-vacuity: base.html as it stood before this increment must fail.
+
+    Copied from app/templates/base.html:65-68 before E5-BANNER.
+    """
+    pre_fix = (
+        '<main class="container" id="main-content" tabindex="-1">\n'
+        '{% if flash_error %}<div class="flash-message error" role="alert">'
+        "{{ flash_error }}</div>{% endif %}\n"
+        "{% block content %}{% endblock %}\n</main>"
+    )
+    assert not re.search(r"\{%\s*if data_integrity_warning\s*%\}", pre_fix), (
+        "the pre-fix template is expected to render nothing for the injected key"
+    )
+    assert "data_integrity_warning" not in pre_fix
+
+
+def test_the_banner_is_guarded_so_a_clean_database_shows_nothing() -> None:
+    """``INTEGRITY_WARNING`` is ``None`` on a clean scan, and None must render nothing.
+
+    An unguarded ``{{ data_integrity_warning }}`` would print "None" on every page
+    of a healthy workspace, which is worse than the defect it replaces.
+    """
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    guard = source.index("{% if data_integrity_warning %}")
+    render = source.index("{{ data_integrity_warning }}")
+    assert guard < render, "the banner must be inside the truthiness guard"
+
+
+def test_the_banner_is_inside_main_so_the_skip_link_cannot_skip_it() -> None:
+    """The skip link is the first focusable element and it targets <main>.
+
+    Anything rendered before <main> is exactly what one tab stop jumps over, so a
+    banner placed there would be systematically invisible to keyboard and screen
+    reader users -- the same class of defect (an invisible signal) that D3.4 exists
+    to close.
+    """
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    main_open = re.search(r"<main\b[^>]*>", source)
+    main_close = source.index("</main>")
+    assert main_open
+    banner = source.index('class="integrity-banner"')
+    assert main_open.end() < banner < main_close, (
+        "the integrity banner must render inside <main>; it is at "
+        f"{banner}, <main> spans {main_open.end()}..{main_close}"
+    )
+
+
+def test_the_banner_adds_no_tab_stop_and_no_focusable_control() -> None:
+    """A persistent banner must not cost every user a keystroke on every page.
+
+    It also carries no dismiss control on purpose: the condition is a standing
+    one, and a dismissed banner would restore the silence D3.4 removes.
+    """
+    block = base_banner_block()
+    parser = FocusableCollector()
+    parser.feed(block)
+    assert parser.focusables == [], f"the banner introduces focusable elements: {parser.focusables}"
+    assert not unnamed_controls(block)
+    # ...and the pinned whole-page metrics are unmoved.
+    source = BASE_TEMPLATE.read_text(encoding="utf-8")
+    assert tab_stops_to_reach_main(source) == 1
+    assert len(focusables_before_main(source)) == 18
+
+
+def test_the_banner_region_has_an_accessible_name() -> None:
+    """role="region" without a name is not exposed as a landmark at all."""
+    block = base_banner_block()
+    region = re.search(r'<div class="integrity-banner"([^>]*)>', block)
+    assert region, block
+    labelledby = re.search(r'aria-labelledby="([^"]+)"', region.group(1))
+    assert labelledby or re.search(r'aria-label="[^"]+"', region.group(1)), (
+        f"the banner region needs an accessible name; got {region.group(1).strip()!r}"
+    )
+    if labelledby:
+        assert f'id="{labelledby.group(1)}"' in block, (
+            f"aria-labelledby points at #{labelledby.group(1)}, which the banner does not define"
+        )
+    assert 'role="alert"' not in block, (
+        "role=alert interrupts assistive technology on every page load; this is a "
+        "standing condition, not an event"
+    )
+
+
+def test_the_banner_copy_claims_no_repair_and_passes_no_verdict() -> None:
+    """ADR-0005 D3.5 and the Guardrails.
+
+    The Hub reports and withholds; it never modifies, quarantines or deletes. Copy
+    that implies otherwise would be a lie about what the application does. Copy that
+    called the records invalid would be a verdict, which ADR-0002 line 59 forbids.
+    """
+    block = base_banner_block()
+    visible = " ".join(re.sub(r"<[^>]+>", " ", block).split()).lower()
+    offenders = [word for word in BANNER_FORBIDDEN_COPY if word in visible]
+    assert not offenders, f"banner copy {visible!r} contains {offenders}"
+    for word in FORBIDDEN_VERDICT_WORDS:
+        assert word not in visible, f"banner copy reads as a verdict: {word!r}"
+    assert visible, "the banner has no visible text of its own"
+
+
+def css_rule_body(selector: str, stylesheet: str) -> str:
+    match = re.search(rf"(?m)^{re.escape(selector)}\s*\{{([^}}]*)\}}", stylesheet)
+    assert match, f"{selector} is not defined in styles.css"
+    return match.group(1)
+
+
+def declared_colours(body: str) -> tuple[str, str]:
+    fg = re.search(r"(?<![-\w])color\s*:\s*(#[0-9a-fA-F]{3,6})\s*;", body)
+    bg = re.search(r"background\s*:\s*(#[0-9a-fA-F]{3,6})\s*;", body)
+    assert fg and bg, f"expected an opaque colour pair; got {body.strip()!r}"
+    return fg.group(1), bg.group(1)
+
+
+def test_banner_text_meets_wcag_contrast(stylesheet: str) -> None:
+    """SC 1.4.3, computed from the tokens actually declared."""
+    fg, bg = declared_colours(css_rule_body(".integrity-banner", stylesheet))
+    ratio = contrast_ratio(parse_hex(fg), parse_hex(bg))
+    assert ratio >= 4.5, f"{fg} on {bg} measures {ratio:.2f}:1"
+
+
+def test_the_banner_cannot_widen_the_page(stylesheet: str) -> None:
+    """ADR-0002 line 70: no horizontal page overflow at 360px.
+
+    A record display name pasted from a spreadsheet can be one unbroken token, and
+    the banner text is not under the template's control -- it is composed from the
+    orphan report.
+    """
+    body = css_rule_body(".integrity-banner", stylesheet)
+    assert re.search(r"overflow-wrap\s*:\s*(anywhere|break-word)", body), (
+        f"the banner needs a wrapping rule for unbroken tokens; got {body.strip()!r}"
+    )
+    assert not re.search(r"(?<!max-)width\s*:\s*\d", body), (
+        f"a fixed width on a full-bleed banner is an overflow source; got {body.strip()!r}"
+    )
+
+
 def test_no_template_disables_autoescaping() -> None:
     """Confirmed-good before this increment: no |safe anywhere. Keep it that way."""
     offenders = []

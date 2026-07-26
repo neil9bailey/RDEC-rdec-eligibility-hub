@@ -2141,6 +2141,38 @@ button.danger-button:hover {
   outline-offset: 2px;
 }
 
+/* ADR-0005 D3.4 data-integrity banner.
+
+   Amber, not red. Amber in this interface means "needs attention", and this does need the
+   operator's attention. Red is reserved here for destructive controls and for records that are
+   actually wrong; the scan has damaged nothing and asserts nothing about the records themselves,
+   so red would overstate it. Colours are the .warning-panel pair: #5b3b00 on #fff8e6 measures
+   9.57:1, asserted numerically in tests/test_template_accessibility.py rather than eyeballed.
+
+   The banner carries no interactive control, so it adds no tab stop on any page. */
+.integrity-banner {
+  margin: 0 0 18px;
+  padding: 13px 15px;
+  border: 1px solid #e1b55e;
+  border-left: 5px solid #9a5b00;
+  border-radius: 8px;
+  background: #fff8e6;
+  color: #5b3b00;
+  /* A display name pasted into a record can be one long unbroken token. Without this it would
+     push the page wider than a 360px viewport, which ADR-0002 line 70 forbids. */
+  overflow-wrap: anywhere;
+}
+
+.integrity-banner-title {
+  margin: 0 0 4px;
+  font-weight: 900;
+}
+
+.integrity-banner-body {
+  margin: 0;
+  font-weight: 600;
+}
+
 .trust-note {
   margin: 18px 0 0;
   padding: 13px 14px;
