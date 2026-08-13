@@ -4,6 +4,7 @@
 **Commit assessed:** `0dbcb12` on `codex/company-setup-readiness`
 **Mode:** Read-only. No source file was created, edited or deleted. The application was never started. `data/rdec_hub.db` was verified byte-identical before and after.
 **Method:** Eleven specialist roles with disjoint file ownership, plus independent re-verification of every headline claim by the orchestrator.
+**Amended:** 2026-08-13, after sponsor answers and one confirmed error of fact. **Read §8 first** — it withdraws the original top recommendation and revises four severities.
 
 ---
 
@@ -158,7 +159,7 @@ This is the finding the clean `|safe` grep hides. Every conventional XSS check o
 
 **GDPR Art. 17 erasure cannot be satisfied through the application** — only by hand-editing SQLite or destroying the file.
 
-### B4. The repo's own security narrative is wrong in both directions (MED, CONFIRMED)
+### B4. The repo's own security narrative is wrong in both directions (LOW — downgraded, see §8; RESOLVED 2026-08-13)
 
 `.gitignore:30-42` states that `.playwright-mcp/` "holds real customer identifiers in 23 non-image files, so that was a live disclosure path."
 
@@ -166,7 +167,11 @@ This is the finding the clean `|safe` grep hides. Every conventional XSS check o
 
 **But an unclaimed exposure exists.** A 14th ref — `refs/codex/turn-diffs/checkpoints/…` — is a **tree object, not a commit**, which is why `git log --all` and every commit-walking command are blind to it. It holds 16 PNGs rendering real customer names, plus 12 further dangling blobs. It survives `.gitignore`, survives branch deletion, and sits outside the default push refspec — so it is a local-disk exposure, not a GitHub one.
 
-### B5. `ux-loop-artifacts/` is gitignored but not dockerignored (MED, CONFIRMED)
+**Severity revised and resolved.** The repository is **private**, which was the open question this finding hinged on, and the exposure was local-disk only in any case — so the real-world impact was low throughout. **Resolved 2026-08-13:** the `refs/codex/…` ref was deleted, reflogs expired and objects pruned; the 16 screenshot blobs are confirmed destroyed, the 3 legitimately-tracked `docs/ui_mockups/*.png` correctly survive, zero dangling objects remain and `git fsck` exits clean. The 28 on-disk copies under `ux-loop-artifacts/` were also deleted (6 MB); the tracked `2026-07-20/scorecard.md` was retained as ADR-0002 evidence.
+
+**The mechanism remains worth knowing.** A tree-ref in a non-branch namespace is invisible to `git log --all`, `git rev-list --all` and every commit-walking command, survives `.gitignore` entirely, and survives branch deletion. Tooling that writes such refs (here, Codex CLI checkpoints) will recreate them. Periodically run `git for-each-ref` and look at the **object type**, not just the branch list.
+
+### B5. `ux-loop-artifacts/` is gitignored but not dockerignored (LOW — downgraded, see §8)
 
 | Path | `.gitignore` | `.dockerignore` | On disk |
 |---|---|---|---|
@@ -174,6 +179,8 @@ This is the finding the clean `|safe` grep hides. Every conventional XSS check o
 | `ux-loop-artifacts/` | deny-by-default, hardened 2026-07-26 | **absent** | 29 files, **6,068 KB** |
 
 `COPY . .` bakes 28 screenshots taken against the live database into both images. `.dockerignore` was last touched 2026-06-07; the hardening never came across. Harmless while the image stays local; a disclosure the moment anyone runs `docker save` or pushes.
+
+**Severity revised.** The 28 screenshots were deleted on 2026-08-13, so the immediate exposure is gone and the image shrinks by ~6 MB. **The `.dockerignore` gap itself was NOT fixed and remains open** — the directory is still absent from `.dockerignore`, so any future UX capture run recreates the condition. It is a one-line fix and should be taken with whatever lands next.
 
 ### B6. Lower-severity, recorded
 
@@ -207,11 +214,13 @@ A typo in `score.rating_label` or `score.blockers` renders blank and tests falsy
 
 ## Tier D — Delivery and platform
 
-### D1. Nothing has ever been released (HIGH, CONFIRMED)
+### D1. Nothing has ever been released (MED — downgraded, see §8) — RESOLVED 2026-08-13
 
-HEAD is **97 commits ahead of `origin/main`, 0 behind**. Local `main` is 14 behind. `CHANGELOG.md` stops at 2026-06-22. `VERSION` reads `intelligence-effectiveness 0.1`. No tag covers the work. Two full epics — including SSRF hardening, security headers, required-field validation and an import-identity redesign — are invisible to anyone reading `main`.
+HEAD was **97 commits ahead of `origin/main`, 0 behind**. Local `main` was 14 behind. `CHANGELOG.md` stops at 2026-06-22. `VERSION` reads `intelligence-effectiveness 0.1`. No tag covers the work. Two full epics — including SSRF hardening, security headers, required-field validation and an import-identity redesign — were invisible to anyone reading `main`.
 
-The 97 commits ran in a single ~9h15m window on 2026-07-25/26 and exist **on one disk**.
+**Correction.** An earlier draft of this report stated the 97 commits "exist on one disk". **That was false.** The branch was already pushed to `origin/codex/company-setup-readiness`; only the report commit was unpushed. *Ahead-of-main* is a release fact. *Unpushed* is a durability fact. They were conflated, and the error propagated into the diligence read and the investment ranking before a routine push disproved it. See §8.
+
+**Resolved.** `main` was fast-forwarded to `cff3f9c` and pushed on 2026-08-13. No merge commit; history preserved linearly. Release hygiene (tag, CHANGELOG) remains outstanding and is deliberately deferred — see N9.
 
 ### D2. No CI, anywhere (HIGH, CONFIRMED)
 
@@ -219,9 +228,11 @@ All seven conventional config paths absent: `.github`, `.gitlab-ci.yml`, `azure-
 
 Every guarantee in six ADRs and 859 tests is enforced by whoever remembers to run them.
 
-### D3. No backup, behind a purge that already destroyed live data once (HIGH, CONFIRMED)
+### D3. No backup, behind a purge that already destroyed live data once (LOW now / HIGH at POC — see §8)
 
 `data/rdec_hub.db` is a single 508 KB file, `journal_mode=delete` (not WAL). No backup job, no `VACUUM INTO`, no copy-on-start. Meanwhile `settings.py:43-46` records in a comment that *"that is exactly how finding C2 destroyed a live contract"*, and `README.md:181` says an enabled purge "requires backup acknowledgement" — **the application asks the operator to confirm a backup the platform gives them no way to take.**
+
+**Severity revised.** The sponsor confirms this is a development instance being readied for POC and the data is disposable, so today the finding is LOW and no backup is needed. The *design* defect stands and does not depend on the environment: an application that requires a backup acknowledgement while providing no backup mechanism is asking the operator to attest to something it has made impossible. **That must be closed before the first POC holding real customer data**, alongside T2.1 (migrations) — the two together are what convert an unrecoverable schema change into a routine one.
 
 ### D4. Migration is `create_all` plus a hardcoded 4-table ALTER dict (HIGH, CONFIRMED)
 
@@ -317,7 +328,7 @@ Note: the brief's hypothesis that `data_management.py` would be under-tested was
 **What they conclude is the asset:** the 11 YAML rule files, the entitlement resolver, and the contracted-out / irrelievable-client treatment. That required someone who understands both RDEC and this client's contracting shape. **Everything else is commodity** — FastAPI, Jinja, htmx, SQLite are a weekend. They will also mark the ADR corpus as a positive signal on team quality, which diligence normally cannot assess at all.
 
 **Alarmed, in deal-affecting order:**
-1. **Bus factor 1, and the asset is on one disk.** 97 unpushed commits. Changes the deal structure, not the price.
+1. **Zero releases and a single contributor.** 93 of 97 commits by one author in a single 9-hour window. *(An earlier draft claimed the work was unpushed and framed this as bus-factor-one custody risk. That was wrong — the branch was on the remote throughout. The concentration of authorship stands; the loss risk does not.)*
 2. **Zero releases, ever.** No deployment history, no rollback record, no incident record — they cannot assess operational maturity because there are no operations.
 3. **Single-user and single-tenant *by construction*, not by omission.** No auth on 93 routes, no tenancy column anywhere, `actor` hardcoded. They will price this as *"prototype validating a rules engine"*, not *"SaaS six months from market."*
 4. **The audit PII reservoir.** A GDPR Art. 17 gap that cannot be satisfied through the product goes on the disclosure schedule. **This one costs money at closing.**
@@ -338,7 +349,7 @@ Assumes one engineer plus AI assistance. Costs are estimates, ±50%.
 
 | # | Action | Cost | Payback |
 |---|---|---|---|
-| **T0.1** | **Push the 97 commits. Automate a `VACUUM INTO` snapshot.** | 2–4h | Converts *total unrecoverable loss* into *inconvenience*. Every other item assumes the asset still exists. This is custody, not engineering. |
+| ~~T0.1~~ | ~~Push the 97 commits. Automate a `VACUUM INTO` snapshot.~~ | — | **WITHDRAWN.** The commits were already pushed; the premise was wrong (§8). The database snapshot was declined by the sponsor: this is a development instance being readied for POC, and the data is disposable. Both correct calls. Reinstate the snapshot **before** the first real-data POC, not now. |
 | **T0.2** | **One CI workflow: `pytest` on push.** | 2–4h | The highest-leverage hours in this plan. 859 tests, no flakes, no order dependency — green on day one, cheapest possible adoption. Converts six ADRs of conformance from *remembered* to *enforced*. |
 | **T0.3** | **Project names, not database IDs, in the claim pack.** | ~1h | Fixes the worst line in the product. Highest auditor-confidence-per-hour available anywhere. |
 | **T0.4** | **URL scheme allowlist at the render sink** (`http`/`https`/`mailto`), as a template filter across the 12 sinks. | 4–6h | Closes the only chain reaching full application control. Must be **at the sink**, not at input — hostile data may already be stored. |
@@ -414,7 +425,7 @@ Two roles reached opposite conclusions on evidence. The CTO chaired this on prim
 
 ## 5.2 The one thing
 
-**Precondition, not strategy:** push the 97 commits and snapshot the database. Two to four hours, this afternoon.
+*(The original "precondition" here — push the commits and snapshot the database — has been withdrawn. It rested on a false premise and a production assumption that does not hold for a development instance. See §8.)*
 
 **The one engineering investment: make every derived value that reaches a claim-facing document state its currency.**
 
@@ -452,7 +463,7 @@ Stated explicitly so gaps are not mistaken for coverage.
 ## Not checked because it needs network access
 
 - **No live dependency audit.** `pip-audit` is installed but was not run. Priority order when it is: `starlette 1.3.1` (carried 9 of 19 advisories on the previous pin set, and parses every request), `python-multipart 0.0.32` (on the untrusted upload path), `Jinja2 3.1.6`, then `uvicorn`/`httpx`/`fastapi` — all past the assessing model's knowledge cutoff, so no advisory claim is made either way.
-- **GitHub repository visibility was not determined.** This is the single input that most changes the rating of the data-exposure findings, and it needs a human to confirm.
+- ~~**GitHub repository visibility was not determined.**~~ **Answered 2026-08-13: the repository is private**, and the instance is a development build being readied for POC. This was the single input that most changed the data-exposure ratings; B4 and B5 are downgraded accordingly (§8).
 
 ## Not checked because it was out of scope or too expensive
 
@@ -477,17 +488,85 @@ Recorded because they affect figures quoted elsewhere:
 
 ---
 
-# 7. Decisions required
+# 7. Decisions — status at 2026-08-13
+
+### Closed
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | GitHub repository visibility | **Private.** Development instance being readied for POC. B4 and B5 downgraded (§8). |
+| 2 | Merge `codex/company-setup-readiness` into `main` | **Approved and done.** Fast-forwarded to `cff3f9c` and pushed; no merge commit, linear history preserved. |
+| 3 | Custody of the `refs/codex` screenshot tree | **Delete.** Ref removed, reflogs expired, objects pruned; 16 blobs destroyed, 3 tracked mockups correctly survive, zero dangling objects, `git fsck` clean. The 28 on-disk copies were also deleted; tracked `scorecard.md` retained. |
+| 4 | Database backup mechanism | **Declined** — disposable development data. Correct for now; reinstate before the first real-data POC (D3). |
+
+### Open
 
 | # | Decision | Why it needs you |
 |---|---|---|
-| 1 | **Is the GitHub repository public or private?** | The single input that most changes the data-exposure rating. Cannot be determined without network access. |
-| 2 | **Merge-or-abandon `codex/company-setup-readiness`** (97 commits) and the orphan `codex/source-health-triage-pack` (1 commit). | Release decisions are yours. Nothing is merged or pushed without your say-so. |
-| 3 | **Authorise a live UAT session.** | No acceptance verdict can exist without it, and the repo's own scorecard has recorded it outstanding since 2026-07-20. |
-| 4 | **Authorise the 4-hour DAST subset**, or accept and document that runtime security is unassessed. | G5b cannot be honestly cleared from static evidence. |
-| 5 | **Custody of the `refs/codex` screenshot tree** — delete and `gc`, or retain deliberately. | It holds real customer imagery and survives ordinary cleanup. |
-| 6 | **Build-vs-buy on the product itself.** | Whether to keep building versus adopting a commercial R&D claim platform. The differentiator is genuine, but a market scan should precede any multi-customer investment. |
-| 7 | **Re-run the Knowledge Agent guidance check.** | The rules carry a `verified against HMRC guidance` date of 2026-05-07 — 98 days old — and the product's value depends on it. |
+| 5 | **Authorise a live UAT session.** | No acceptance verdict can exist without it, and the repo's own scorecard has recorded it outstanding since 2026-07-20. This is the largest remaining evidence gap in the assessment. |
+| 6 | **Authorise the 4-hour DAST subset**, or accept and document that runtime security is unassessed. | Runtime security cannot be honestly cleared from static evidence. Lower urgency on a private dev instance; **required before POC exposure**. |
+| 7 | **Re-run the Knowledge Agent guidance check.** | The rules carry a `verified against HMRC guidance` date of 2026-05-07 — 98 days old — and the product's decision value depends on it. |
+| 8 | **Fate of `codex/source-health-triage-pack`** (1 unmerged commit). | Still orphaned. Merge or delete. |
+| 9 | **Build-vs-buy on the product itself.** | The RDEC and contracted-out encoding is genuine differentiated IP; everything around it is commodity. A market scan should precede any multi-customer investment. |
+| 10 | **Start remediation?** | Nothing in Tier 0/1/2 has been implemented. The three Tier-A correctness findings all cause the same outcome: a wrong value printed into an HMRC-facing document and labelled as confirmed. |
+
+---
+
+# 8. Amendment record — 2026-08-13
+
+This section exists because a report that quietly edits its own mistakes is worth less than one that shows them.
+
+## 8.1 One confirmed error of fact
+
+**Claimed:** the 97 commits "exist on one disk", making custody the single most urgent action.
+
+**Actual:** the branch was already pushed to `origin/codex/company-setup-readiness`. Pushing produced `0dbcb12..cff3f9c` — the remote already held the entire epic. Only the report commit transferred.
+
+**Why it happened.** `git rev-list --left-right --count origin/main...HEAD` returned `0 97`. That answers a *release* question — is this work in main? It was read as answering a *durability* question — does this work exist anywhere else? `git branch -a` had listed `origin/codex/company-setup-readiness` from the first survey, but its position was never resolved.
+
+**What it contaminated.** The claim entered a HIGH delivery finding, the technical-diligence read ("bus factor one, asset on one disk"), the CTO's top-ranked recommendation, and the summary to the sponsor. Every downstream reviewer accepted it, because "97 commits ahead of main" reads as alarming and confirms a narrative reviewers expect. **No role re-derived the premise.** It was disproved by a routine push, not by review.
+
+**The general lesson**, recorded to the team knowledge base: *ahead-of-main* and *unpushed* are different facts and must be reported as separate lines that cannot be collapsed.
+
+## 8.2 Severity revisions after sponsor answers
+
+The sponsor confirmed: **private repository, development instance, being readied for POC, data disposable.** That materially changes findings rated against an implicit production assumption.
+
+| Finding | Was | Now | Reason |
+|---|---|---|---|
+| D1 — nothing released | HIGH | MED, **resolved** | Premise partly false; `main` merged and pushed |
+| D3 — no backup | HIGH | LOW now / HIGH at POC | Disposable dev data. The *design* defect stands |
+| B4 — git-history exposure | MED | LOW, **resolved** | Private repo; local-disk only; ref purged |
+| B5 — `ux-loop-artifacts` in image | MED | LOW | Screenshots deleted; `.dockerignore` gap still open |
+
+## 8.3 What did NOT change
+
+Every Tier A correctness finding stands unaltered, and none of them depends on repository visibility, deployment posture, or environment:
+
+- **A1** stale entitlement labelled `(recorded assessment)`
+- **A2** undisclosed corporation-tax default driving the only status permitting green
+- **A3** operator-editable YAML weights that can invert the scoring
+- **A4** float money rounding identical inputs in opposite directions
+- **A5** claim-notification deadline wrong on 15 of 36 month-end period ends
+
+**These are the findings that matter**, and being a private development instance makes them *more* worth fixing, not less — they are cheapest to fix before a POC puts real customer data and real claim positions behind them.
+
+Likewise unchanged: the strengths in §1 (859/859 tests, 89.4% coverage, ADR conformance, SSRF allowlist, purge guarantees), the security findings B1–B3, the governance findings in Tier C, and every item in Tier E.
+
+## 8.4 Actions taken on 2026-08-13
+
+All sponsor-approved. Each verified after execution.
+
+| Action | Verification |
+|---|---|
+| Pushed `codex/company-setup-readiness` | Local and remote both at `cff3f9c`, divergence `0 0` |
+| Fast-forwarded and pushed `main` | All four refs at `cff3f9c`; no merge commit; linear history |
+| Deleted the `refs/codex/…` tree ref, expired reflogs, pruned | Screenshot blob confirmed unreachable; tracked mockup blob confirmed present; zero dangling objects; `git fsck` exit 0 |
+| Deleted 28 on-disk screenshots (6 MB) | Tracked `2026-07-20/scorecard.md` retained; working tree clean |
+
+**Not done, deliberately:** no source file was modified, no finding was remediated, no test was changed. The assessment remains read-only with respect to the product.
+
+**Still open and not addressed by any of the above:** `.playwright-mcp/` holds 23 untracked files containing real customer identifiers on local disk. It is correctly excluded from both git and Docker, so it is not an exposure path — but it is the same class of local residue and was outside the scope of what was approved for deletion.
 
 ---
 
